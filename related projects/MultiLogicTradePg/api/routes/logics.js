@@ -1683,12 +1683,8 @@ app.post('/api/logic-indicator-signals', async (req, res) => {
   const positionEvent = req.body?.position_event;
   const positionSide = req.body?.position_side;
   const signalKind = req.body?.signal_kind;
-  const signalActsOn =
-    req.body?.signal_acts_on === 'base_asset'
-      ? 'base_asset'
-      : req.body?.signal_acts_on === 'contango'
-        ? 'contango'
-        : 'security';
+  const rawActsOn = typeof req.body?.signal_acts_on === 'string' ? req.body.signal_acts_on.trim().toLowerCase() : 'security';
+  const signalActsOn = ['security', 'base_asset', 'contango', 'portfolio'].includes(rawActsOn) ? rawActsOn : 'security';
   const formula = btrimStr(req.body?.formula);
   if (!Number.isInteger(logicId) || logicId <= 0) {
     res.status(400).json({ error: 'logic_id required' });
@@ -1723,6 +1719,35 @@ app.post('/api/logic-indicator-signals', async (req, res) => {
       });
       return;
     }
+    if (signalActsOn === 'portfolio') {
+      const { rows: tfRows } = await pool.query(
+        `SELECT COALESCE(
+                  get_logic_param_int($1, 'timeframe_id', NULL),
+                  CASE
+                    WHEN btrim(COALESCE(get_logic_param_text($1, 'timeframe'), '')) <> ''
+                    THEN logic_resolve_timeframe_id($1)
+                    ELSE NULL
+                  END
+                ) AS tf_id`,
+        [logicId]
+      );
+      const logicTfId = tfRows[0]?.tf_id;
+      if (logicTfId == null) {
+        res.status(400).json({ error: 'Для portfolio-сигнала должен быть задан таймфрейм логики' });
+        return;
+      }
+      const { rows: ptRows } = await pool.query(
+        `SELECT tf_id FROM logic_signal_eval_point($1, $2, LOCALTIMESTAMP) LIMIT 1`,
+        [formula, logicTfId]
+      );
+      const sigTfId = ptRows[0]?.tf_id ?? logicTfId;
+      if (Number(sigTfId) !== Number(logicTfId)) {
+        res.status(400).json({ error: 'TF portfolio-сигнала должен совпадать с ТФ логики' });
+        return;
+      }
+    }
+    // Portfolio и per-security/base/contango сигналы могут сосуществовать для одного
+    // события/направления как независимые группы (исполняются раздельно).
     const { rows: orderRows } = await pool.query(
       `SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order
        FROM logic_indicator_signals WHERE logic_id = $1`,
@@ -1755,12 +1780,9 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
   const formula = btrimStr(req.body?.formula);
   const isActive = req.body?.is_active;
   const hasActsOn = Object.prototype.hasOwnProperty.call(req.body || {}, 'signal_acts_on');
+  const rawActsOnPut = hasActsOn && typeof req.body?.signal_acts_on === 'string' ? req.body.signal_acts_on.trim().toLowerCase() : null;
   const signalActsOn = hasActsOn
-    ? req.body?.signal_acts_on === 'base_asset'
-      ? 'base_asset'
-      : req.body?.signal_acts_on === 'contango'
-        ? 'contango'
-        : 'security'
+    ? (['security', 'base_asset', 'contango', 'portfolio'].includes(rawActsOnPut) ? rawActsOnPut : 'security')
     : null;
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: 'Invalid id' });
@@ -1823,6 +1845,47 @@ app.put('/api/logic-indicator-signals/:id', async (req, res) => {
         opt_existing: optCheck.existing || [],
       });
       return;
+    }
+    // validate portfolio acts_on / mixed groups for effective state
+    const { rows: curFullRows } = await pool.query(
+      `SELECT logic_id, position_event, position_side, COALESCE(signal_acts_on,'security') AS signal_acts_on
+       FROM logic_indicator_signals WHERE id = $1`,
+      [id]
+    );
+    if (curFullRows.length > 0) {
+      const cur = curFullRows[0];
+      const effEvent = positionEvent ?? cur.position_event;
+      const effSide = positionSide ?? cur.position_side;
+      const effActsOn = signalActsOn ?? cur.signal_acts_on;
+      if (effActsOn === 'portfolio') {
+        const { rows: tfRows } = await pool.query(
+          `SELECT COALESCE(
+                    get_logic_param_int($1, 'timeframe_id', NULL),
+                    CASE
+                      WHEN btrim(COALESCE(get_logic_param_text($1, 'timeframe'), '')) <> ''
+                      THEN logic_resolve_timeframe_id($1)
+                      ELSE NULL
+                    END
+                  ) AS tf_id`,
+          [cur.logic_id]
+        );
+        const logicTfId = tfRows[0]?.tf_id;
+        if (logicTfId == null) {
+          res.status(400).json({ error: 'Для portfolio-сигнала должен быть задан таймфрейм логики' });
+          return;
+        }
+        const { rows: ptRows } = await pool.query(
+          `SELECT tf_id FROM logic_signal_eval_point($1, $2, LOCALTIMESTAMP) LIMIT 1`,
+          [formula, logicTfId]
+        );
+        const sigTfId = ptRows[0]?.tf_id ?? logicTfId;
+        if (Number(sigTfId) !== Number(logicTfId)) {
+          res.status(400).json({ error: 'TF portfolio-сигнала должен совпадать с ТФ логики' });
+          return;
+        }
+      }
+      // Portfolio и per-security/base/contango сигналы могут сосуществовать для одного
+      // события/направления как независимые группы (исполняются раздельно).
     }
     const { rows } = await pool.query(
       `

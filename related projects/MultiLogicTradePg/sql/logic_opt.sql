@@ -584,13 +584,16 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS logic_signal_evaluate_at_opt(INTEGER, INTEGER, INTEGER, TIMESTAMP, BOOLEAN, JSONB);
+
 CREATE OR REPLACE FUNCTION logic_signal_evaluate_at_opt(
     p_signal_id INTEGER,
     p_security_id INTEGER,
     p_tf_id INTEGER,
     p_bar_dt TIMESTAMP,
     p_invert BOOLEAN DEFAULT FALSE,
-    p_opt_values JSONB DEFAULT NULL
+    p_opt_values JSONB DEFAULT NULL,
+    p_run_id BIGINT DEFAULT NULL
 )
 RETURNS TABLE (
     ok BOOLEAN,
@@ -612,9 +615,14 @@ DECLARE
     v_pp NUMERIC;
     v_ind NUMERIC;
     v_eval_sec INTEGER;
+    v_acts TEXT;
+    v_logic_id INTEGER;
+    v_run_id BIGINT;
+    v_bar RECORD;
 BEGIN
     ok := FALSE;
-    SELECT lis.id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id
+    SELECT lis.id, lis.logic_id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id,
+           COALESCE(NULLIF(btrim(lis.signal_acts_on), ''), 'security') AS acts_on
     INTO v_sig
     FROM logic_indicator_signals lis
     WHERE lis.id = p_signal_id AND lis.is_active = TRUE;
@@ -628,12 +636,8 @@ BEGIN
     position_side := v_sig.position_side;
     signal_kind := v_sig.signal_kind;
     indicator_id := v_sig.indicator_id;
-
-    v_eval_sec := logic_signal_eval_security_id(p_signal_id, p_security_id);
-    IF v_eval_sec IS NULL THEN
-        RETURN NEXT;
-        RETURN;
-    END IF;
+    v_acts := v_sig.acts_on;
+    v_logic_id := v_sig.logic_id;
 
     SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
     IF NOT COALESCE(v_parsed.valid, FALSE) THEN
@@ -645,6 +649,35 @@ BEGIN
     v_condition := v_parsed.condition;
     IF COALESCE(p_invert, FALSE) THEN
         v_condition := logic_invert_comparison_condition(v_condition);
+    END IF;
+
+    IF v_acts = 'portfolio' THEN
+        v_run_id := COALESCE(p_run_id, NULLIF(current_setting('app.portfolio_backtest_run_id', TRUE), '')::BIGINT);
+        v_pp := logic_portfolio_close_at(v_logic_id, p_tf_id, p_bar_dt, v_run_id);
+        IF v_pp IS NULL OR v_pp <= 0 THEN
+            RETURN NEXT;
+            RETURN;
+        END IF;
+        v_ind := logic_portfolio_calc_indicator_value(
+            v_logic_id, p_tf_id, v_sig.indicator_id,
+            parse_signal_series(v_params), v_params, p_bar_dt, v_run_id
+        );
+        IF v_ind IS NULL THEN
+            RETURN NEXT;
+            RETURN;
+        END IF;
+        close_price := v_pp;
+        ind_value := v_ind;
+        bar_dt := p_bar_dt;
+        ok := evaluate_signal_condition(v_condition, v_pp, v_ind);
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    v_eval_sec := logic_signal_resolve_eval_security(v_acts, p_security_id);
+    IF v_eval_sec IS NULL THEN
+        RETURN NEXT;
+        RETURN;
     END IF;
 
     SELECT p.close_price INTO v_pp

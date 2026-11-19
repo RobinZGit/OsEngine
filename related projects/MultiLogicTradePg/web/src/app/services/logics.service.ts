@@ -485,7 +485,7 @@ export class LogicsService {
     position_event: 'open' | 'close';
     position_side: 'long' | 'short';
     signal_kind: 'trend' | 'counter';
-    signal_acts_on?: 'security' | 'base_asset' | 'contango';
+    signal_acts_on?: 'security' | 'base_asset' | 'contango' | 'portfolio';
     formula: string;
   }): Observable<LogicIndicatorSignalRow> {
     return this.http.post<LogicIndicatorSignalRow>(
@@ -499,7 +499,7 @@ export class LogicsService {
     body: {
       formula: string;
       is_active?: boolean;
-      signal_acts_on?: 'security' | 'base_asset' | 'contango';
+      signal_acts_on?: 'security' | 'base_asset' | 'contango' | 'portfolio';
       signal_confirm_sec?: number;
       /** #1012: редактирование сигнала — смена индикатора/действия/стороны/типа. */
       indicator_id?: number;

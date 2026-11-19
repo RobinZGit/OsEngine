@@ -4197,17 +4197,36 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
 
   onSignalActsOnChange(
     signal: LogicIndicatorSignalRow,
-    next: 'security' | 'base_asset' | 'contango' | string
+    next: 'security' | 'base_asset' | 'contango' | 'portfolio' | string
   ): void {
-    const actsOn =
-      next === 'base_asset' ? 'base_asset' : next === 'contango' ? 'contango' : 'security';
+    const actsOn: 'security' | 'base_asset' | 'contango' | 'portfolio' =
+      next === 'base_asset'
+        ? 'base_asset'
+        : next === 'contango'
+          ? 'contango'
+          : next === 'portfolio'
+            ? 'portfolio'
+            : 'security';
     if ((signal.signal_acts_on || 'security') === actsOn || this.savingFormulaIds.has(signal.id)) {
       return;
     }
+
+    // Portfolio-сигналы (по equity портфеля) и per-security/base/contango-сигналы
+    // действуют независимо и могут сосуществовать для одного события/направления.
+    // AND-группы однородны по типу: portfolio-группа отдельно, per-security — отдельно.
+    // (Смешивание типов внутри одной AND-группы не поддерживается.)
+
+    // Для portfolio TF сигнала должен совпадать с ТФ логики: убираем пользовательский tf= из формулы.
+    let nextFormula = this.formulaDraft(signal).trim() || signal.formula;
+    if (actsOn === 'portfolio') {
+      nextFormula = applySignalTf(nextFormula, '', null);
+      this.formulaDrafts.set(signal.id, nextFormula);
+    }
+
     this.savingFormulaIds.add(signal.id);
     this.logicsService
       .updateLogicIndicatorSignal(signal.id, {
-        formula: this.formulaDraft(signal).trim() || signal.formula,
+        formula: nextFormula,
         signal_acts_on: actsOn,
       })
       .subscribe({
@@ -4221,8 +4240,10 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
           this.savingFormulaIds.delete(signal.id);
           this.cdr.markForCheck();
         },
-        error: () => {
+        error: (err) => {
           this.savingFormulaIds.delete(signal.id);
+          const msg = err?.error?.error || err?.message || 'Не удалось сохранить сигнал';
+          alert(msg);
           this.cdr.markForCheck();
         },
       });

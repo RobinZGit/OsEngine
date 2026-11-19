@@ -193,7 +193,7 @@ export interface LogicIndicatorSignalRow {
   position_side: 'long' | 'short';
   signal_kind: 'trend' | 'counter';
   /** security = бумага; base_asset = база; contango = ряд (фьючерс − база) */
-  signal_acts_on?: 'security' | 'base_asset' | 'contango';
+  signal_acts_on?: 'security' | 'base_asset' | 'contango' | 'portfolio';
   /** #972: секунды подтверждения типа сигнала (0 = не подтверждать; 10/20/30/40/50/60/120). */
   signal_confirm_sec?: number;
   formula: string;

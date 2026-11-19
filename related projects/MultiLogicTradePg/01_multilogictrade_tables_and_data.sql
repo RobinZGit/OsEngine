@@ -1819,7 +1819,7 @@ CREATE TABLE IF NOT EXISTS logic_indicator_signals (
     position_side VARCHAR(10) NOT NULL DEFAULT 'long' CHECK (position_side IN ('long', 'short')),
     signal_kind VARCHAR(10) NOT NULL CHECK (signal_kind IN ('trend', 'counter')),
     signal_acts_on VARCHAR(20) NOT NULL DEFAULT 'security'
-        CHECK (signal_acts_on IN ('security', 'base_asset', 'contango')),
+        CHECK (signal_acts_on IN ('security', 'base_asset', 'contango', 'portfolio')),
     -- #972: секунды подтверждения типа сигнала (0 = не подтверждать; 10/20/30/40/50/60/120)
     signal_confirm_sec INTEGER NOT NULL DEFAULT 0 CHECK (signal_confirm_sec >= 0),
     formula TEXT NOT NULL,
@@ -1854,7 +1854,7 @@ ALTER TABLE logic_indicator_signals DROP CONSTRAINT IF EXISTS logic_indicator_si
 DO $$
 BEGIN
     ALTER TABLE logic_indicator_signals ADD CONSTRAINT logic_indicator_signals_signal_acts_on_check
-        CHECK (signal_acts_on IN ('security', 'base_asset', 'contango'));
+        CHECK (signal_acts_on IN ('security', 'base_asset', 'contango', 'portfolio'));
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
@@ -4443,6 +4443,7 @@ CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     slippage_pct NUMERIC(5, 2) NOT NULL DEFAULT 0,
     -- #1061: галочка в диалоге теста «По окончании теста закрыть все позиции» (по умолчанию включена).
     close_all_at_end BOOLEAN NOT NULL DEFAULT TRUE,
+    portfolio_close_pending BOOLEAN NOT NULL DEFAULT FALSE,
     financial_result NUMERIC(20, 6),
     cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
     error_message TEXT,
@@ -4462,9 +4463,35 @@ CREATE TABLE IF NOT EXISTS logic_backtest_equity_points (
     equity NUMERIC(20, 6) NOT NULL,
     PRIMARY KEY (run_id, dt)
 );
+
+-- Portfolio signals: live equity bars (TF логики) для расчёта индикаторов acts_on='portfolio'
+CREATE TABLE IF NOT EXISTS logic_portfolio_equity_bars (
+    logic_id INTEGER NOT NULL REFERENCES logics(id) ON DELETE CASCADE,
+    timeframe_id INTEGER NOT NULL REFERENCES timeframes(id) ON DELETE CASCADE,
+    dt TIMESTAMP NOT NULL,
+    open_price NUMERIC(20, 6) NOT NULL,
+    high_price NUMERIC(20, 6) NOT NULL,
+    low_price NUMERIC(20, 6) NOT NULL,
+    close_price NUMERIC(20, 6) NOT NULL,
+    PRIMARY KEY (logic_id, timeframe_id, dt)
+);
+COMMENT ON TABLE logic_portfolio_equity_bars IS
+'Свечи equity портфеля логики (acts_on=portfolio): close=equity на закрытом баре, O=prev_close, H=max(O,C), L=min(O,C)';
+
+-- Portfolio signals: флаг ожидания закрытия всего портфеля (live)
+CREATE TABLE IF NOT EXISTS logic_portfolio_signal_state (
+    logic_id INTEGER PRIMARY KEY REFERENCES logics(id) ON DELETE CASCADE,
+    pending BOOLEAN NOT NULL DEFAULT FALSE,
+    set_at TIMESTAMP,
+    set_bar_dt TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+COMMENT ON TABLE logic_portfolio_signal_state IS
+'Состояние portfolio-сигналов: pending=true после open-сигнала на портфель, сбрасывается при portfolio-close/когда нет не-фондовых позиций';
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS slippage_pct NUMERIC(5, 2) NOT NULL DEFAULT 0;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS close_all_at_end BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_close_pending BOOLEAN NOT NULL DEFAULT FALSE;
 COMMENT ON COLUMN logic_backtest_runs.close_all_at_end IS
 '#1061: последним актом теста закрыть все открытые позиции (галочка в диалоге запуска, default TRUE)';
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;

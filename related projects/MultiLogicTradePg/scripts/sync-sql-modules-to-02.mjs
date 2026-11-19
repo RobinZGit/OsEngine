@@ -28,6 +28,31 @@ function replaceBetween(content, startMarker, endMarker, replacement, label) {
 let sql02 = read('02_multilogictrade_functions_and_procedures.sql');
 const tradeTail = read('sql/logic_trade_runner.sql');
 
+// Forward stub: logic_is_cash_fund_security is used in early sections but its real
+// definition comes from sql/logic_cash_fund_park.sql (included late, after pgsql-http).
+// Keep a stub before first uses so 02 can be applied as a single script.
+{
+  const cashFundIsStubMarker = '-- @stub logic_is_cash_fund_security';
+  const cashFundIsStub = `${cashFundIsStubMarker}
+CREATE OR REPLACE FUNCTION logic_is_cash_fund_security(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT FALSE;
+$$;
+
+`;
+  const srBegin = '-- @begin logic_stop_runner';
+  const srIdx = sql02.indexOf(srBegin);
+  if (srIdx !== -1) {
+    const existing = sql02.indexOf(cashFundIsStubMarker);
+    if (existing !== -1 && existing < srIdx) {
+      sql02 = sql02.slice(0, existing) + cashFundIsStub + sql02.slice(srIdx);
+    } else if (existing === -1) {
+      sql02 = sql02.slice(0, srIdx) + cashFundIsStub + sql02.slice(srIdx);
+    }
+  }
+}
+
 // stop_runner: только @begin/@end. Нельзя якориться на logic_long_position_qty —
 // эта функция внутри модуля; старый sync вкладывал include сам в себя (×N).
 {
@@ -94,14 +119,20 @@ sql02 = replaceBetween(
 
 const closeAll = read('sql/logic_close_all_positions.sql').trimEnd() + '\n\n';
 const optRunner = read('sql/logic_opt.sql').trimEnd() + '\n\n';
-sql02 = replaceBetween(
-  sql02,
-  '-- @include sql/logic_close_all_positions.sql (см. sql/logic_close_all_positions.sql — дублируется ниже)',
-  'CREATE OR REPLACE FUNCTION process_logic_trades(p_logic_id INTEGER)',
-  `-- @include sql/logic_close_all_positions.sql (см. sql/logic_close_all_positions.sql — дублируется ниже)\n${closeAll}` +
-    `-- @include sql/logic_opt.sql\n${optRunner}`,
-  'logic_close_all_positions + logic_opt'
-);
+{
+  const caStartPrefix = '-- @include sql/logic_close_all_positions.sql';
+  const caStart = sql02.indexOf(caStartPrefix);
+  const caEnd = sql02.indexOf('CREATE OR REPLACE FUNCTION process_logic_trades(p_logic_id INTEGER)');
+  if (caStart === -1 || caEnd === -1 || caEnd <= caStart) {
+    throw new Error('sync-02: markers not found for logic_close_all_positions + logic_opt');
+  }
+  const caMarker = '-- @include sql/logic_close_all_positions.sql (см. sql/logic_close_all_positions.sql — дублируется ниже)';
+  sql02 =
+    sql02.slice(0, caStart) +
+    caMarker + '\n' + closeAll +
+    '-- @include sql/logic_opt.sql\n' + optRunner +
+    sql02.slice(caEnd);
+}
 
 // helpers (prices_have_closed_bar) + refresh + process + run_trade_cycle
 const haveBarStart = tradeTail.indexOf('CREATE OR REPLACE FUNCTION prices_have_closed_bar');
@@ -117,6 +148,10 @@ const ratingBlock =
   read('sql/logic_signal_and_rating.sql').trimEnd() +
   '\n\n' +
   read('sql/indicator_rating.sql').trimEnd() +
+  '\n\n';
+const portfolioSignalsBlock =
+  '-- @include sql/logic_portfolio_signals.sql\n' +
+  read('sql/logic_portfolio_signals.sql').trimEnd() +
   '\n\n';
 // ensure — в core; full park (HTTP/EtfBy) — после CREATE EXTENSION http
 const cashParkStub = `
@@ -195,6 +230,7 @@ tradeSlice =
   tradeSlice.slice(runCycleIdx);
 const tradeBlock =
   ratingBlock +
+  portfolioSignalsBlock +
   tradeSlice +
   '\n\n' +
   tradeTail.slice(tradeEnd).trimEnd() +

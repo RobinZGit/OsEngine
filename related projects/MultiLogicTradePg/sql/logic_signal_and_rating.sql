@@ -423,9 +423,13 @@ DECLARE
     v_bar RECORD;
     v_condition TEXT;
     v_eval_sec INTEGER;
+    v_run_id BIGINT;
+    v_logic_id INTEGER;
+    v_acts TEXT;
 BEGIN
     ok := FALSE;
-    SELECT lis.id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id
+    SELECT lis.id, lis.logic_id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id,
+           COALESCE(NULLIF(btrim(lis.signal_acts_on), ''), 'security') AS acts_on
     INTO v_sig
     FROM logic_indicator_signals lis
     WHERE lis.id = p_signal_id AND lis.is_active = TRUE;
@@ -439,12 +443,8 @@ BEGIN
     position_side := v_sig.position_side;
     signal_kind := v_sig.signal_kind;
     indicator_id := v_sig.indicator_id;
-
-    v_eval_sec := logic_signal_eval_security_id(p_signal_id, p_security_id);
-    IF v_eval_sec IS NULL THEN
-        RETURN NEXT;
-        RETURN;
-    END IF;
+    v_acts := v_sig.acts_on;
+    v_logic_id := v_sig.logic_id;
 
     SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
     IF NOT COALESCE(v_parsed.valid, FALSE) THEN
@@ -452,10 +452,24 @@ BEGIN
         RETURN;
     END IF;
     v_series := parse_signal_series(v_parsed.params);
-    SELECT * INTO v_bar FROM logic_bar_data_at(
-        v_eval_sec, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt
-    );
-    IF NOT FOUND THEN
+
+    IF v_acts = 'portfolio' THEN
+        v_run_id := NULLIF(current_setting('app.portfolio_backtest_run_id', TRUE), '')::BIGINT;
+        SELECT * INTO v_bar FROM logic_portfolio_bar_data_at(
+            v_logic_id, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt, v_parsed.params, v_run_id
+        );
+    ELSE
+        v_eval_sec := logic_signal_resolve_eval_security(v_acts, p_security_id);
+        IF v_eval_sec IS NULL THEN
+            RETURN NEXT;
+            RETURN;
+        END IF;
+        SELECT * INTO v_bar FROM logic_bar_data_at(
+            v_eval_sec, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt
+        );
+    END IF;
+
+    IF NOT FOUND OR v_bar.bar_dt IS NULL THEN
         RETURN NEXT;
         RETURN;
     END IF;
@@ -486,7 +500,15 @@ CREATE OR REPLACE FUNCTION logic_signal_record_fire(
 RETURNS VOID
 LANGUAGE plpgsql AS $$
 BEGIN
-    -- Только запоминаем: ±1 ставится на следующей свече в resolve_pending
+    -- Portfolio signals: no rating/fires
+    IF EXISTS (
+        SELECT 1 FROM logic_indicator_signals lis
+        WHERE lis.id = p_signal_id
+          AND COALESCE(lis.signal_acts_on, 'security') = 'portfolio'
+    ) THEN
+        RETURN;
+    END IF;
+
     INSERT INTO logic_signal_rating_pending (
         signal_id, logic_id, security_id, timeframe_id,
         bar_dt, price, position_side, signal_kind, is_test, run_id
@@ -649,6 +671,7 @@ BEGIN
             SELECT lis.id, lis.position_side, lis.signal_kind
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+              AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
             ORDER BY lis.display_order, lis.id
         LOOP
             SELECT * INTO v_eval

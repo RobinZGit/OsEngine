@@ -1922,6 +1922,7 @@ DECLARE
     v_group_filter_side TEXT;
     v_group_filter_sec INTEGER;      -- #990: подтверждение на уровне бумаги (security_id)
     v_expected_dir TEXT;             -- #972: направление подтверждения up/down
+    v_portfolio_did_close BOOLEAN := FALSE;
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused
@@ -2121,6 +2122,20 @@ BEGIN
     );
 
     -- При нехватке слотов — лучший PnL; один GROUP BY, без коррелированного SUM на бумагу.
+    -- Portfolio signals (acts_on=portfolio): record equity bar and process first
+    PERFORM logic_portfolio_record_equity_bar(p_logic_id, v_tf_id, v_closed_bar_dt);
+    SELECT did_close INTO v_portfolio_did_close
+    FROM logic_process_portfolio_signal_groups(p_logic_id, v_tf_id, v_closed_bar_dt);
+    IF COALESCE(v_portfolio_did_close, FALSE) THEN
+        v_balance := logic_ensure_balance(p_logic_id);
+        v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+        v_cycle_budget := logic_exposure_cycle_budget(p_logic_id, v_tf_id);
+        v_max_exposure := v_cycle_budget
+            * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+            * v_max_positions;
+        v_spent_notional := logic_open_notional_exposure(p_logic_id, FALSE, '');
+        v_open_positions := logic_count_open_positions(p_logic_id);
+    END IF;
     FOR v_sec IN
         SELECT
             ls.security_id,
@@ -2160,6 +2175,7 @@ BEGIN
             SELECT lis.position_event, lis.position_side
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+              AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
             GROUP BY lis.position_event, lis.position_side
             ORDER BY lis.position_event, lis.position_side
         LOOP
@@ -2194,6 +2210,7 @@ BEGIN
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id
                   AND lis.is_active = TRUE
+                  AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
                   AND lis.position_event = v_grp.position_event
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id
@@ -3029,6 +3046,7 @@ BEGIN
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
               AND lower(COALESCE(lis.position_event, 'open')) = 'open'
+              AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
             GROUP BY lis.position_event, lis.position_side
             ORDER BY lis.position_side
         LOOP
@@ -3044,6 +3062,7 @@ BEGIN
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id
                   AND lis.is_active = TRUE
+                  AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
                   AND lis.position_event = v_grp.position_event
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id

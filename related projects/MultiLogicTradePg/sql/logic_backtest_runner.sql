@@ -2316,9 +2316,10 @@ DECLARE
     v_room NUMERIC;
     v_order_notional NUMERIC;
     v_slippage_pct NUMERIC;
+    v_portfolio_did_close BOOLEAN := FALSE;
+    v_portfolio_out_bal NUMERIC;
 BEGIN
-    -- Проскальзывание прогона: slippage_pct из logic_backtest_runs применяется
-    -- к каждой сделке (случайный сдвиг цены до ±slippage_pct%).
+    -- Проскальзывание: slippage_pct из logic_backtest_runs применяется в момент сделки.
     SELECT COALESCE(slippage_pct, 0) INTO v_slippage_pct
     FROM logic_backtest_runs WHERE id = p_run_id;
 
@@ -2385,6 +2386,31 @@ BEGIN
 
     -- Один агрегат PnL на бар (не коррелированный SUM на каждую бумагу — иначе mid-run
     -- test-panel/UI пустеет из‑за долгих локов, а /pnl-summary ещё успевает).
+    -- Portfolio signals: process first (set/consume pending, bulk close except funds)
+    SELECT out_balance, did_close INTO v_portfolio_out_bal, v_portfolio_did_close
+    FROM logic_backtest_process_portfolio_signal_groups(
+        p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, p_balance
+    );
+    p_balance := COALESCE(v_portfolio_out_bal, p_balance);
+    IF v_portfolio_did_close THEN
+        v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE)
+            + logic_backtest_count_open_positions(p_logic_id, TRUE);
+        v_spent_notional := logic_open_notional_exposure(p_logic_id, TRUE, '', p_run_id);
+        IF v_size_mode = 'free_cash' THEN
+            v_cycle_budget := LEAST(
+                GREATEST(0, COALESCE(p_balance, 0)),
+                GREATEST(0, COALESCE(logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance), 0))
+            );
+        ELSIF v_size_mode = 'portfolio_incl_fund' THEN
+            v_cycle_budget := GREATEST(0, COALESCE(logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance), 0));
+        ELSE
+            v_cycle_budget := GREATEST(0,
+                COALESCE(logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance), 0)
+                - logic_backtest_selected_cash_fund_mtm(p_logic_id, p_tf_id, p_bar_dt)
+            );
+        END IF;
+        v_max_exposure := v_cycle_budget * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0) * v_max_positions;
+    END IF;
     FOR v_sec IN
         SELECT ls.security_id
         FROM logic_securities ls
@@ -2415,6 +2441,7 @@ BEGIN
             SELECT lis.position_event, lis.position_side
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+              AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
             GROUP BY lis.position_event, lis.position_side
             ORDER BY lis.position_event, lis.position_side
         LOOP
@@ -2450,6 +2477,7 @@ BEGIN
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id
                   AND lis.is_active = TRUE
+                  AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
                   AND lis.position_event = v_grp.position_event
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id

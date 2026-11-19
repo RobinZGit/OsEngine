@@ -4145,16 +4145,16 @@ COMMENT ON FUNCTION calc_poly_formula_array IS
 'Р’С‹С‡РёСЃР»СЏРµС‚ РјРЅРѕРіРѕС‡Р»РµРЅРЅСѓСЋ С„РѕСЂРјСѓР»Сѓ РёРЅРґРёРєР°С‚РѕСЂР° (pp * (1;-2;1), @SMA # pp, вЂ¦) Рё РІРѕР·РІСЂР°С‰Р°РµС‚ РїРѕСЃР»РµРґРЅРёРµ point_count С‚РѕС‡РµРє.';
 
 -- @begin calc_ind_extra
--- Р”РѕРї. РёРЅРґРёРєР°С‚РѕСЂС‹ РґР»СЏ Р»РѕРіРёРє L1вЂ“L4 (РёР· MultiLogicTradeA / FINRESP):
+-- Доп. индикаторы для логик L1–L4 (из MultiLogicTradeA / FINRESP):
 -- ADX, CCI, LINREG (+ ATR series GROWTH5).
--- РџРѕРґРєР»СЋС‡Р°РµС‚СЃСЏ РІ 02 С‡РµСЂРµР· РјР°СЂРєРµСЂС‹ begin/end calc_ind_extra (СЃРј. sync-sql-modules-to-02.mjs)
+-- Подключается в 02 через маркеры begin/end calc_ind_extra (см. sync-sql-modules-to-02.mjs)
 
--- ========== SOLDIERS: РїР°С‚С‚РµСЂРЅ В«N СЃРѕР»РґР°С‚В» (РѕР±РѕР±С‰РµРЅРёРµ В«3 СЃРѕР»РґР°С‚В» OsEngine) ==========
--- РќР° РєР°Р¶РґРѕРј Р±Р°СЂРµ РІРѕР·РІСЂР°С‰Р°РµС‚ +1 вЂ” Р±С‹С‡СЊРё N СЃРѕР»РґР°С‚, в€’1 вЂ” РјРµРґРІРµР¶СЊРё N СЃРѕР»РґР°С‚, 0 вЂ” РїР°С‚С‚РµСЂРЅР° РЅРµС‚.
--- Р‘С‹С‡СЊРё: Сѓ РІСЃРµС… N РїРѕСЃР»РµРґРЅРёС… СЃРІРµС‡РµР№ Open < Close; Сѓ РєР°Р¶РґРѕР№ СЃР»РµРґСѓСЋС‰РµР№ СЃРІРµС‡Рё Open Р»РµР¶РёС‚
--- СЃС‚СЂРѕРіРѕ РјРµР¶РґСѓ Open Рё Close РїСЂРµРґС‹РґСѓС‰РµР№, Р° Close СЃС‚СЂРѕРіРѕ Р±РѕР»СЊС€Рµ Close РїСЂРµРґС‹РґСѓС‰РµР№.
--- РњРµРґРІРµР¶СЊРё вЂ” Р·РµСЂРєР°Р»СЊРЅРѕ: Open > Close, Open СЃР»РµРґСѓСЋС‰РµР№ РјРµР¶РґСѓ Open/Close РїСЂРµРґС‹РґСѓС‰РµР№,
--- Close СЃР»РµРґСѓСЋС‰РµР№ СЃС‚СЂРѕРіРѕ РјРµРЅСЊС€Рµ Close РїСЂРµРґС‹РґСѓС‰РµР№.
+-- ========== SOLDIERS: паттерн «N солдат» (обобщение «3 солдат» OsEngine) ==========
+-- На каждом баре возвращает +1 — бычьи N солдат, −1 — медвежьи N солдат, 0 — паттерна нет.
+-- Бычьи: у всех N последних свечей Open < Close; у каждой следующей свечи Open лежит
+-- строго между Open и Close предыдущей, а Close строго больше Close предыдущей.
+-- Медвежьи — зеркально: Open > Close, Open следующей между Open/Close предыдущей,
+-- Close следующей строго меньше Close предыдущей.
 CREATE OR REPLACE FUNCTION calc_ind_soldiers_array(
     p_period INTEGER,
     p_series VARCHAR,
@@ -4206,11 +4206,11 @@ BEGIN
         v_bull := TRUE;
         v_bear := TRUE;
         FOR j IN (i - v_soldiers + 1) .. i LOOP
-            -- РўРµР»Рѕ СЃРІРµС‡Рё: Р±С‹С‡СЊСЏ Open < Close, РјРµРґРІРµР¶СЊСЏ Open > Close (РґРѕРґР¶Рё РЅРµ РїРѕРґС…РѕРґРёС‚).
+            -- Тело свечи: бычья Open < Close, медвежья Open > Close (доджи не подходит).
             IF v_opens[j] >= v_closes[j] THEN v_bull := FALSE; END IF;
             IF v_opens[j] <= v_closes[j] THEN v_bear := FALSE; END IF;
 
-            -- Р”Р»СЏ 2-Р№ Рё РїРѕСЃР»РµРґСѓСЋС‰РёС… СЃРІРµС‡РµР№: Open РІРЅСѓС‚СЂРё С‚РµР»Р° РїСЂРµРґС‹РґСѓС‰РµР№ Рё Close РґР°Р»СЊС€Рµ.
+            -- Для 2-й и последующих свечей: Open внутри тела предыдущей и Close дальше.
             IF j > i - v_soldiers + 1 THEN
                 IF NOT (v_opens[j] > LEAST(v_opens[j - 1], v_closes[j - 1])
                     AND v_opens[j] < GREATEST(v_opens[j - 1], v_closes[j - 1])) THEN
@@ -4232,7 +4232,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION calc_ind_soldiers_array(INTEGER, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'РџР°С‚С‚РµСЂРЅ В«N СЃРѕР»РґР°С‚В»: +1 Р±С‹С‡СЊРё N СЃРІРµС‡РµР№ (Open<Close, Open СЃР»РµРґСѓСЋС‰РµР№ РІРЅСѓС‚СЂРё С‚РµР»Р° РїСЂРµРґС‹РґСѓС‰РµР№, Close РІС‹С€Рµ), в€’1 РјРµРґРІРµР¶СЊРё (Р·РµСЂРєР°Р»СЊРЅРѕ), 0 вЂ” РЅРµС‚ РїР°С‚С‚РµСЂРЅР°; p_period = С‡РёСЃР»Рѕ СЃРѕР»РґР°С‚.';
+'Паттерн «N солдат»: +1 бычьи N свечей (Open<Close, Open следующей внутри тела предыдущей, Close выше), −1 медвежьи (зеркально), 0 — нет паттерна; p_period = число солдат.';
 
 CREATE OR REPLACE FUNCTION calc_ind_soldiers(
     p_period INTEGER,
@@ -4257,9 +4257,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION calc_ind_soldiers(INTEGER, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
-'Р—РЅР°С‡РµРЅРёРµ РїР°С‚С‚РµСЂРЅР° В«N СЃРѕР»РґР°С‚В» РЅР° РѕРґРЅРѕРј Р±Р°СЂРµ (+1/в€’1/0) РґР»СЏ РѕС†РµРЅРѕРє СЃРёРіРЅР°Р»РѕРІ Р»РѕРіРёРє Рё Р±СЌРєС‚РµСЃС‚Р°.';
+'Значение паттерна «N солдат» на одном баре (+1/−1/0) для оценок сигналов логик и бэктеста.';
 
--- ========== ATR: GROWTH5 = % СЂРѕСЃС‚Р° ATR Р·Р° 5 Р±Р°СЂРѕРІ (Р±С‹РІС€РёР№ GrOk: Gr=3%, Lb=5) ==========
+-- ========== ATR: GROWTH5 = % роста ATR за 5 баров (бывший GrOk: Gr=3%, Lb=5) ==========
 CREATE OR REPLACE FUNCTION calc_ind_atr_array(
     p_period INTEGER,
     p_series VARCHAR,
@@ -4568,7 +4568,7 @@ BEGIN
 END;
 $$;
 
--- ========== LINREG РєР°РЅР°Р» (mid В± DevВ·Пѓ РѕСЃС‚Р°С‚РєРѕРІ) ==========
+-- ========== LINREG канал (mid ± Dev·σ остатков) ==========
 CREATE OR REPLACE FUNCTION calc_ind_linreg_array(
     p_period INTEGER,
     p_std_dev NUMERIC,
@@ -4638,7 +4638,7 @@ BEGIN
         v_sum_xy := 0;
         v_sum_xx := 0;
         FOR j IN 0 .. (v_period - 1) LOOP
-            -- x = 0..period-1 РЅР° РѕРєРЅРµ, y = close
+            -- x = 0..period-1 на окне, y = close
             v_sum_x := v_sum_x + j;
             v_sum_y := v_sum_y + v_closes[i - v_period + 1 + j];
             v_sum_xy := v_sum_xy + j * v_closes[i - v_period + 1 + j];
@@ -4668,20 +4668,20 @@ END;
 $$;
 
 COMMENT ON FUNCTION calc_ind_cci_array(INTEGER, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'CCI (Commodity Channel Index), СЃРµСЂРёСЏ VALUE';
+'CCI (Commodity Channel Index), серия VALUE';
 COMMENT ON FUNCTION calc_ind_adx_array(INTEGER, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'ADX / +DI / в€’DI (Wilder), СЃРµСЂРёРё ADX|PDI|MDI';
+'ADX / +DI / −DI (Wilder), серии ADX|PDI|MDI';
 COMMENT ON FUNCTION calc_ind_linreg_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'Р›РёРЅРµР№РЅР°СЏ СЂРµРіСЂРµСЃСЃРёСЏ РїРѕ close: MIDDLE/UPPER/LOWER/SLOPE (РєР°РЅР°Р» DevВ·Пѓ РѕСЃС‚Р°С‚РєРѕРІ)';
+'Линейная регрессия по close: MIDDLE/UPPER/LOWER/SLOPE (канал Dev·σ остатков)';
 
 -- Upgrade: drop removed LINREGV functions if present
 DROP FUNCTION IF EXISTS calc_ind_linregv(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER);
 DROP FUNCTION IF EXISTS calc_ind_linregv_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP);
 
 -- ========== CMO (Chande Momentum Oscillator) ==========
--- РњРѕРјРµРЅС‚СѓРј Р§Р°РЅРґРµ: CMO = 100 * (ОЈ+ в€’ ОЈв€’) / (ОЈ+ + ОЈв€’) РїРѕ РїСЂРёСЂРѕСЃС‚Р°Рј close Р·Р° РїРµСЂРёРѕРґ,
--- РіРґРµ ОЈ+ = СЃСѓРјРјР° РїРѕР»РѕР¶РёС‚РµР»СЊРЅС‹С… РїСЂРёСЂРѕСЃС‚РѕРІ, ОЈв€’ = СЃСѓРјРјР° Р°Р±СЃРѕР»СЋС‚РЅС‹С… РѕС‚СЂРёС†Р°С‚РµР»СЊРЅС‹С….
--- Р”РёР°РїР°Р·РѕРЅ в€’100..100: >0 вЂ” Р±С‹С‡РёР№ РјРѕРјРµРЅС‚СѓРј, <0 вЂ” РјРµРґРІРµР¶РёР№.
+-- Моментум Чанде: CMO = 100 * (Σ+ − Σ−) / (Σ+ + Σ−) по приростам close за период,
+-- где Σ+ = сумма положительных приростов, Σ− = сумма абсолютных отрицательных.
+-- Диапазон −100..100: >0 — бычий моментум, <0 — медвежий.
 CREATE OR REPLACE FUNCTION calc_ind_cmo_array(
     p_period INTEGER,
     p_series VARCHAR,
@@ -4723,7 +4723,7 @@ BEGIN
         ORDER BY p.dt DESC LIMIT v_bars
     ) x;
 
-    -- Р”Р»СЏ CMO РЅСѓР¶РЅРѕ period РїСЂРёСЂРѕСЃС‚РѕРІ + РЅР°С‡Р°Р»СЊРЅР°СЏ С†РµРЅР° в†’ period + 1 Р±Р°СЂРѕРІ РјРёРЅРёРјСѓРј.
+    -- Для CMO нужно period приростов + начальная цена → period + 1 баров минимум.
     IF v_n IS NULL OR v_n < (v_period + 1) THEN RETURN; END IF;
 
     v_start := GREATEST(v_period + 1, v_n - p_point_count + 1);
@@ -4788,12 +4788,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION calc_ind_cmo_array(INTEGER, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'CMO (Chande Momentum Oscillator), СЃРµСЂРёСЏ VALUE (в€’100..100), РїРµСЂРёРѕРґ РїСЂРёСЂРѕСЃС‚РѕРІ close';
+'CMO (Chande Momentum Oscillator), серия VALUE (−100..100), период приростов close';
 COMMENT ON FUNCTION calc_ind_cmo(INTEGER, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
-'CMO (Chande Momentum Oscillator): 100Г—(ОЈ+в€’ОЈв€’)/(ОЈ++ОЈв€’) вЂ” РјРѕРјРµРЅС‚СѓРј РїРѕ РїСЂРёСЂРѕСЃС‚Р°Рј close';
+'CMO (Chande Momentum Oscillator): 100×(Σ+−Σ−)/(Σ++Σ−) — моментум по приростам close';
 
 -- =====================================================================
--- РЎРєР°Р»СЏСЂРЅС‹Рµ calc_ind_* (С‚РѕС‚ Р¶Рµ РєРѕРЅС‚СЂР°РєС‚, С‡С‚Рѕ Сѓ SMA/STOCH: script в†’ calc_ind_*)
+-- Скалярные calc_ind_* (тот же контракт, что у SMA/STOCH: script → calc_ind_*)
 -- =====================================================================
 CREATE OR REPLACE FUNCTION calc_ind_cci(
     p_period INTEGER,
@@ -4924,7 +4924,7 @@ BEGIN
 END;
 $$;
 
--- РћРґРёРЅ Р±Р°СЂ: mid/upper/lower/slope Р·Р° РѕРґРёРЅ РїСЂРѕС…РѕРґ (Р±РµР· array РЅР° point_count СЃРІРµС‡РµР№).
+-- Один бар: mid/upper/lower/slope за один проход (без array на point_count свечей).
 CREATE OR REPLACE FUNCTION calc_ind_linreg_levels_at(
     p_period INTEGER,
     p_std_dev NUMERIC,
@@ -4979,7 +4979,7 @@ BEGIN
     END IF;
 
     -- array_agg ORDER BY dt ASC in subquery? We used ORDER BY dt DESC LIMIT then
-    -- array_agg ORDER BY x.dt в†’ chronological oldestв†’newest. Good.
+    -- array_agg ORDER BY x.dt → chronological oldest→newest. Good.
     n := v_period;
     FOR j IN 0 .. (v_period - 1) LOOP
         v_sum_x := v_sum_x + j;
@@ -5005,7 +5005,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION calc_ind_linreg_levels_at(INTEGER, NUMERIC, INTEGER, INTEGER, TIMESTAMP) IS
-'LINREG РєР°РЅР°Р» РЅР° РѕРґРЅРѕРј Р±Р°СЂРµ: middle/upper/lower/slope Р·Р° РѕРґРёРЅ РїСЂРѕС…РѕРґ (РґР»СЏ OPT Рё СЃРєР°Р»СЏСЂР°)';
+'LINREG канал на одном баре: middle/upper/lower/slope за один проход (для OPT и скаляра)';
 
 CREATE OR REPLACE FUNCTION calc_ind_linreg(
     p_period INTEGER,
@@ -5045,7 +5045,7 @@ BEGIN
 END;
 $$;
 
--- ATR: СЃРµСЂРёСЏ GROWTH5 С‡РµСЂРµР· array (СЃС‚Р°СЂС‹Р№ scalar СѓРјРµР» С‚РѕР»СЊРєРѕ ATR / ATR_PCT)
+-- ATR: серия GROWTH5 через array (старый scalar умел только ATR / ATR_PCT)
 CREATE OR REPLACE FUNCTION calc_ind_atr(
     p_period INTEGER,
     p_series VARCHAR,
@@ -5102,15 +5102,15 @@ END;
 $$;
 
 COMMENT ON FUNCTION calc_ind_cci(INTEGER, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
-'РЎРєР°Р»СЏСЂ CCI РЅР° Р±Р°СЂРµ (РєР°Рє calc_ind_sma) вЂ” С‡РµСЂРµР· calc_ind_cci_array';
+'Скаляр CCI на баре (как calc_ind_sma) — через calc_ind_cci_array';
 COMMENT ON FUNCTION calc_ind_adx(INTEGER, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
-'РЎРєР°Р»СЏСЂ ADX/+DI/в€’DI РЅР° Р±Р°СЂРµ вЂ” С‡РµСЂРµР· calc_ind_adx_array';
+'Скаляр ADX/+DI/−DI на баре — через calc_ind_adx_array';
 COMMENT ON FUNCTION calc_ind_linreg(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
-'РЎРєР°Р»СЏСЂ LinReg-РєР°РЅР°Р»Р° РЅР° Р±Р°СЂРµ вЂ” С‡РµСЂРµР· calc_ind_linreg_array';
+'Скаляр LinReg-канала на баре — через calc_ind_linreg_array';
 
--- ========== SQUARE: РєРІР°РґСЂР°С‚РёС‡РЅС‹Р№ РєР°РЅР°Р» (y = b + aВ·x + cВ·xВІ; mid В± DevВ·Пѓ РѕСЃС‚Р°С‚РєРѕРІ) ==========
--- РўРµ Р¶Рµ СЃРµСЂРёРё, С‡С‚Рѕ Сѓ LINREG (MIDDLE/UPPER/LOWER/SLOPE) + C (РєРІР°РґСЂР°С‚РёС‡РЅС‹Р№ РєРѕСЌС„С„РёС†РёРµРЅС‚).
--- SLOPE = РјРіРЅРѕРІРµРЅРЅС‹Р№ РЅР°РєР»РѕРЅ РІ РєРѕРЅС†Рµ РѕРєРЅР°: a + 2В·cВ·(periodв€’1).
+-- ========== SQUARE: квадратичный канал (y = b + a·x + c·x²; mid ± Dev·σ остатков) ==========
+-- Те же серии, что у LINREG (MIDDLE/UPPER/LOWER/SLOPE) + C (квадратичный коэффициент).
+-- SLOPE = мгновенный наклон в конце окна: a + 2·c·(period−1).
 CREATE OR REPLACE FUNCTION calc_ind_square_array(
     p_period INTEGER,
     p_std_dev NUMERIC,
@@ -5162,7 +5162,7 @@ BEGIN
         RETURN;
     END IF;
     IF v_ser = 'VALUE' THEN v_ser := 'MIDDLE'; END IF;
-    -- РњРёРЅРёРјСѓРј 3 С‚РѕС‡РєРё РґР»СЏ С‚СЂС‘С… РєРѕСЌС„С„РёС†РёРµРЅС‚РѕРІ (b, a, c).
+    -- Минимум 3 точки для трёх коэффициентов (b, a, c).
     v_period := GREATEST(COALESCE(p_period, 20), 3);
     v_dev := GREATEST(COALESCE(p_std_dev, 2.0), 0.1);
 
@@ -5203,7 +5203,7 @@ BEGIN
             sx2y := sx2y + x * x * y;
         END LOOP;
 
-        -- РќРѕСЂРјР°Р»СЊРЅС‹Рµ СѓСЂР°РІРЅРµРЅРёСЏ: [s0 s1 s2; s1 s2 s3; s2 s3 s4] В· [b;a;c] = [sy;sxy;sx2y]
+        -- Нормальные уравнения: [s0 s1 s2; s1 s2 s3; s2 s3 s4] · [b;a;c] = [sy;sxy;sx2y]
         det := s0 * (s2 * s4 - s3 * s3)
              - s1 * (s1 * s4 - s2 * s3)
              + s2 * (s1 * s3 - s2 * s2);
@@ -5248,7 +5248,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION calc_ind_square_array(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'РљРІР°РґСЂР°С‚РёС‡РЅР°СЏ СЂРµРіСЂРµСЃСЃРёСЏ РїРѕ close (b+aВ·x+cВ·xВІ): MIDDLE/UPPER/LOWER/SLOPE/C (РєР°РЅР°Р» DevВ·Пѓ РѕСЃС‚Р°С‚РєРѕРІ)';
+'Квадратичная регрессия по close (b+a·x+c·x²): MIDDLE/UPPER/LOWER/SLOPE/C (канал Dev·σ остатков)';
 
 CREATE OR REPLACE FUNCTION calc_ind_square(
     p_period INTEGER,
@@ -5277,11 +5277,11 @@ END;
 $$;
 
 COMMENT ON FUNCTION calc_ind_square(INTEGER, NUMERIC, VARCHAR, INTEGER, INTEGER, TIMESTAMP, INTEGER) IS
-'РЎРєР°Р»СЏСЂ SQUARE-РєР°РЅР°Р»Р° РЅР° Р±Р°СЂРµ вЂ” С‡РµСЂРµР· calc_ind_square_array';
+'Скаляр SQUARE-канала на баре — через calc_ind_square_array';
 
 -- =====================================================================
--- РџР°СЂР°РјРµС‚СЂС‹ СЃРµСЂРёРё РёР· @IND(...period=N...) РІ formula СЃРёРіРЅР°Р»Р° (РґРѕ sync)
--- С‚РѕС‚ Р¶Рµ РїР°СЂСЃРµСЂ СЃРёРіРЅР°Р»РѕРІ, С‡С‚Рѕ Сѓ SMA (@SMA(period=20,series=VALUE) вЂ¦)
+-- Параметры серии из @IND(...period=N...) в formula сигнала (до sync)
+-- тот же парсер сигналов, что у SMA (@SMA(period=20,series=VALUE) …)
 -- =====================================================================
 CREATE OR REPLACE FUNCTION parse_signal_param_num(p_params TEXT, p_key TEXT)
 RETURNS NUMERIC
@@ -5369,17 +5369,28 @@ BEGIN
         );
         v_smooth := parse_signal_param_num(v_parsed.params, 'smooth');
 
-        -- #1032: РїР°СЂР°РјРµС‚СЂС‹ РёР· С„РѕСЂРјСѓР»С‹ Р±РѕР»СЊС€Рµ РќР• РїРёС€СѓС‚СЃСЏ РІ РѕР±С‰СѓСЋ СЃРµСЂРёСЋ
-        -- security_indicator_series вЂ” РёРЅР°С‡Рµ РїРѕСЃР»РµРґРЅСЏСЏ Р»РѕРіРёРєР° РјРµРЅСЏР»Р° РїР°СЂР°РјРµС‚СЂС‹
-        -- РёРЅРґРёРєР°С‚РѕСЂР° РґР»СЏ РІСЃРµС…. РљР°Р¶РґР°СЏ Р»РѕРіРёРєР° СЃС‡РёС‚Р°РµС‚ РїРѕ СЃРІРѕРµР№ С„РѕСЂРјСѓР»Рµ.
+        -- #1032: параметры из формулы больше НЕ пишутся в общую серию
+        -- security_indicator_series — иначе последняя логика меняла параметры
+        -- индикатора для всех. Каждая логика считает по своей формуле.
         NULL;
     END LOOP;
 END;
 $$;
 
 COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER) IS
-'РЈСЃС‚Р°СЂРµР»Р° (#1032): РЅРёС‡РµРіРѕ РЅРµ РґРµР»Р°РµС‚ вЂ” РїР°СЂР°РјРµС‚СЂС‹ РёРЅРґРёРєР°С‚РѕСЂР° Р±РµСЂСѓС‚СЃСЏ РёР· С„РѕСЂРјСѓР»С‹ СЃРёРіРЅР°Р»Р° СЃРІРѕРµР№ Р»РѕРіРёРєРё, РѕР±С‰Р°СЏ СЃРµСЂРёСЏ РЅРµ РїРµСЂРµР·Р°РїРёСЃС‹РІР°РµС‚СЃСЏ.';
+'Устарела (#1032): ничего не делает — параметры индикатора берутся из формулы сигнала своей логики, общая серия не перезаписывается.';
 -- @end calc_ind_extra
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7387,6 +7398,13 @@ BEGIN
 END;
 $$;
 
+-- @stub logic_is_cash_fund_security
+CREATE OR REPLACE FUNCTION logic_is_cash_fund_security(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT FALSE;
+$$;
+
 -- @begin logic_stop_runner
 -- ============================================
 -- Stop-loss runner: security / security_resume / security_inversion / portfolio / portfolio_resume
@@ -7413,10 +7431,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_resolve_stop_timeframe_id(INTEGER) IS
-'timeframe_id РёР· logic_params.stop_loss_timeframe (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ M5)';
+'timeframe_id из logic_params.stop_loss_timeframe (по умолчанию M5)';
 
--- РћРґРЅР° СЃРёРіРЅР°С‚СѓСЂР° СЃ default'Р°РјРё. РЎС‚Р°СЂС‹Рµ РїРµСЂРµРіСЂСѓР·РєРё (Р±РµР· opt_lane) РґР°СЋС‚
--- В«С„СѓРЅРєС†РёСЏ вЂ¦ РЅРµ СѓРЅРёРєР°Р»СЊРЅР°В» РїСЂРё РІС‹Р·РѕРІРµ СЃ 2вЂ“3 Р°СЂРіСѓРјРµРЅС‚Р°РјРё.
+-- Одна сигнатура с default'ами. Старые перегрузки (без opt_lane) дают
+-- «функция … не уникальна» при вызове с 2–3 аргументами.
 DROP FUNCTION IF EXISTS logic_long_position_qty(INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS logic_long_position_qty(INTEGER, INTEGER, BOOLEAN);
 DROP FUNCTION IF EXISTS logic_long_position_qty(INTEGER, INTEGER, BOOLEAN, BOOLEAN);
@@ -7740,7 +7758,7 @@ BEGIN
 END;
 $$;
 
--- РќРѕСЂРјР°Р»РёР·Р°С†РёСЏ СЃС‚РѕСЂРѕРЅС‹: long|short (NULL/РїСѓСЃС‚Рѕ в†’ NULL).
+-- Нормализация стороны: long|short (NULL/пусто → NULL).
 CREATE OR REPLACE FUNCTION logic_normalize_position_side(p_position_side TEXT)
 RETURNS TEXT
 LANGUAGE sql IMMUTABLE AS $$
@@ -7751,7 +7769,7 @@ LANGUAGE sql IMMUTABLE AS $$
     END;
 $$;
 
--- РџСЂРѕСЃР°РґРєР° % С‚РѕР»СЊРєРѕ РїРѕ РѕРґРЅРѕР№ СЃС‚РѕСЂРѕРЅРµ (Long РёР»Рё Short) РЅР° Р±СѓРјР°РіРµ.
+-- Просадка % только по одной стороне (Long или Short) на бумаге.
 CREATE OR REPLACE FUNCTION logic_security_side_drawdown_pct(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -7822,7 +7840,7 @@ BEGIN
 END;
 $$;
 
--- Track (realized Close + unrealized Open) С‚РѕР»СЊРєРѕ РїРѕ РѕРґРЅРѕР№ СЃС‚РѕСЂРѕРЅРµ.
+-- Track (realized Close + unrealized Open) только по одной стороне.
 CREATE OR REPLACE FUNCTION logic_security_side_track_value(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -7908,9 +7926,9 @@ DECLARE
     v_short_qty NUMERIC;
     v_total NUMERIC := 0;
 BEGIN
-    -- РљР°Рє logic_backtest_portfolio_equity: cash + longГ—price в€’ shortГ—price.
-    -- Р‘РµР· short MTM РїСЂРё РѕС‚РєСЂС‹С‚С‹С… С€РѕСЂС‚Р°С… cash СЂР°Р·РґСѓС‚ (РІС‹СЂСѓС‡РєР°), Р° РїРѕСЃР»Рµ mass-close
-    -- track_beforeв€’track_after РІР·Р»РµС‚Р°РµС‚ РґРѕ РЅРѕС‚РёРѕРЅР°Р»Р° (~В«С†РµР»СЊ 26801В»).
+    -- Как logic_backtest_portfolio_equity: cash + long×price − short×price.
+    -- Без short MTM при открытых шортах cash раздут (выручка), а после mass-close
+    -- track_before−track_after взлетает до нотионала (~«цель 26801»).
     v_cash := logic_ensure_balance(p_logic_id);
     v_total := COALESCE(v_cash, 0);
 
@@ -7956,7 +7974,7 @@ BEGIN
 END;
 $$;
 
--- РџРёРє equity (РѕР±РЅРѕРІР»СЏРµС‚СЃСЏ, РїРѕРєР° РЅРµС‚ portfolio_resume pause).
+-- Пик equity (обновляется, пока нет portfolio_resume pause).
 CREATE OR REPLACE FUNCTION logic_update_portfolio_equity_peak(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -7997,7 +8015,7 @@ BEGIN
 END;
 $$;
 
--- РџСЂРѕСЃР°РґРєР° % РѕС‚ РїРёРєР° equity (РґР»СЏ portfolio_resume).
+-- Просадка % от пика equity (для portfolio_resume).
 CREATE OR REPLACE FUNCTION logic_portfolio_peak_drawdown_pct(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -8020,8 +8038,8 @@ BEGIN
 END;
 $$;
 
--- РўРµРЅРµРІРѕР№ track РїРѕСЂС‚С„РµР»СЏ: sum(shadow financial_result) РїРѕСЃР»Рµ РїР°СѓР·С‹
--- (СЃ portfolio_stop_resume_at; Р±РµР· РґР°С‚С‹ вЂ” РІСЃРµ shadow, РєР°Рє СЂР°РЅСЊС€Рµ).
+-- Теневой track портфеля: sum(shadow financial_result) после паузы
+-- (с portfolio_stop_resume_at; без даты — все shadow, как раньше).
 CREATE OR REPLACE FUNCTION logic_portfolio_shadow_pnl(p_logic_id INTEGER)
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
@@ -8089,7 +8107,7 @@ DECLARE
     v_direction TEXT;
     v_fill_price NUMERIC;
 BEGIN
-    -- Р”РµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ РѕСЃС‚Р°С‘С‚СЃСЏ РєСѓРїР»РµРЅРЅС‹Рј: РїРѕСЂС‚С„РµР»СЊРЅС‹Р№/Р±СѓРјР°Р¶РЅС‹Р№ SL РЅРµ РїСЂРѕРґР°С‘С‚ TMON/LQDT/SBMM.
+    -- Денежный фонд остаётся купленным: портфельный/бумажный SL не продаёт TMON/LQDT/SBMM.
     IF logic_is_cash_fund_security(p_security_id) THEN
         RETURN 0;
     END IF;
@@ -8154,7 +8172,7 @@ BEGIN
 
                     IF v_figi IS NULL THEN
                         v_status := 'rejected';
-                        v_note := 'РќРµС‚ tbank_figi РґР»СЏ Р±СѓРјР°РіРё';
+                        v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
                             v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
@@ -8189,7 +8207,7 @@ BEGIN
                 EXCEPTION
                     WHEN undefined_function THEN
                         v_status := 'rejected';
-                        v_note := 'tbank_post_order РЅРµРґРѕСЃС‚СѓРїРµРЅ';
+                        v_note := 'tbank_post_order недоступен';
                     WHEN OTHERS THEN
                         v_status := 'rejected';
                         v_note := SQLERRM;
@@ -8249,7 +8267,7 @@ BEGIN
 
                     IF v_figi IS NULL THEN
                         v_status := 'rejected';
-                        v_note := 'РќРµС‚ tbank_figi РґР»СЏ Р±СѓРјР°РіРё';
+                        v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
                             v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
@@ -8284,7 +8302,7 @@ BEGIN
                 EXCEPTION
                     WHEN undefined_function THEN
                         v_status := 'rejected';
-                        v_note := 'tbank_post_order РЅРµРґРѕСЃС‚СѓРїРµРЅ';
+                        v_note := 'tbank_post_order недоступен';
                     WHEN OTHERS THEN
                         v_status := 'rejected';
                         v_note := SQLERRM;
@@ -8322,12 +8340,12 @@ BEGIN
         END IF;
     END IF;
 
-    -- РўРµСЂРјРёРЅР°Р»: СЂРµР°Р»СЊРЅРѕРµ Р·Р°РєСЂС‹С‚РёРµ РїРѕР·РёС†РёРё Р»РѕРіРёРєРѕР№ РїРѕ Р±СѓРјР°РіРµ = СЃРёРіРЅР°Р» В«Р·Р°РєСЂС‹С‚РёРµВ».
-    -- РўРµСЂРјРёРЅР°Р» СЃ С‡РµРєР±РѕРєСЃРѕРј В«Р—Р°РєСЂС‹РІР°С‚СЊ РїРѕ СЃРёРіРЅР°Р»СѓВ» Р·Р°РєСЂРѕРµС‚ СЃРІРѕСЋ РїРѕР·РёС†РёСЋ СЌС‚РѕР№ Р±СѓРјР°РіРё
-    -- (РІ С‚.С‡. РїСЂРё СЃСЂР°Р±Р°С‚С‹РІР°РЅРёРё СЃС‚РѕРї-Р»РѕСЃСЃР° Р»СЋР±РѕРіРѕ РІРёРґР°) РґР»СЏ Р»РѕРіРёРє СЃ
+    -- Терминал: реальное закрытие позиции логикой по бумаге = сигнал «закрытие».
+    -- Терминал с чекбоксом «Закрывать по сигналу» закроет свою позицию этой бумаги
+    -- (в т.ч. при срабатывании стоп-лосса любого вида) для логик с
     -- use_as_terminal_signal.
-    -- #982: С„Р»Р°Рі РїРµСЂРµС‡РёС‚С‹РІР°РµРј Р—Р”Р•РЎР¬ (Р° РЅРµ С‚РѕР»СЊРєРѕ РЅР° РІС…РѕРґРµ С„СѓРЅРєС†РёРё) вЂ” РµСЃР»Рё РіР°Р»РѕС‡РєСѓ
-    -- РІС‹РєР»СЋС‡РёР»Рё РІРѕ РІСЂРµРјСЏ РґР»РёРЅРЅРѕРіРѕ РїСЂРѕРіРѕРЅР°, СЃРёРіРЅР°Р» Рѕ Р·Р°РєСЂС‹С‚РёРё РЅРµ СЃРѕР·РґР°С‘Рј.
+    -- #982: флаг перечитываем ЗДЕСЬ (а не только на входе функции) — если галочку
+    -- выключили во время длинного прогона, сигнал о закрытии не создаём.
     IF v_closed > 0 AND NOT p_is_shadow AND COALESCE(
         (SELECT l.use_as_terminal_signal FROM logics l WHERE l.id = p_logic_id), FALSE
     ) THEN
@@ -8361,7 +8379,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- РђРІС‚Рѕ РѕРїС‚РёРјРёР·Р°С†РёСЏ: РїРѕ С„Р°РєС‚Сѓ Р·Р°РєСЂС‹С‚РёСЏ РїРѕРґСЃС‚СЂР°РёРІР°РµРј РїРµСЂРёРѕРґ СЃРёРіРЅР°Р»РѕРІ РІС…РѕРґР°.
+    -- Авто оптимизация: по факту закрытия подстраиваем период сигналов входа.
     IF v_closed > 0 AND NOT p_is_shadow THEN
         IF v_closed_long > 0 THEN
             PERFORM logic_auto_optimize_on_close(
@@ -8379,7 +8397,7 @@ BEGIN
 END;
 $$;
 
--- Р¦РµР»СЊ resume РґР»СЏ security_resume: РїСЂРё resume_sl_no_reduce РЅРµ РЅРёР¶Рµ HWM (С‚РѕР»СЊРєРѕ РІРІРµСЂС…).
+-- Цель resume для security_resume: при resume_sl_no_reduce не ниже HWM (только вверх).
 CREATE OR REPLACE FUNCTION logic_resume_sl_peak_target(
     p_logic_id INTEGER,
     p_track_before NUMERIC,
@@ -8402,7 +8420,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_resume_sl_peak_target(INTEGER, NUMERIC, NUMERIC) IS
-'security_resume: track_before РёР»Рё GREATEST(hwm, track_before) РµСЃР»Рё resume_sl_no_reduce.';
+'security_resume: track_before или GREATEST(hwm, track_before) если resume_sl_no_reduce.';
 
 CREATE OR REPLACE FUNCTION logic_check_security_resume(
     p_logic_id INTEGER,
@@ -8425,7 +8443,7 @@ BEGIN
         ls.stop_resume_baseline_long,
         ls.stop_resume_equity_short,
         ls.stop_resume_baseline_short,
-        -- legacy paper-level (РґРѕ v48)
+        -- legacy paper-level (до v48)
         COALESCE(ls.real_trading_paused, FALSE) AS paused_paper,
         ls.stop_resume_equity,
         ls.stop_resume_baseline
@@ -8441,7 +8459,7 @@ BEGIN
     v_paused_long := v_ls.paused_long;
     v_paused_short := v_ls.paused_short;
 
-    -- Legacy: paper pause without side flags в†’ treat as both sides
+    -- Legacy: paper pause without side flags → treat as both sides
     IF v_ls.paused_paper AND NOT v_paused_long AND NOT v_paused_short THEN
         v_paused_long := TRUE;
         v_paused_short := TRUE;
@@ -8488,7 +8506,7 @@ BEGIN
                 p_logic_id,
                 'stop.resume',
                 format(
-                    'Р’РѕР·РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР°Р»СЊРЅРѕР№ Long sec=%s (baseline=%s shadow=%s target=%s)',
+                    'Возобновление реальной Long sec=%s (baseline=%s shadow=%s target=%s)',
                     p_security_id,
                     v_ls.stop_resume_baseline_long,
                     v_shadow_track,
@@ -8542,7 +8560,7 @@ BEGIN
                 p_logic_id,
                 'stop.resume',
                 format(
-                    'Р’РѕР·РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР°Р»СЊРЅРѕР№ Short sec=%s (baseline=%s shadow=%s target=%s)',
+                    'Возобновление реальной Short sec=%s (baseline=%s shadow=%s target=%s)',
                     p_security_id,
                     v_ls.stop_resume_baseline_short,
                     v_shadow_track,
@@ -8612,7 +8630,7 @@ BEGIN
             p_logic_id,
             'stop.portfolio_resume',
             format(
-                'Р’РѕР·РѕР±РЅРѕРІР»РµРЅРёРµ СЂРµР°Р»СЊРЅРѕР№ С‚РѕСЂРіРѕРІР»Рё РїРѕСЂС‚С„РµР»СЏ (baseline=%s shadow=%s track=%s target=%s)',
+                'Возобновление реальной торговли портфеля (baseline=%s shadow=%s track=%s target=%s)',
                 v_logic.baseline, v_shadow_pnl, v_track, v_logic.target
             ),
             jsonb_build_object(
@@ -8633,10 +8651,10 @@ $$;
 
 -- ============================================
 -- Linear Take Profit on whole portfolio with renewal (portfolio_ltp_renew)
--- РџРѕСЂРѕРі РІР·РІРµРґРµРЅРёСЏ: track% = (equityв€’initial)/initial >= base_annual_rateГ—РіРѕРґС‹ + TP%
--- РџРёРє (РІСЃРїР»РµСЃРє) С‚СЂРµР№Р»РёС‚СЃСЏ РІРІРµСЂС…; РїСЂРѕРґР°Р¶Р° С‚РѕР»СЊРєРѕ РµСЃР»Рё РѕС‚РєР°С‚ РѕС‚ РїРёРєР° >= TP% (РЅРµ Р»СЋР±РѕР№ С‚РёРє РІРЅРёР·)
--- РџРѕСЃР»Рµ РїСЂРѕРґР°Р¶Рё вЂ” latch: СЃРЅРѕРІР° РІР·РІРѕРґРёС‚СЊ С‚РѕР»СЊРєРѕ РєРѕРіРґР° track% СѓС€С‘Р» РЅРёР¶Рµ arm%
--- Р—Р°С‚РµРј portfolio pause/shadow в†’ renew; СЃР±СЂРѕСЃ armed РїСЂРё track% < base%
+-- Порог взведения: track% = (equity−initial)/initial >= base_annual_rate×годы + TP%
+-- Пик (всплеск) трейлится вверх; продажа только если откат от пика >= TP% (не любой тик вниз)
+-- После продажи — latch: снова взводить только когда track% ушёл ниже arm%
+-- Затем portfolio pause/shadow → renew; сброс armed при track% < base%
 -- ============================================
 
 CREATE OR REPLACE FUNCTION logic_linear_elapsed_year_fraction(
@@ -8671,7 +8689,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_linear_elapsed_year_fraction(INTEGER, TIMESTAMP, BOOLEAN, BIGINT) IS
-'Р”РѕР»СЏ РіРѕРґР° СЃ РїРµСЂРІРѕР№ Р±РѕРµРІРѕР№/С‚РµСЃС‚РѕРІРѕР№ СЃРґРµР»РєРё Р»РѕРіРёРєРё (РґР»СЏ Р»РёРЅРµР№РЅРѕРіРѕ СЂРѕСЃС‚Р° initial_balance).';
+'Доля года с первой боевой/тестовой сделки логики (для линейного роста initial_balance).';
 
 CREATE OR REPLACE FUNCTION logic_linear_base_pct(
     p_logic_id INTEGER,
@@ -8695,7 +8713,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_linear_base_pct(INTEGER, TIMESTAMP, BOOLEAN, BIGINT) IS
-'Р›РёРЅРµР№РЅС‹Р№ % СЂРѕСЃС‚Р° initial: base_annual_rate_pct Г— (РґРЅРё СЃРґРµР»РѕРє / 365.25).';
+'Линейный % роста initial: base_annual_rate_pct × (дни сделок / 365.25).';
 
 CREATE OR REPLACE FUNCTION logic_portfolio_track_pct_of_initial(
     p_logic_id INTEGER,
@@ -8717,7 +8735,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_portfolio_track_pct_of_initial(INTEGER, INTEGER) IS
-'РџСЂРёСЂРѕСЃС‚ equity РїРѕСЂС‚С„РµР»СЏ РІ % РѕС‚ initial_balance (Р±РѕР№).';
+'Прирост equity портфеля в % от initial_balance (бой).';
 
 CREATE OR REPLACE FUNCTION logic_portfolio_has_open_positions(
     p_logic_id INTEGER,
@@ -8744,7 +8762,7 @@ BEGIN
 END;
 $$;
 
--- Р‘РѕР№: Р»РёРЅРµР№РЅС‹Р№ TP РїРѕ РІСЃРµРјСѓ РїРѕСЂС‚С„РµР»СЋ
+-- Бой: линейный TP по всему портфелю
 CREATE OR REPLACE FUNCTION logic_process_linear_tp_portfolio(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER,
@@ -8785,7 +8803,7 @@ BEGIN
         RETURN 0;
     END IF;
 
-    -- РџР°СѓР·Р° РїРѕСЃР»Рµ РїСЂРѕРґР°Р¶Рё вЂ” РІРѕР·РѕР±РЅРѕРІР»РµРЅРёРµ С‡РµСЂРµР· logic_check_portfolio_resume
+    -- Пауза после продажи — возобновление через logic_check_portfolio_resume
     IF v_logic.paused THEN
         RETURN 0;
     END IF;
@@ -8800,7 +8818,7 @@ BEGIN
     v_arm_pct := v_base_pct + p_tp_extra_pct;
     v_has_pos := logic_portfolio_has_open_positions(p_logic_id, FALSE);
 
-    -- РЎРЅСЏС‚СЊ latch РїРѕСЃР»Рµ РѕС‚РєР°С‚Р° РЅРёР¶Рµ Р»РёРЅРёРё РІР·РІРµРґРµРЅРёСЏ (Р¶РґС‘Рј СЃР»РµРґСѓСЋС‰РёР№ РІСЃРїР»РµСЃРє)
+    -- Снять latch после отката ниже линии взведения (ждём следующий всплеск)
     IF v_logic.latched AND v_track_pct < v_arm_pct THEN
         UPDATE logics
         SET portfolio_linear_tp_latched = FALSE
@@ -8809,7 +8827,7 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id, 'take_profit.linear.unlatch',
             format(
-                'Р›РёРЅРµР№РЅС‹Р№ TP: latch СЃРЅСЏС‚ (track%%=%s < arm%%=%s) вЂ” РјРѕР¶РЅРѕ СЃРЅРѕРІР° РІР·РІРѕРґРёС‚СЊ РЅР° РІСЃРїР»РµСЃРєРµ',
+                'Линейный TP: latch снят (track%%=%s < arm%%=%s) — можно снова взводить на всплеске',
                 round(v_track_pct, 4), round(v_arm_pct, 4)
             ),
             jsonb_build_object(
@@ -8822,7 +8840,7 @@ BEGIN
         v_actions := v_actions + 1;
     END IF;
 
-    -- РќРёР¶Рµ Р»РёРЅРµР№РЅРѕР№ Р±Р°Р·С‹ в†’ СЃРЅСЏС‚СЊ РІР·РІРµРґРµРЅРёРµ (+ latch)
+    -- Ниже линейной базы → снять взведение (+ latch)
     IF v_track_pct < v_base_pct THEN
         IF v_logic.armed OR v_logic.latched THEN
             UPDATE logics
@@ -8834,7 +8852,7 @@ BEGIN
             PERFORM logic_trade_log(
                 p_logic_id, 'take_profit.linear.disarm',
                 format(
-                    'Р›РёРЅРµР№РЅС‹Р№ TP РїРѕСЂС‚С„РµР»СЏ СЃРЅСЏС‚: track%%=%s < base%%=%s',
+                    'Линейный TP портфеля снят: track%%=%s < base%%=%s',
                     round(v_track_pct, 4), round(v_base_pct, 4)
                 ),
                 jsonb_build_object(
@@ -8850,7 +8868,7 @@ BEGIN
         RETURN v_actions;
     END IF;
 
-    -- Р’Р·РІРµРґРµРЅРёРµ РЅР° РІСЃРїР»РµСЃРєРµ (РЅРµ СЃСЂР°Р·Сѓ РїРѕСЃР»Рµ РїСЂРµРґС‹РґСѓС‰РµР№ РїСЂРѕРґР°Р¶Рё вЂ” РЅСѓР¶РµРЅ unlatch)
+    -- Взведение на всплеске (не сразу после предыдущей продажи — нужен unlatch)
     IF NOT v_logic.armed
        AND NOT v_logic.latched
        AND v_track_pct >= v_arm_pct
@@ -8864,7 +8882,7 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id, 'take_profit.linear.arm',
             format(
-                'Р›РёРЅРµР№РЅС‹Р№ TP РїРѕСЂС‚С„РµР»СЏ РІР·РІРµРґС‘РЅ (РІСЃРїР»РµСЃРє): track%%=%s >= arm%%=%s, equity=%s',
+                'Линейный TP портфеля взведён (всплеск): track%%=%s >= arm%%=%s, equity=%s',
                 round(v_track_pct, 4), round(v_arm_pct, 4), round(v_equity, 2)
             ),
             jsonb_build_object(
@@ -8882,7 +8900,7 @@ BEGIN
         RETURN v_actions;
     END IF;
 
-    -- Р’Р·РІРµРґС‘РЅ: С„РёРєСЃРёСЂСѓРµРј РІСЃРїР»РµСЃРє вЂ” РїСЂРѕРґР°С‘Рј С‚РѕР»СЊРєРѕ РїСЂРё РѕС‚РєР°С‚Рµ РѕС‚ РїРёРєР° >= TP%
+    -- Взведён: фиксируем всплеск — продаём только при откате от пика >= TP%
     v_fade_pct := 0;
     IF v_logic.peak_equity IS NOT NULL AND v_logic.peak_equity > 0 AND v_equity < v_logic.peak_equity THEN
         v_fade_pct := (v_logic.peak_equity - v_equity) / v_logic.peak_equity * 100.0;
@@ -8897,7 +8915,7 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id, 'take_profit.linear.trigger',
             format(
-                'Р›РёРЅРµР№РЅС‹Р№ TP РїРѕСЂС‚С„РµР»СЏ: РѕС‚РєР°С‚ РѕС‚ РїРёРєР° %s%% >= %s%% (equity %s, peak %s), track%%=%s',
+                'Линейный TP портфеля: откат от пика %s%% >= %s%% (equity %s, peak %s), track%%=%s',
                 round(v_fade_pct, 4), round(p_tp_extra_pct, 4),
                 round(v_equity, 2), round(v_logic.peak_equity, 2), round(v_track_pct, 4)
             ),
@@ -8941,7 +8959,7 @@ BEGIN
         RETURN v_actions + 1;
     END IF;
 
-    -- РќРѕРІС‹Р№ РІСЃРїР»РµСЃРє вЂ” РїРѕРґС‚СЏРЅСѓС‚СЊ РїРёРє
+    -- Новый всплеск — подтянуть пик
     IF v_equity > COALESCE(v_logic.peak_equity, 0) THEN
         UPDATE logics
         SET portfolio_linear_tp_peak_equity = v_equity
@@ -8953,9 +8971,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_process_linear_tp_portfolio(INTEGER, INTEGER, NUMERIC, TIMESTAMP) IS
-'Р‘РѕР№: Р»РёРЅРµР№РЅС‹Р№ TP РїРѕСЂС‚С„РµР»СЏ вЂ” РІР·РІРµРґРµРЅРёРµ РЅР° РІСЃРїР»РµСЃРєРµ; РїСЂРѕРґР°Р¶Р° РїСЂРё РѕС‚РєР°С‚Рµ РѕС‚ РїРёРєР° >= TP%; latch РїСЂРѕС‚РёРІ С‡РѕРїР°; renew РєР°Рє portfolio_resume';
+'Бой: линейный TP портфеля — взведение на всплеске; продажа при откате от пика >= TP%; latch против чопа; renew как portfolio_resume';
 
--- РЎРѕРІРјРµСЃС‚РёРјРѕСЃС‚СЊ: СЃС‚Р°СЂС‹Р№ per-paper РѕР±СЂР°Р±РѕС‚С‡РёРє Р±РѕР»СЊС€Рµ РЅРµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ
+-- Совместимость: старый per-paper обработчик больше не используется
 CREATE OR REPLACE FUNCTION logic_process_linear_tp_security(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -8972,13 +8990,13 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_process_linear_tp_security(INTEGER, INTEGER, INTEGER, NUMERIC, TIMESTAMP, NUMERIC) IS
-'Deprecated: Р»РёРЅРµР№РЅС‹Р№ TP РїРµСЂРµРЅРµСЃС‘РЅ РЅР° portfolio_ltp_renew (logic_process_linear_tp_portfolio).';
+'Deprecated: линейный TP перенесён на portfolio_ltp_renew (logic_process_linear_tp_portfolio).';
 
 -- ============================================
--- security_inversion state machine (paper Г— side)
--- Same pause/shadow/resume as security_resume, but on shadowв†’zero
+-- security_inversion state machine (paper × side)
+-- Same pause/shadow/resume as security_resume, but on shadow→zero
 -- toggles real_trading_inverted (XOR with logic checkbox).
--- When inverted: DD/close use opposite position side (long signals в†’ shorts).
+-- When inverted: DD/close use opposite position side (long signals → shorts).
 -- Shadow recovery uses base logic (ignore paper inverted) in trade runner.
 -- Growing never arms inversion by itself. No inversion_value.
 -- ============================================
@@ -9073,7 +9091,7 @@ DECLARE
     v_was_inverted BOOLEAN;
     v_now_inverted BOOLEAN;
 BEGIN
-    -- Recovery only (like logic_check_security_resume). New SL в†’ process_logic_stops.
+    -- Recovery only (like logic_check_security_resume). New SL → process_logic_stops.
     SELECT
         COALESCE(ls.real_trading_inverted, FALSE) AS inverted,
         COALESCE(ls.real_trading_paused_long, FALSE) AS paused_long,
@@ -9144,7 +9162,7 @@ BEGIN
             PERFORM logic_trade_log(
                 p_logic_id, 'stop.inversion_toggle',
                 format(
-                    'SL inversion sec=%s long: shadowв†’РЅРѕР»СЊ в†’ inverted %sв†’%s',
+                    'SL inversion sec=%s long: shadow→ноль → inverted %s→%s',
                     p_security_id, v_was_inverted, v_now_inverted
                 ),
                 jsonb_build_object(
@@ -9197,7 +9215,7 @@ BEGIN
             PERFORM logic_trade_log(
                 p_logic_id, 'stop.inversion_toggle',
                 format(
-                    'SL inversion sec=%s short: shadowв†’РЅРѕР»СЊ в†’ inverted %sв†’%s',
+                    'SL inversion sec=%s short: shadow→ноль → inverted %s→%s',
                     p_security_id, v_was_inverted, v_now_inverted
                 ),
                 jsonb_build_object(
@@ -9219,7 +9237,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_check_security_inversion(INTEGER, INTEGER, INTEGER) IS
-'security_inversion: per side shadowв†’peak/zero в†’ unpause that side + toggle real_trading_inverted.';
+'security_inversion: per side shadow→peak/zero → unpause that side + toggle real_trading_inverted.';
 
 CREATE OR REPLACE FUNCTION process_logic_stops(p_logic_id INTEGER)
 RETURNS INTEGER
@@ -9310,8 +9328,8 @@ BEGIN
     ORDER BY ls.display_order, ls.id
     LIMIT 1;
 
-    -- РќРµ РіСЂСѓР·РёРј РІСЃРµ 34 Р±СѓРјР°РіРё С‡РµСЂРµР· HTTP РЅР° РєР°Р¶РґРѕРј Р±Р°СЂРµ: СЌС‚Рѕ Р±Р»РѕРєРёСЂСѓРµС‚ РїСѓР» Рё UI
-    -- (СЂР°СЃРєСЂС‹С‚РёРµ Р±СѓРјР°РіРё / РіСЂР°С„РёРє). РўРѕР»СЊРєРѕ РїРѕР·РёС†РёРё / pause + skip РµСЃР»Рё СЃРІРµС‡Р° СѓР¶Рµ РµСЃС‚СЊ.
+    -- Не грузим все 34 бумаги через HTTP на каждом баре: это блокирует пул и UI
+    -- (раскрытие бумаги / график). Только позиции / pause + skip если свеча уже есть.
     SELECT EXISTS (
         SELECT 1
         FROM logic_backtest_runs r
@@ -9373,11 +9391,11 @@ BEGIN
         v_actions := v_actions + 1;
     END IF;
 
-    -- SL РјРѕР¶РµС‚ РѕС‚СЃСѓС‚СЃС‚РІРѕРІР°С‚СЊ вЂ” Р»РёРЅРµР№РЅС‹Р№ TP РІСЃС‘ СЂР°РІРЅРѕ РѕР±СЂР°Р±Р°С‚С‹РІР°РµРј РЅРёР¶Рµ
+    -- SL может отсутствовать — линейный TP всё равно обрабатываем ниже
     IF v_stop.id IS NOT NULL AND v_stop.value_unit <> 'percent' THEN
         PERFORM logic_trade_log(
             p_logic_id, 'stop.skip',
-            format('РЎС‚РѕРї-Р»РѕСЃСЃ: РµРґРёРЅРёС†Р° %s РїРѕРєР° РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ (С‚РѕР»СЊРєРѕ percent)', v_stop.value_unit),
+            format('Стоп-лосс: единица %s пока не поддерживается (только percent)', v_stop.value_unit),
             NULL, NULL, v_tf_id
         );
     ELSIF v_stop.id IS NOT NULL AND v_stop.scope_type = 'portfolio' THEN
@@ -9385,7 +9403,7 @@ BEGIN
         IF v_port_dd >= v_stop.value THEN
             PERFORM logic_trade_log(
                 p_logic_id, 'stop.trigger',
-                format('РџРѕСЂС‚С„РµР»СЊРЅС‹Р№ SL: РїСЂРѕСЃР°РґРєР° %s%% >= %s%%', round(v_port_dd, 4), v_stop.value),
+                format('Портфельный SL: просадка %s%% >= %s%%', round(v_port_dd, 4), v_stop.value),
                 jsonb_build_object('drawdown_pct', v_port_dd, 'threshold', v_stop.value),
                 NULL, v_tf_id
             );
@@ -9405,7 +9423,7 @@ BEGIN
             END LOOP;
         END IF;
     ELSIF v_stop.id IS NOT NULL AND v_stop.scope_type = 'portfolio_resume' THEN
-        -- РЈР¶Рµ РІ РїР°СѓР·Рµ вЂ” С‚РѕР»СЊРєРѕ РїСЂРѕРІРµСЂРєР° РІРѕР·РѕР±РЅРѕРІР»РµРЅРёСЏ (РІС‹С€Рµ); РЅРµ С‚СЂРёРіРіРµСЂРёРј РїРѕРІС‚РѕСЂРЅРѕ.
+        -- Уже в паузе — только проверка возобновления (выше); не триггерим повторно.
         IF EXISTS (
             SELECT 1 FROM logics l
             WHERE l.id = p_logic_id AND COALESCE(l.portfolio_trading_paused, FALSE)
@@ -9418,7 +9436,7 @@ BEGIN
                 PERFORM logic_trade_log(
                     p_logic_id, 'stop.trigger',
                     format(
-                        'РџРѕСЂС‚С„РµР»СЊРЅС‹Р№ SL СЃ РІРѕР·РѕР±РЅРѕРІР»РµРЅРёРµРј: РїСЂРѕСЃР°РґРєР° РѕС‚ РїРёРєР° %s%% >= %s%%, equity=%s',
+                        'Портфельный SL с возобновлением: просадка от пика %s%% >= %s%%, equity=%s',
                         round(v_port_dd, 4), v_stop.value, round(COALESCE(v_track_before, 0), 2)
                     ),
                     jsonb_build_object(
@@ -9461,7 +9479,7 @@ BEGIN
               AND NOT logic_is_cash_fund_security(ls.security_id)
         LOOP
             IF v_stop.scope_type = 'security_resume' THEN
-                -- РџСЂРѕСЃР°РґРєР° Рё РїР°СѓР·Р° РїРѕ СЃС‚РѕСЂРѕРЅРµ (long/short) РЅРµР·Р°РІРёСЃРёРјРѕ.
+                -- Просадка и пауза по стороне (long/short) независимо.
                 DECLARE
                     v_side_name TEXT;
                     v_side_paused BOOLEAN;
@@ -9509,7 +9527,7 @@ BEGIN
                         PERFORM logic_trade_log(
                             p_logic_id, 'stop.trigger',
                             format(
-                                'SL СЃ РІРѕР·РѕР±РЅРѕРІР»РµРЅРёРµРј sec=%s side=%s: РїСЂРѕСЃР°РґРєР° %s%% >= %s%%, track=%s target=%s',
+                                'SL с возобновлением sec=%s side=%s: просадка %s%% >= %s%%, track=%s target=%s',
                                 v_sec.security_id, v_side_name,
                                 round(v_drawdown, 4), v_stop.value, v_track_before, v_target
                             ),
@@ -9568,7 +9586,7 @@ BEGIN
             END IF;
 
             IF v_stop.scope_type = 'security_inversion' THEN
-                -- Same as resume (paper Г— side), keep inverted flag; toggle on shadowв†’zero.
+                -- Same as resume (paper × side), keep inverted flag; toggle on shadow→zero.
                 DECLARE
                     v_side_name TEXT;
                     v_side_paused BOOLEAN;
@@ -9625,7 +9643,7 @@ BEGIN
                         PERFORM logic_trade_log(
                             p_logic_id, 'stop.trigger',
                             format(
-                                'SL inversion sec=%s side=%s: РїСЂРѕСЃР°РґРєР° %s%% >= %s%% в†’ shadow',
+                                'SL inversion sec=%s side=%s: просадка %s%% >= %s%% → shadow',
                                 v_sec.security_id, v_side_name,
                                 round(v_drawdown, 4), v_stop.value
                             ),
@@ -9657,7 +9675,7 @@ BEGIN
                             p_logic_id, v_sec.security_id, v_tf_id,
                             v_target, v_track_after,
                             format(
-                                'SL inversion sec=%s side=%s: Р±РѕР№ СЃС‚РѕСЂРѕРЅС‹ РІС‹РєР»., shadow (peak=%s)',
+                                'SL inversion sec=%s side=%s: бой стороны выкл., shadow (peak=%s)',
                                 v_sec.security_id, v_side_name, v_target
                             ),
                             v_side_name
@@ -9691,7 +9709,7 @@ BEGIN
                 PERFORM logic_trade_log(
                     p_logic_id, 'stop.trigger',
                     format(
-                        'SL РїРѕ Р±СѓРјР°РіРµ sec=%s: РїСЂРѕСЃР°РґРєР° %s%% >= %s%%',
+                        'SL по бумаге sec=%s: просадка %s%% >= %s%%',
                         v_sec.security_id, round(v_drawdown, 4), v_stop.value
                     ),
                     jsonb_build_object(
@@ -9709,7 +9727,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- Р›РёРЅРµР№РЅС‹Р№ TP РїРѕ РІСЃРµРјСѓ РїРѕСЂС‚С„РµР»СЋ СЃ РІРѕР·РѕР±РЅРѕРІР»РµРЅРёРµРј
+    -- Линейный TP по всему портфелю с возобновлением
     SELECT * INTO v_tp
     FROM logic_stops ls
     WHERE ls.logic_id = p_logic_id
@@ -9738,7 +9756,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION process_logic_stops(INTEGER) IS
-'РЎС‚РѕРї-Р»РѕСЃСЃС‹ + Р»РёРЅРµР№РЅС‹Р№ TP (portfolio_ltp_renew); TF РёР· stop_loss_timeframe';
+'Стоп-лоссы + линейный TP (portfolio_ltp_renew); TF из stop_loss_timeframe';
 -- @end logic_stop_runner
 CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
 RETURNS INTEGER
@@ -13790,6 +13808,314 @@ COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
 
 DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
 
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
+CREATE OR REPLACE FUNCTION logic_security_lot_size(p_security_id INTEGER)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT GREATEST(1, COALESCE(
+        (SELECT lot_size FROM securities WHERE id = p_security_id),
+        1
+    ));
+$$;
+
+COMMENT ON FUNCTION logic_security_lot_size(INTEGER) IS
+'Лотность бумаги (штук в лоте); минимум 1';
+
+CREATE OR REPLACE FUNCTION logic_security_is_futures(p_security_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM security_prefixes sp
+        WHERE sp.security_id = p_security_id
+          AND sp.instrument_market = 'futures'
+    );
+$$;
+
+COMMENT ON FUNCTION logic_security_is_futures(INTEGER) IS
+'True если у бумаги есть prefix с instrument_market = futures';
+
+DROP FUNCTION IF EXISTS logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER);
+
 CREATE OR REPLACE FUNCTION logic_calc_open_quantity(
     p_balance NUMERIC,
     p_position_size_pct NUMERIC,
@@ -13820,7 +14146,7 @@ BEGIN
         v_amount := LEAST(v_amount, p_max_order_amount);
     END IF;
     v_raw := floor(v_amount / p_price)::INTEGER;
-    -- РћРєСЂСѓРіР»РµРЅРёРµ РІРЅРёР· РґРѕ С†РµР»РѕРіРѕ С‡РёСЃР»Р° Р»РѕС‚РѕРІ
+    -- Округление вниз до целого числа лотов
     v_qty := (v_raw / v_lot) * v_lot;
     IF v_qty >= v_lot THEN
         RETURN v_qty;
@@ -13830,9 +14156,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_calc_open_quantity(NUMERIC, NUMERIC, NUMERIC, INTEGER, NUMERIC) IS
-'Р›РѕС‚: % Р±Р°Р·С‹ / С†РµРЅР° (РѕРїС†. РїРѕС‚РѕР»РѕРє СЃСѓРјРјС‹), РІРЅРёР· РґРѕ lot_size';
+'Лот: % базы / цена (опц. потолок суммы), вниз до lot_size';
 
--- MTM РІС‹Р±СЂР°РЅРЅРѕРіРѕ РґРµРЅРµР¶РЅРѕРіРѕ С„РѕРЅРґР° Р»РѕРіРёРєРё (РґР»СЏ РёСЃРєР»СЋС‡РµРЅРёСЏ РёР· Р±Р°Р·С‹ В«РІРµСЃСЊ РїРѕСЂС‚С„РµР»СЊВ»).
+-- MTM выбранного денежного фонда логики (для исключения из базы «весь портфель»).
 CREATE OR REPLACE FUNCTION logic_selected_cash_fund_mtm(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -13879,12 +14205,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_selected_cash_fund_mtm(INTEGER, INTEGER) IS
-'Р С‹РЅРѕС‡РЅР°СЏ РѕС†РµРЅРєР° РІС‹Р±СЂР°РЅРЅРѕРіРѕ cash_fund_code РІ Р»РѕРіРёРєРµ; 0 РµСЃР»Рё С„РѕРЅРґ РЅРµ РІС‹Р±СЂР°РЅ';
+'Рыночная оценка выбранного cash_fund_code в логике; 0 если фонд не выбран';
 
--- Р‘Р°Р·Р° РґР»СЏ % Р»РѕС‚Р°:
---   free_cash            вЂ” СЃРІРѕР±РѕРґРЅС‹Р№ РєСЌС€
---   portfolio (default)  вЂ” РІРµСЃСЊ РїРѕСЂС‚С„РµР»СЊ Р±РµР· РІС‹Р±СЂР°РЅРЅРѕРіРѕ РґРµРЅРµР¶РЅРѕРіРѕ С„РѕРЅРґР°
---   portfolio_incl_fund  вЂ” РІРµСЃСЊ РїРѕСЂС‚С„РµР»СЊ РІРєР»СЋС‡Р°СЏ РґРµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ
+-- База для % лота:
+--   free_cash            — свободный кэш
+--   portfolio (default)  — весь портфель без выбранного денежного фонда
+--   portfolio_incl_fund  — весь портфель включая денежный фонд
 CREATE OR REPLACE FUNCTION logic_position_sizing_base(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -13947,9 +14273,9 @@ BEGIN
                 END IF;
                 RETURN v_portfolio;
             END IF;
-            -- free_cash: С‚РѕР»СЊРєРѕ РєСЌС€ (totalAmountCurrencies). Р•СЃР»Рё Р±СЂРѕРєРµСЂ РЅРµ РѕС‚РґР°Р»
-            -- cash_amount (РїСЂРѕРїСѓСЃРє РїРѕР»СЏ / С‡Р°СЃС‚РёС‡РЅС‹Р№ РѕС‚РІРµС‚ РїСЂРё Р»РёРјРёС‚Р°С… API) вЂ”
-            -- РќР• РїРѕРґРјРµРЅСЏРµРј Р±Р°Р·Сѓ РІСЃРµРј РїРѕСЂС‚С„РµР»РµРј: СЌС‚Рѕ РїРѕРєСѓРїР°Р»Рѕ СЃРІРµСЂС… РѕСЃС‚Р°С‚РєР° СЃС‡С‘С‚Р°.
+            -- free_cash: только кэш (totalAmountCurrencies). Если брокер не отдал
+            -- cash_amount (пропуск поля / частичный ответ при лимитах API) —
+            -- НЕ подменяем базу всем портфелем: это покупало сверх остатка счёта.
             IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
                 RETURN GREATEST(0, COALESCE((v_bal->>'cash_amount')::NUMERIC, 0));
             END IF;
@@ -13960,7 +14286,7 @@ BEGIN
         END;
     END IF;
 
-    -- Test (fake): СЃРІРѕР±РѕРґРЅС‹Рµ = current; РїРѕСЂС‚С„РµР»СЊ = current + MTM Р±СѓРјР°Рі
+    -- Test (fake): свободные = current; портфель = current + MTM бумаг
     v_cash := COALESCE(logic_ensure_balance(p_logic_id), 0);
     IF v_mode = 'free_cash' THEN
         RETURN GREATEST(0, v_cash);
@@ -13998,10 +14324,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_position_sizing_base(INTEGER, INTEGER) IS
-'Р‘Р°Р·Р° % Р»РѕС‚Р°: free_cash (default)|portfolio (Р±РµР· С„РѕРЅРґР°)|portfolio_incl_fund (СЃ С„РѕРЅРґРѕРј)';
+'База % лота: free_cash (default)|portfolio (без фонда)|portfolio_incl_fund (с фондом)';
 
--- РќРѕРјРёРЅР°Р» РѕС‚РєСЂС‹С‚С‹С… С€РѕСЂС‚РѕРІ РїРѕ РІС…РѕРґРЅРѕР№ С†РµРЅРµ (remaining qty, Р±РµР· shadow/test/opt_lane).
--- РћР±С‰РёР№ С…РµР»РїРµСЂ РґР»СЏ fake-equity Рё Р·Р°С‰РёС‚РЅРѕРіРѕ РЅРµС‚С‚РёРЅРіР° СЂРµР°Р»СЊРЅРѕРіРѕ СЃС‡С‘С‚Р° (#844).
+-- Номинал открытых шортов по входной цене (remaining qty, без shadow/test/opt_lane).
+-- Общий хелпер для fake-equity и защитного неттинга реального счёта (#844).
 CREATE OR REPLACE FUNCTION logic_open_short_entry_notional(
     p_logic_id INTEGER,
     p_is_test BOOLEAN DEFAULT FALSE
@@ -14039,13 +14365,13 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_open_short_entry_notional(INTEGER, BOOLEAN) IS
-'РќРѕРјРёРЅР°Р» РѕС‚РєСЂС‹С‚С‹С… С€РѕСЂС‚РѕРІ Р»РѕРіРёРєРё РїРѕ РІС…РѕРґРЅРѕР№ С†РµРЅРµ (remaining); 0 РµСЃР»Рё РЅРµС‚';
+'Номинал открытых шортов логики по входной цене (remaining); 0 если нет';
 
--- Р§РёСЃС‚Р°СЏ СЃС‚РѕРёРјРѕСЃС‚СЊ СЃС‡С‘С‚Р° РґР»СЏ РїРѕС‚РѕР»РєР° СЂРёСЃРєР° (РїР»РµС‡Рѕ 1):
--- real в†’ amount Р±СЂРѕРєРµСЂР° РњРРќРЈРЎ РЅРѕРјРёРЅР°Р» РѕС‚РєСЂС‹С‚С‹С… С€РѕСЂС‚РѕРІ (#844): T-Bank cash_amount /
--- totalAmountPortfolio РјРѕРіСѓС‚ РЅРµ С‡РёСЃС‚РёС‚СЊ С€РѕСЂС‚-РІС‹СЂСѓС‡РєСѓ Рё Р·Р°С‘Рј в†’ Р±РµР· РІС‹С‡РёС‚Р°РЅРёСЏ РїРѕС‚РѕР»РѕРє
--- СЂР°Р·РґСѓРІР°РµС‚СЃСЏ РІС‹С€Рµ СЃРѕР±СЃС‚РІРµРЅРЅС‹С… СЃСЂРµРґСЃС‚РІ; РІС‹С‡РёС‚Р°РЅРёРµ РєРѕРЅСЃРµСЂРІР°С‚РёРІРЅРѕ Рё С‡РёРЅРёС‚ РѕР±Р° СЃР»СѓС‡Р°СЏ.
--- fake в†’ cash в€’ short_notional + long_mtm.
+-- Чистая стоимость счёта для потолка риска (плечо 1):
+-- real → amount брокера МИНУС номинал открытых шортов (#844): T-Bank cash_amount /
+-- totalAmountPortfolio могут не чистить шорт-выручку и заём → без вычитания потолок
+-- раздувается выше собственных средств; вычитание консервативно и чинит оба случая.
+-- fake → cash − short_notional + long_mtm.
 CREATE OR REPLACE FUNCTION logic_account_net_equity(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -14082,8 +14408,8 @@ BEGIN
             IF v_bal IS NULL OR (v_bal->>'error') IS NOT NULL THEN
                 RETURN 0;
             END IF;
-            -- Р—Р°С‰РёС‚РЅС‹Р№ РЅРµС‚С‚РёРЅРі: РґР°Р¶Рµ РµСЃР»Рё Р±СЂРѕРєРµСЂ РІРµСЂРЅСѓР» В«РіСЂСЏР·РЅС‹Р№В» amount
-            -- (СЃ С€РѕСЂС‚-РІС‹СЂСѓС‡РєРѕР№/Р·Р°С‘РјРѕРј), РІС‹С‡РёС‚Р°РµРј РЅР°С€Рё РѕС‚РєСЂС‹С‚С‹Рµ С€РѕСЂС‚С‹.
+            -- Защитный неттинг: даже если брокер вернул «грязный» amount
+            -- (с шорт-выручкой/заёмом), вычитаем наши открытые шорты.
             RETURN GREATEST(
                 0,
                 COALESCE((v_bal->>'amount')::NUMERIC, 0) - COALESCE(v_short_notional, 0)
@@ -14094,7 +14420,7 @@ BEGIN
         END;
     END IF;
 
-    -- Fake: current_balance includes short proceeds вЂ” subtract short entry notional.
+    -- Fake: current_balance includes short proceeds — subtract short entry notional.
     v_cash := COALESCE(logic_ensure_balance(p_logic_id), 0);
 
     FOR v_sec IN
@@ -14120,11 +14446,11 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_account_net_equity(INTEGER, INTEGER) IS
-'Equity РґР»СЏ РїРѕС‚РѕР»РєР° Open (РїР»РµС‡Рѕ 1): real=amountв€’РѕС‚РєСЂС‹С‚С‹Рµ С€РѕСЂС‚С‹ (#844); fake=cashв€’short+long_mtm.';
+'Equity для потолка Open (плечо 1): real=amount−открытые шорты (#844); fake=cash−short+long_mtm.';
 
--- Р‘Р°Р·Р° С†РёРєР»Р° / РїРѕС‚РѕР»РєР°: min(Р±Р°Р·Р° Р»РѕС‚Р°, equity).
--- #844: equity РЅРµРёР·РІРµСЃС‚РµРЅ РёР»Рё СЂР°РІРµРЅ 0 (Р±СЂРѕРєРµСЂ РЅРµ РѕС‚РІРµС‚РёР» / Р»РёРјРёС‚С‹ API) в†’ Р±СЋРґР¶РµС‚ 0 вЂ”
--- РќР• С‚РѕСЂРіСѓРµРј. РџСЂРµР¶РЅРёР№ fallback РЅР° СЃС‹СЂРѕР№ sizing РїСЂРё equity=0 РѕС‚РєСЂС‹РІР°Р» РјР°СЂР¶Сѓ СЃРІРµСЂС… СЃС‡С‘С‚Р°.
+-- База цикла / потолка: min(база лота, equity).
+-- #844: equity неизвестен или равен 0 (брокер не ответил / лимиты API) → бюджет 0 —
+-- НЕ торгуем. Прежний fallback на сырой sizing при equity=0 открывал маржу сверх счёта.
 CREATE OR REPLACE FUNCTION logic_exposure_cycle_budget(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER
@@ -14145,10 +14471,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_exposure_cycle_budget(INTEGER, INTEGER) IS
-'Р‘Р°Р·Р° С†РёРєР»Р°: LEAST(sizing_base, net equity); equity<=0 в†’ 0 (РЅРµ С‚РѕСЂРіСѓРµРј РІСЃР»РµРїСѓСЋ, #844).';
+'База цикла: LEAST(sizing_base, net equity); equity<=0 → 0 (не торгуем вслепую, #844).';
 
--- РЎРІРµР¶Р°СЏ С†РµРЅР° Р±СѓРјР°РіРё РЅР° РјРѕРјРµРЅС‚ РїРѕСЃС‚Р°РЅРѕРІРєРё Open-Р·Р°СЏРІРєРё: СЃС‚РѕРї-РўР¤ (РѕР±С‹С‡РЅРѕ M5) СЃРІРµР¶РµРµ РўР¤ СЃРёРіРЅР°Р»Р°.
--- Р”РѕРіСЂСѓР¶Р°РµС‚ С†РµРЅС‹ РїСЂРё РѕС‚СЃСѓС‚СЃС‚РІРёРё (РѕРґРёРЅ HTTP РЅР° СЃРёРіРЅР°Р»), РІРѕР·РІСЂР°С‰Р°РµС‚ РїРѕСЃР»РµРґРЅСЋСЋ С†РµРЅСѓ + РµС‘ Р±Р°СЂ.
+-- Свежая цена бумаги на момент постановки Open-заявки: стоп-ТФ (обычно M5) свежее ТФ сигнала.
+-- Догружает цены при отсутствии (один HTTP на сигнал), возвращает последнюю цену + её бар.
 CREATE OR REPLACE FUNCTION logic_fresh_order_price(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -14192,9 +14518,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_fresh_order_price(INTEGER, INTEGER, INTEGER) IS
-'РЎРІРµР¶Р°СЏ С†РµРЅР°+Р±Р°СЂ РґР»СЏ РіСЌРї-РїСЂРѕРІРµСЂРєРё РІС…РѕРґР°: СЃС‚РѕРї-РўР¤ (fallback TF), РґРѕРіСЂСѓР·РєР° РїСЂРё РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё';
+'Свежая цена+бар для гэп-проверки входа: стоп-ТФ (fallback TF), догрузка при необходимости';
 
--- РќРѕРјРёРЅР°Р» СѓР¶Рµ РѕС‚РєСЂС‹С‚С‹С… long+short (С‡РµРјРїРёРѕРЅ / Р±РѕР№ РёР»Рё test; opt_lane РѕС‚РґРµР»СЏРµС‚ paper OPT).
+-- Номинал уже открытых long+short (чемпион / бой или test; opt_lane отделяет paper OPT).
 -- Drop 3-arg overload so callers use the 4-arg form (p_run_id DEFAULT NULL).
 DROP FUNCTION IF EXISTS logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT);
 
@@ -14232,7 +14558,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_open_notional_exposure(INTEGER, BOOLEAN, TEXT, BIGINT) IS
-'РЎСѓРјРјР°СЂРЅС‹Р№ РЅРѕРјРёРЅР°Р» РѕС‚РєСЂС‹С‚С‹С… long+short (С†РµРЅР° РІС…РѕРґР°). РџРѕС‚РѕР»РѕРє: Р±Р°Р·Р° Г— (%/100) Г— max_open_positions вЂ” РѕРґРёРЅР°РєРѕРІРѕ РґР»СЏ long Рё short. p_run_id вЂ” С‚РѕР»СЊРєРѕ РґР»СЏ is_test.';
+'Суммарный номинал открытых long+short (цена входа). Потолок: база × (%/100) × max_open_positions — одинаково для long и short. p_run_id — только для is_test.';
 
 CREATE OR REPLACE FUNCTION logic_upsert_param(
     p_logic_id INTEGER,
@@ -14290,8 +14616,8 @@ BEGIN
     BEGIN
         v_bal := fetch_tbank_account_balance(v_account_id);
         IF v_bal IS NOT NULL AND (v_bal->>'error') IS NULL THEN
-            -- РўРѕР»СЊРєРѕ РєСЌС€ Р±СЂРѕРєРµСЂР°. Р¤РѕР»Р±СЌРє РЅР° РІРµСЃСЊ РїРѕСЂС‚С„РµР»СЊ Р·Р°РїСЂРµС‰С‘РЅ:
-            -- РѕРЅ Р·Р°РІС‹С€Р°Р» current_balance Рё СЂР°Р·РјРµСЂ РїРѕР·РёС†РёРё СЃРІРµСЂС… РѕСЃС‚Р°С‚РєР°.
+            -- Только кэш брокера. Фолбэк на весь портфель запрещён:
+            -- он завышал current_balance и размер позиции сверх остатка.
             IF v_bal ? 'cash_amount' AND (v_bal->>'cash_amount') IS NOT NULL THEN
                 v_amount := COALESCE((v_bal->>'cash_amount')::NUMERIC, 0);
             ELSE
@@ -14312,7 +14638,7 @@ BEGIN
         v_amount := 0;
     END IF;
 
-    -- Real: С‚РµРєСѓС‰РёР№ вЂ” СЃ Р±СЂРѕРєРµСЂР°; РЅР°С‡Р°Р»СЊРЅС‹Р№ вЂ” СЂРµРґР°РєС‚РёСЂСѓРµС‚СЃСЏ РІСЂСѓС‡РЅСѓСЋ, РЅРµ Р·Р°С‚РёСЂР°РµС‚СЃСЏ sync.
+    -- Real: текущий — с брокера; начальный — редактируется вручную, не затирается sync.
     PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_amount::TEXT, 'money');
 
     RETURN v_amount;
@@ -14320,7 +14646,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_apply_real_account_balances(INTEGER, BOOLEAN) IS
-'Real: current = T-Bank cash РёР»Рё 0; initial_balance СЂРµРґР°РєС‚РёСЂСѓРµС‚СЃСЏ РІСЂСѓС‡РЅСѓСЋ. Fake: no-op.';
+'Real: current = T-Bank cash или 0; initial_balance редактируется вручную. Fake: no-op.';
 
 CREATE OR REPLACE FUNCTION logic_sync_all_real_account_balances()
 RETURNS INTEGER
@@ -14343,7 +14669,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_sync_all_real_account_balances() IS
-'Upgrade/install: РґР»СЏ РІСЃРµС… real-Р»РѕРіРёРє РІС‹СЃС‚Р°РІРёС‚СЊ РѕСЃС‚Р°С‚РєРё СЃ Р±СЂРѕРєРµСЂР° (РёР»Рё 0).';
+'Upgrade/install: для всех real-логик выставить остатки с брокера (или 0).';
 
 CREATE OR REPLACE FUNCTION logic_ensure_balance(p_logic_id INTEGER)
 RETURNS NUMERIC
@@ -14363,13 +14689,13 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    -- Р РµР°Р»СЊРЅС‹Р№ СЃС‡С‘С‚: С‚РµРєСѓС‰РёР№ вЂ” СЃ Р±СЂРѕРєРµСЂР° (РёР»Рё 0), РЅРµ РёР· РїР°СЂР°РјРµС‚СЂРѕРІ С‚РµСЃС‚Р°.
+    -- Реальный счёт: текущий — с брокера (или 0), не из параметров теста.
     IF v_account_type <> 'fake' THEN
         RETURN COALESCE(logic_apply_real_account_balances(p_logic_id, TRUE), 0);
     END IF;
 
-    -- #1065: С„РµР№РєРѕРІС‹Р№ СЃС‡С‘С‚ вЂ” РґРµРЅСЊРіРё Р»РµР¶Р°С‚ РЅР° accounts.terminal_cash,
-    -- РїР°СЂР°РјРµС‚СЂ Р»РѕРіРёРєРё current_balance Р»РёС€СЊ Р·РµСЂРєР°Р»Рѕ (РґР»СЏ UI). Р‘СЌРєС‚РµСЃС‚ СЃСЋРґР° РЅРµ Р·Р°С…РѕРґРёС‚.
+    -- #1065: фейковый счёт — деньги лежат на accounts.terminal_cash,
+    -- параметр логики current_balance лишь зеркало (для UI). Бэктест сюда не заходит.
     SELECT COALESCE(terminal_cash, 0) INTO v_cash FROM accounts WHERE id = v_account_id;
     v_cash := COALESCE(v_cash, 0);
     PERFORM logic_upsert_param(p_logic_id, 'current_balance', v_cash::TEXT, 'money');
@@ -14378,12 +14704,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_ensure_balance(INTEGER) IS
-'#1065 Fake: РѕСЃС‚Р°С‚РѕРє СЃ accounts.terminal_cash (Р·РµСЂРєР°Р»Рѕ РІ current_balance). Real: СЃ T-Bank (РёР»Рё 0).';
+'#1065 Fake: остаток с accounts.terminal_cash (зеркало в current_balance). Real: с T-Bank (или 0).';
 
--- #1065: Р·Р°РїРёСЃСЊ РїР°СЂР°РјРµС‚СЂР° current_balance РїРѕСЃР»Рµ СЃРґРµР»РєРё.
--- Fake: С‚СЂРёРіРіРµСЂ logic_trades_demo_cash_ins СѓР¶Рµ РёР·РјРµРЅРёР» accounts.terminal_cash вЂ”
--- С‚РѕР»СЊРєРѕ Р·РµСЂРєР°Р»РёРј РµРіРѕ РІ РїР°СЂР°РјРµС‚СЂ, С‡С‚РѕР±С‹ РЅРµ СЃРїРёСЃР°С‚СЊ СЃСѓРјРјСѓ РґРІР°Р¶РґС‹.
--- Real: РєР°Рє Рё СЂР°РЅСЊС€Рµ вЂ” РїРёС€РµРј РїРµСЂРµРґР°РЅРЅРѕРµ Р·РЅР°С‡РµРЅРёРµ (СЃ Р±СЂРѕРєРµСЂР°).
+-- #1065: запись параметра current_balance после сделки.
+-- Fake: триггер logic_trades_demo_cash_ins уже изменил accounts.terminal_cash —
+-- только зеркалим его в параметр, чтобы не списать сумму дважды.
+-- Real: как и раньше — пишем переданное значение (с брокера).
 CREATE OR REPLACE FUNCTION logic_cash_set_param(
     p_logic_id INTEGER,
     p_balance NUMERIC
@@ -14418,9 +14744,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_cash_set_param(INTEGER, NUMERIC) IS
-'#1065: fake вЂ” current_balance = accounts.terminal_cash; real вЂ” current_balance = Р°СЂРіСѓРјРµРЅС‚.';
+'#1065: fake — current_balance = accounts.terminal_cash; real — current_balance = аргумент.';
 
--- #1065: СЂСѓС‡РЅР°СЏ РїСЂР°РІРєР° РѕСЃС‚Р°С‚РєР° СЃС‡С‘С‚Р° РІ UI в†’ РѕР±РЅРѕРІРёС‚СЊ Р·РµСЂРєР°Р»Рѕ Сѓ РІСЃРµС… Р»РѕРіРёРє СЃС‡С‘С‚Р°.
+-- #1065: ручная правка остатка счёта в UI → обновить зеркало у всех логик счёта.
 CREATE OR REPLACE FUNCTION logic_mirror_account_cash(p_account_id INTEGER)
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
@@ -14442,7 +14768,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_mirror_account_cash(INTEGER) IS
-'#1065: СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ current_balance РІСЃРµС… Р»РѕРіРёРє СЃС‡С‘С‚Р° СЃ accounts.terminal_cash.';
+'#1065: синхронизировать current_balance всех логик счёта с accounts.terminal_cash.';
 
 CREATE OR REPLACE FUNCTION logic_trade_load_date_from(
     p_tf_sec INTEGER,
@@ -14837,9 +15163,9 @@ $$;
 COMMENT ON FUNCTION logic_trade_rebuild_pnl(INTEGER) IS
 'РџРµСЂРµСЃС‡С‘С‚ РєРѕРјРёСЃСЃРёРё, РїР°РєРµС‚РѕРІ Рё PnL РїРѕ РёСЃС‚РѕСЂРёРё СЃРґРµР»РѕРє Р»РѕРіРёРєРё (NULL = РІСЃРµ Р»РѕРіРёРєРё)';
 
--- @include sql/logic_close_all_positions.sql (СЃРј. sql/logic_close_all_positions.sql вЂ” РґСѓР±Р»РёСЂСѓРµС‚СЃСЏ РЅРёР¶Рµ)
+-- @include sql/logic_close_all_positions.sql (см. sql/logic_close_all_positions.sql — дублируется ниже)
 -- ============================================
--- Р—Р°РєСЂС‹С‚РёРµ РІСЃРµС… РѕС‚РєСЂС‹С‚С‹С… РїРѕР·РёС†РёР№ Р»РѕРіРёРєРё РїРѕ СЂС‹РЅРѕС‡РЅРѕР№ (РїРѕСЃР»РµРґРЅРµР№) С†РµРЅРµ
+-- Закрытие всех открытых позиций логики по рыночной (последней) цене
 -- ============================================
 
 CREATE OR REPLACE FUNCTION logic_security_latest_price(
@@ -14857,7 +15183,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_security_latest_price(INTEGER, INTEGER) IS
-'РџРѕСЃР»РµРґРЅСЏСЏ С†РµРЅР° Р·Р°РєСЂС‹С‚РёСЏ РїРѕ Р±СѓРјР°РіРµ Рё TF (РґР»СЏ СЂСѓС‡РЅРѕРіРѕ Р·Р°РєСЂС‹С‚РёСЏ РїРѕ СЂС‹РЅРєСѓ)';
+'Последняя цена закрытия по бумаге и TF (для ручного закрытия по рынку)';
 
 CREATE OR REPLACE FUNCTION logic_ensure_security_market_price(
     p_logic_id INTEGER,
@@ -14895,7 +15221,7 @@ BEGIN
             p_logic_id,
             'trade.prices.loaded',
             format(
-                'Р¦РµРЅС‹ РґР»СЏ Р·Р°РєСЂС‹С‚РёСЏ sec=%s TF=%s (%s .. %s)',
+                'Цены для закрытия sec=%s TF=%s (%s .. %s)',
                 p_security_id,
                 p_timeframe_id,
                 v_date_from,
@@ -14916,7 +15242,7 @@ BEGIN
             PERFORM logic_trade_log(
                 p_logic_id,
                 'trade.prices.error',
-                'load_prices РЅРµРґРѕСЃС‚СѓРїРµРЅ (РЅРµС‚ HTTP-СЂР°СЃС€РёСЂРµРЅРёСЏ)',
+                'load_prices недоступен (нет HTTP-расширения)',
                 jsonb_build_object('security_id', p_security_id, 'reason', 'close_all_at_market'),
                 p_security_id,
                 p_timeframe_id
@@ -14926,7 +15252,7 @@ BEGIN
             PERFORM logic_trade_log(
                 p_logic_id,
                 'trade.prices.error',
-                format('РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё С†РµРЅ sec=%s: %s', p_security_id, v_err),
+                format('Ошибка загрузки цен sec=%s: %s', p_security_id, v_err),
                 jsonb_build_object(
                     'security_id', p_security_id,
                     'error', v_err,
@@ -14954,7 +15280,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_ensure_security_market_price(INTEGER, INTEGER, INTEGER) IS
-'РџРѕСЃР»РµРґРЅСЏСЏ С†РµРЅР° РґР»СЏ Р·Р°РєСЂС‹С‚РёСЏ: РёР· Р‘Р” РёР»Рё load_prices (T-Bank/MOEX), Р·Р°С‚РµРј fallback РїРѕ Р»СЋР±РѕРјСѓ TF';
+'Последняя цена для закрытия: из БД или load_prices (T-Bank/MOEX), затем fallback по любому TF';
 
 -- Lookup fill from account_sell_all sold[] by figi (price / order / commission).
 CREATE OR REPLACE FUNCTION logic_sold_fill_for_figi(p_sold JSONB, p_figi TEXT)
@@ -14967,7 +15293,7 @@ LANGUAGE sql STABLE AS $$
     LIMIT 1;
 $$;
 
--- РЎРЅСЏС‚СЊ СЃС‚Р°СЂС‹Рµ СЃРёРіРЅР°С‚СѓСЂС‹ (РёРЅР°С‡Рµ РІ PG РѕСЃС‚Р°РЅСѓС‚СЃСЏ overload Р±РµР· books-only).
+-- Снять старые сигнатуры (иначе в PG останутся overload без books-only).
 DROP FUNCTION IF EXISTS logic_close_all_positions_at_market(INTEGER);
 DROP FUNCTION IF EXISTS logic_close_all_positions_at_market(INTEGER, BOOLEAN);
 
@@ -15030,7 +15356,7 @@ BEGIN
     IF NOT FOUND THEN
         RETURN jsonb_build_object(
             'ok', FALSE,
-            'error', 'Р›РѕРіРёРєР° РЅРµ РЅР°Р№РґРµРЅР° РёР»Рё СЃС‡С‘С‚ РЅРµР°РєС‚РёРІРµРЅ',
+            'error', 'Логика не найдена или счёт неактивен',
             'closed', 0
         );
     END IF;
@@ -15039,7 +15365,7 @@ BEGIN
     IF v_tf_id IS NULL THEN
         RETURN jsonb_build_object(
             'ok', FALSE,
-            'error', 'РќРµ Р·Р°РґР°РЅ timeframe РІ logic_params',
+            'error', 'Не задан timeframe в logic_params',
             'closed', 0
         );
     END IF;
@@ -15051,7 +15377,7 @@ BEGIN
     IF v_side_close_id IS NULL OR v_action_long_id IS NULL OR v_action_short_id IS NULL THEN
         RETURN jsonb_build_object(
             'ok', FALSE,
-            'error', 'РЎРїСЂР°РІРѕС‡РЅРёРєРё sides/actions РЅРµ РЅР°СЃС‚СЂРѕРµРЅС‹',
+            'error', 'Справочники sides/actions не настроены',
             'closed', 0
         );
     END IF;
@@ -15088,7 +15414,7 @@ BEGIN
             v_errors := v_errors || jsonb_build_array(
                 jsonb_build_object(
                     'security_id', v_sec.security_id,
-                    'reason', 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ С†РµРЅСѓ (Р·Р°РіСЂСѓР·РєР° Рё fallback РЅРµ РґР°Р»Рё СЂРµР·СѓР»СЊС‚Р°С‚)'
+                    'reason', 'Не удалось получить цену (загрузка и fallback не дали результат)'
                 )
             );
             CONTINUE;
@@ -15123,7 +15449,7 @@ BEGIN
                 BEGIN
                     IF v_figi IS NULL THEN
                         v_status := 'rejected';
-                        v_note := 'РќРµС‚ tbank_figi РґР»СЏ Р±СѓРјР°РіРё';
+                        v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
                             v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
@@ -15158,7 +15484,7 @@ BEGIN
                 EXCEPTION
                     WHEN undefined_function THEN
                         v_status := 'rejected';
-                        v_note := 'tbank_post_order РЅРµРґРѕСЃС‚СѓРїРµРЅ (РЅРµС‚ HTTP-СЂР°СЃС€РёСЂРµРЅРёСЏ)';
+                        v_note := 'tbank_post_order недоступен (нет HTTP-расширения)';
                     WHEN OTHERS THEN
                         v_status := 'rejected';
                         v_note := SQLERRM;
@@ -15174,7 +15500,7 @@ BEGIN
                         jsonb_build_object(
                             'security_id', v_sec.security_id,
                             'action', 'Long',
-                            'reason', 'Р±СЂРѕРєРµСЂ: Р·Р°СЏРІРєР° РЅРµ РёСЃРїРѕР»РЅРµРЅР° (Node)'
+                            'reason', 'брокер: заявка не исполнена (Node)'
                         )
                     );
                 ELSE
@@ -15233,7 +15559,7 @@ BEGIN
                 IF v_is_simulated THEN
                     SELECT COALESCE(commission, 0) INTO v_commission
                     FROM logic_trades WHERE id = v_trade_id;
-                    -- Close Long: РїСЂРѕРґР°С‘Рј Р»РѕРЅРі в†’ +РІС‹СЂСѓС‡РєР°, -РєРѕРјРёСЃСЃРёСЏ.
+                    -- Close Long: продаём лонг → +выручка, -комиссия.
                     v_demo_delta := (v_quantity * v_price) - COALESCE(v_commission, 0);
                     UPDATE accounts
                     SET terminal_cash = COALESCE(v_cash_before, 0) + v_demo_delta,
@@ -15249,7 +15575,7 @@ BEGIN
                 PERFORM logic_trade_log(
                     p_logic_id,
                     'trade.closed_market',
-                    format('Р—Р°РєСЂС‹С‚РёРµ long #%s qty=%s price=%s', v_trade_id, v_quantity, v_price),
+                    format('Закрытие long #%s qty=%s price=%s', v_trade_id, v_quantity, v_price),
                     jsonb_build_object(
                         'trade_id', v_trade_id,
                         'security_id', v_sec.security_id,
@@ -15298,7 +15624,7 @@ BEGIN
                 BEGIN
                     IF v_figi IS NULL THEN
                         v_status := 'rejected';
-                        v_note := 'РќРµС‚ tbank_figi РґР»СЏ Р±СѓРјР°РіРё';
+                        v_note := 'Нет tbank_figi для бумаги';
                     ELSE
                         v_order := tbank_post_order(
                             v_logic.account_id, v_figi, v_quantity, v_price, v_direction,
@@ -15333,7 +15659,7 @@ BEGIN
                 EXCEPTION
                     WHEN undefined_function THEN
                         v_status := 'rejected';
-                        v_note := 'tbank_post_order РЅРµРґРѕСЃС‚СѓРїРµРЅ (РЅРµС‚ HTTP-СЂР°СЃС€РёСЂРµРЅРёСЏ)';
+                        v_note := 'tbank_post_order недоступен (нет HTTP-расширения)';
                     WHEN OTHERS THEN
                         v_status := 'rejected';
                         v_note := SQLERRM;
@@ -15348,7 +15674,7 @@ BEGIN
                         jsonb_build_object(
                             'security_id', v_sec.security_id,
                             'action', 'Short',
-                            'reason', 'Р±СЂРѕРєРµСЂ: Р·Р°СЏРІРєР° РЅРµ РёСЃРїРѕР»РЅРµРЅР° (Node)'
+                            'reason', 'брокер: заявка не исполнена (Node)'
                         )
                     );
                 ELSE
@@ -15407,7 +15733,7 @@ BEGIN
                 IF v_is_simulated THEN
                     SELECT COALESCE(commission, 0) INTO v_commission
                     FROM logic_trades WHERE id = v_trade_id;
-                    -- Close Short: РѕС‚РєСѓРї С€РѕСЂС‚Р° в†’ -СЃСѓРјРјР°, -РєРѕРјРёСЃСЃРёСЏ.
+                    -- Close Short: откуп шорта → -сумма, -комиссия.
                     v_demo_delta := -((v_quantity * v_price) + COALESCE(v_commission, 0));
                     UPDATE accounts
                     SET terminal_cash = COALESCE(v_cash_before, 0) + v_demo_delta,
@@ -15423,7 +15749,7 @@ BEGIN
                 PERFORM logic_trade_log(
                     p_logic_id,
                     'trade.closed_market',
-                    format('Р—Р°РєСЂС‹С‚РёРµ short #%s qty=%s price=%s', v_trade_id, v_quantity, v_price),
+                    format('Закрытие short #%s qty=%s price=%s', v_trade_id, v_quantity, v_price),
                     jsonb_build_object(
                         'trade_id', v_trade_id,
                         'security_id', v_sec.security_id,
@@ -15463,7 +15789,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_close_all_positions_at_market(INTEGER, BOOLEAN, BOOLEAN, TEXT, JSONB) IS
-'Р—Р°РєСЂС‹С‚РёРµ long/short: p_post_broker=FALSE вЂ” С‚РѕР»СЊРєРѕ РєРЅРёРіР° (account sell-all / Node close-all). market:close_all_node Р·Р°РєСЂС‹РІР°РµС‚ С‚РѕР»СЊРєРѕ figi РёР· p_sold.';
+'Закрытие long/short: p_post_broker=FALSE — только книга (account sell-all / Node close-all). market:close_all_node закрывает только figi из p_sold.';
 
 -- @include sql/logic_opt.sql
 -- ============================================
@@ -15888,7 +16214,7 @@ BEGIN
 END;
 $$;
 
--- РљСЌС€ LINREG-РєР°РЅР°Р»Р° РЅР° РІСЂРµРјСЏ РѕРґРЅРѕРіРѕ process_logic_opt_trades (temp).
+-- Кэш LINREG-канала на время одного process_logic_opt_trades (temp).
 CREATE OR REPLACE FUNCTION logic_opt_ensure_linreg_cache()
 RETURNS VOID
 LANGUAGE plpgsql AS $$
@@ -16000,15 +16326,15 @@ BEGIN
         parse_signal_param_num(p_params, 'std')
     );
 
-    -- LINREG OPT: РѕРґРёРЅ СЂРµРіСЂРµСЃСЃ РЅР° (sec, period, std_dev) в†’ LOWER/MIDDLE/UPPER РёР· РєСЌС€Р°
+    -- LINREG OPT: один регресс на (sec, period, std_dev) → LOWER/MIDDLE/UPPER из кэша
     IF v_code = 'LINREG' THEN
         RETURN logic_opt_linreg_series_at(
             v_period, v_std, v_series, p_security_id, p_tf_id, p_bar_dt
         );
     END IF;
 
-    -- #1036-fix: Сѓ ROC Рё РїРѕРґРѕР±РЅС‹С… РёРЅРґРёРєР°С‚РѕСЂРѕРІ indicators.script РїСѓСЃС‚ вЂ”
-    -- СЃС‡РёС‚Р°РµРј РЅР°С‚РёРІРЅРѕ, РёРЅР°С‡Рµ on-the-fly РѕС†РµРЅРєР° РІСЃРµРіРґР° РґР°С‘С‚ NULL/false.
+    -- #1036-fix: у ROC и подобных индикаторов indicators.script пуст —
+    -- считаем нативно, иначе on-the-fly оценка всегда даёт NULL/false.
     IF v_code = 'ROC' THEN
         RETURN calc_ind_roc(
             v_period, v_series, p_security_id, p_tf_id, p_bar_dt
@@ -16052,13 +16378,16 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS logic_signal_evaluate_at_opt(INTEGER, INTEGER, INTEGER, TIMESTAMP, BOOLEAN, JSONB);
+
 CREATE OR REPLACE FUNCTION logic_signal_evaluate_at_opt(
     p_signal_id INTEGER,
     p_security_id INTEGER,
     p_tf_id INTEGER,
     p_bar_dt TIMESTAMP,
     p_invert BOOLEAN DEFAULT FALSE,
-    p_opt_values JSONB DEFAULT NULL
+    p_opt_values JSONB DEFAULT NULL,
+    p_run_id BIGINT DEFAULT NULL
 )
 RETURNS TABLE (
     ok BOOLEAN,
@@ -16080,9 +16409,14 @@ DECLARE
     v_pp NUMERIC;
     v_ind NUMERIC;
     v_eval_sec INTEGER;
+    v_acts TEXT;
+    v_logic_id INTEGER;
+    v_run_id BIGINT;
+    v_bar RECORD;
 BEGIN
     ok := FALSE;
-    SELECT lis.id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id
+    SELECT lis.id, lis.logic_id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id,
+           COALESCE(NULLIF(btrim(lis.signal_acts_on), ''), 'security') AS acts_on
     INTO v_sig
     FROM logic_indicator_signals lis
     WHERE lis.id = p_signal_id AND lis.is_active = TRUE;
@@ -16096,12 +16430,8 @@ BEGIN
     position_side := v_sig.position_side;
     signal_kind := v_sig.signal_kind;
     indicator_id := v_sig.indicator_id;
-
-    v_eval_sec := logic_signal_eval_security_id(p_signal_id, p_security_id);
-    IF v_eval_sec IS NULL THEN
-        RETURN NEXT;
-        RETURN;
-    END IF;
+    v_acts := v_sig.acts_on;
+    v_logic_id := v_sig.logic_id;
 
     SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
     IF NOT COALESCE(v_parsed.valid, FALSE) THEN
@@ -16113,6 +16443,35 @@ BEGIN
     v_condition := v_parsed.condition;
     IF COALESCE(p_invert, FALSE) THEN
         v_condition := logic_invert_comparison_condition(v_condition);
+    END IF;
+
+    IF v_acts = 'portfolio' THEN
+        v_run_id := COALESCE(p_run_id, NULLIF(current_setting('app.portfolio_backtest_run_id', TRUE), '')::BIGINT);
+        v_pp := logic_portfolio_close_at(v_logic_id, p_tf_id, p_bar_dt, v_run_id);
+        IF v_pp IS NULL OR v_pp <= 0 THEN
+            RETURN NEXT;
+            RETURN;
+        END IF;
+        v_ind := logic_portfolio_calc_indicator_value(
+            v_logic_id, p_tf_id, v_sig.indicator_id,
+            parse_signal_series(v_params), v_params, p_bar_dt, v_run_id
+        );
+        IF v_ind IS NULL THEN
+            RETURN NEXT;
+            RETURN;
+        END IF;
+        close_price := v_pp;
+        ind_value := v_ind;
+        bar_dt := p_bar_dt;
+        ok := evaluate_signal_condition(v_condition, v_pp, v_ind);
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    v_eval_sec := logic_signal_resolve_eval_security(v_acts, p_security_id);
+    IF v_eval_sec IS NULL THEN
+        RETURN NEXT;
+        RETURN;
     END IF;
 
     SELECT p.close_price INTO v_pp
@@ -16492,7 +16851,7 @@ BEGIN
             SET last_opt_eval_bar_dt = p_closed_bar_dt
             WHERE id = p_run_id;
         ELSE
-            -- РџРµСЂРІС‹Р№ live-РєСѓСЂСЃРѕСЂ: СЃРЅРёРјРѕРє РЅР°С‡Р°Р»СЊРЅС‹С… Р±Р°Р· РґР»СЏ Р±СѓРґСѓС‰РµРіРѕ В«РЎР±СЂРѕСЃ OPTВ».
+            -- Первый live-курсор: снимок начальных баз для будущего «Сброс OPT».
             PERFORM logic_opt_snapshot_params(p_logic_id, NULL, p_closed_bar_dt);
             PERFORM logic_upsert_param(
                 p_logic_id,
@@ -16554,7 +16913,7 @@ BEGIN
             PERFORM logic_trade_log(
                 p_logic_id,
                 'opt.window',
-                format('РћРєРЅРѕ OPT %s СЃРІРµС‡РµР№: С‡РµРјРїРёРѕРЅ Р»СѓС‡С€Рµ РёР»Рё СЂР°РІРµРЅ (FinRes=%s)', v_n, v_champ),
+                format('Окно OPT %s свечей: чемпион лучше или равен (FinRes=%s)', v_n, v_champ),
                 jsonb_build_object(
                     'champion_finres', v_champ,
                     'bars', v_bars,
@@ -16628,7 +16987,7 @@ BEGIN
             p_logic_id,
             'opt.promote',
             format(
-                'OPT promote: lane=%s FinRes=%s > champion=%s в†’ %s',
+                'OPT promote: lane=%s FinRes=%s > champion=%s → %s',
                 v_best_lane, v_best_score, v_champ, v_winner::TEXT
             ),
             jsonb_build_object(
@@ -16723,7 +17082,7 @@ BEGIN
     END IF;
 
     IF v_is_test THEN
-        -- РўРµСЃС‚: Р»РѕРіРёРєР° РјРѕР¶РµС‚ Р±С‹С‚СЊ РІС‹РєР»СЋС‡РµРЅР°; СЃС‡С‘С‚ РІСЃС‘ СЂР°РІРЅРѕ РЅСѓР¶РµРЅ.
+        -- Тест: логика может быть выключена; счёт всё равно нужен.
         SELECT l.id, l.account_id
         INTO v_logic
         FROM logics l
@@ -16755,8 +17114,8 @@ BEGIN
     v_max_order_amount := get_logic_param_numeric(p_logic_id, 'max_order_amount', NULL);
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
 
-    -- РљР°Рє Сѓ С‡РµРјРїРёРѕРЅР°: Р±Р°Р·Р° С†РёРєР»Р° в‰¤ equity. Р Р°РЅСЊС€Рµ OPT Р±СЂР°Р» СЃС‹СЂРѕР№ free_cash / 1e6
-    -- в†’ paper-Р»РѕС‚С‹ ~100k РїСЂРё cash_amount РїРѕСЃР»Рµ С€РѕСЂС‚РѕРІ (РїСѓС‚Р°С‚СЊ СЃ РјР°СЂР¶РѕР№ Р±СЂРѕРєРµСЂР°).
+    -- Как у чемпиона: база цикла ≤ equity. Раньше OPT брал сырой free_cash / 1e6
+    -- → paper-лоты ~100k при cash_amount после шортов (путать с маржой брокера).
     IF v_is_test THEN
         v_cycle_budget := COALESCE(NULLIF(p_sizing_base, 0), NULL);
         IF v_cycle_budget IS NULL OR v_cycle_budget <= 0 THEN
@@ -16797,7 +17156,7 @@ BEGIN
         * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
         * v_max_positions;
 
-    -- РљСЌС€ РєР°РЅР°Р»Р° РЅР° Р±Р°СЂ: 34 Р±СѓРјР°РіРё Г— 2 std_dev Г— 4 СЃРёРіРЅР°Р»Р° в†’ Р±С‹Р»Рѕ 272 calc, СЃС‚Р°РЅРµС‚ ~68
+    -- Кэш канала на бар: 34 бумаги × 2 std_dev × 4 сигнала → было 272 calc, станет ~68
     PERFORM logic_opt_ensure_linreg_cache();
     TRUNCATE opt_linreg_cache;
 
@@ -16810,7 +17169,7 @@ BEGIN
         FROM logic_opt_build_arms(p_logic_id) AS b
         WHERE NOT v_use_grid
     LOOP
-        -- РћРґРёРЅ СЂР°Р· РЅР° РІРµС‚РєСѓ: С‡РёСЃР»Рѕ Р±СѓРјР°Рі СЃ РѕС‚РєСЂС‹С‚РѕР№ РїРѕР·РёС†РёРµР№ (СЂР°РЅСЊС€Рµ вЂ” РЅР° РєР°Р¶РґСѓСЋ Р±СѓРјР°РіСѓ).
+        -- Один раз на ветку: число бумаг с открытой позицией (раньше — на каждую бумагу).
         SELECT COUNT(*)::INTEGER INTO v_open_lane
         FROM (
             SELECT lt.security_id
@@ -16839,7 +17198,7 @@ BEGIN
             p_logic_id, v_is_test, v_arm.lane, CASE WHEN v_is_test THEN p_run_id ELSE NULL END
         );
 
-        -- РљР°Рє Сѓ С‡РµРјРїРёРѕРЅР°: Р»СѓС‡С€РёР№ PnL РІРµС‚РєРё; РѕРґРёРЅ GROUP BY РЅР° Р±Р°СЂ (РЅРµ N РєРѕСЂСЂРµР»РёСЂРѕРІР°РЅРЅС‹С… SUM).
+        -- Как у чемпиона: лучший PnL ветки; один GROUP BY на бар (не N коррелированных SUM).
         FOR v_sec IN
             SELECT
                 ls.security_id,
@@ -16891,7 +17250,7 @@ BEGIN
                       AND lis.position_side = v_grp.position_side
                     ORDER BY lis.display_order, lis.id
                 LOOP
-                    -- РўР¤ СЃРёРіРЅР°Р»Р° (tf=) Рё РµРіРѕ Р·Р°РєСЂС‹С‚С‹Р№ Р±Р°СЂ РґРѕ close Р±Р°СЂР° Р»РѕРіРёРєРё.
+                    -- ТФ сигнала (tf=) и его закрытый бар до close бара логики.
                     SELECT * INTO v_pt
                     FROM logic_signal_eval_point(v_sig.formula, p_tf_id, p_closed_bar_dt);
                     IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
@@ -17047,12 +17406,12 @@ BEGIN
                             0, v_spent_notional - (v_quantity * v_pp)
                         );
                     END IF;
-                    -- Tech log С‚РѕР»СЊРєРѕ РІ Р±РѕСЋ вЂ” РІ С‚РµСЃС‚Рµ С‚С‹СЃСЏС‡Рё СЃС‚СЂРѕРє СЃРёР»СЊРЅРѕ С‚РѕСЂРјРѕР·СЏС‚.
+                    -- Tech log только в бою — в тесте тысячи строк сильно тормозят.
                     IF NOT v_is_test THEN
                         PERFORM logic_trade_log(
                             p_logic_id,
                             'opt.trade',
-                            format('OPT %s СЃРґРµР»РєР° #%s qty=%s', v_arm.lane, v_trade_id, v_quantity),
+                            format('OPT %s сделка #%s qty=%s', v_arm.lane, v_trade_id, v_quantity),
                             jsonb_build_object(
                                 'opt_lane', v_arm.lane,
                                 'trade_id', v_trade_id,
@@ -17073,10 +17432,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION process_logic_opt_trades(INTEGER, INTEGER, TIMESTAMP, BOOLEAN, BIGINT, NUMERIC) IS
-'Р‘СѓРјР°Р¶РЅС‹Рµ СЃРґРµР»РєРё OPT-РІРµС‚РѕРє (opt_lane): Р±Р°Р·Р° = exposure_cycle_budget (в‰¤ equity), РїРѕС‚РѕР»РѕРє %Г—РјР°РєСЃ.РїРѕР· РєР°Рє Сѓ С‡РµРјРїРёРѕРЅР°.';
+'Бумажные сделки OPT-веток (opt_lane): база = exposure_cycle_budget (≤ equity), потолок %×макс.поз как у чемпиона.';
 
 COMMENT ON FUNCTION logic_opt_maybe_promote(INTEGER, INTEGER, TIMESTAMP, BOOLEAN, BIGINT) IS
-'РљР°Р¶РґС‹Рµ opt_eval_candles: FinRes С‡РµРјРїРёРѕРЅР° vs РІРµС‚РєРё; promote + history (run_id РІ С‚РµСЃС‚Рµ).';
+'Каждые opt_eval_candles: FinRes чемпиона vs ветки; promote + history (run_id в тесте).';
 
 CREATE OR REPLACE FUNCTION logic_opt_restore_formulas_from_run(p_run_id BIGINT)
 RETURNS INTEGER
@@ -17125,10 +17484,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_opt_restore_formulas_from_run(BIGINT) IS
-'РџРѕСЃР»Рµ С‚РµСЃС‚Р°: РІРµСЂРЅСѓС‚СЊ С„РѕСЂРјСѓР»С‹ СЃРёРіРЅР°Р»РѕРІ РёР· СЃС‚Р°СЂС‚РѕРІРѕРіРѕ СЃРЅРёРјРєР° OPT (promote РЅРµ РґРѕР»Р¶РµРЅ РѕСЃС‚Р°С‚СЊСЃСЏ РІ Р±РѕСЋ).';
+'После теста: вернуть формулы сигналов из стартового снимка OPT (promote не должен остаться в бою).';
 
--- РЎР±СЂРѕСЃ OPT Рє РЅР°С‡Р°Р»СЊРЅС‹Рј Р±Р°Р·Р°Рј: РѕС‡РёСЃС‚РёС‚СЊ Р±СѓРјР°Р¶РЅСѓСЋ РєРЅРёРіСѓ opt_lane + РІРµСЂРЅСѓС‚СЊ С„РѕСЂРјСѓР»С‹.
--- РСЃС‚РѕС‡РЅРёРє РЅР°С‡Р°Р»СЊРЅС‹С…: earliest live snapshot в†’ Р»СЋР±РѕР№ snapshot в†’ params_prev РїРµСЂРІРѕРіРѕ promote.
+-- Сброс OPT к начальным базам: очистить бумажную книгу opt_lane + вернуть формулы.
+-- Источник начальных: earliest live snapshot → любой snapshot → params_prev первого promote.
 CREATE OR REPLACE FUNCTION logic_opt_reset_to_initial(p_logic_id INTEGER)
 RETURNS JSONB
 LANGUAGE plpgsql AS $$
@@ -17160,11 +17519,11 @@ BEGIN
             'formulas_restored', 0,
             'opt_trades_deleted', 0,
             'source', 'none',
-            'message', 'Р’ С„РѕСЂРјСѓР»Р°С… РЅРµС‚ OPT вЂ” СЃР±СЂРѕСЃ РЅРµ РЅСѓР¶РµРЅ'
+            'message', 'В формулах нет OPT — сброс не нужен'
         );
     END IF;
 
-    -- РЎРЅР°С‡Р°Р»Р° РЅР°Р№С‚Рё РЅР°С‡Р°Р»СЊРЅС‹Рµ (РґРѕ Р»СЋР±С‹С… РЅРѕРІС‹С… snapshot).
+    -- Сначала найти начальные (до любых новых snapshot).
     SELECT h.formulas
     INTO v_formulas
     FROM logic_opt_param_history h
@@ -17211,7 +17570,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ С„РѕСЂРјСѓР»С‹
+    -- Восстановить формулы
     IF v_formulas IS NOT NULL THEN
         FOR v_item IN SELECT * FROM jsonb_array_elements(v_formulas)
         LOOP
@@ -17245,14 +17604,14 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- РћС‡РёСЃС‚РёС‚СЊ Р±СѓРјР°Р¶РЅСѓСЋ РєРЅРёРіСѓ OPT (live, РЅРµ test).
+    -- Очистить бумажную книгу OPT (live, не test).
     DELETE FROM logic_trades lt
     WHERE lt.logic_id = p_logic_id
       AND COALESCE(lt.opt_lane, '') <> ''
       AND lt.is_test = FALSE;
     GET DIAGNOSTICS v_deleted = ROW_COUNT;
 
-    -- РЎР±СЂРѕСЃРёС‚СЊ РєСѓСЂСЃРѕСЂ РѕРєРЅР° OPT вЂ” СЃР»РµРґСѓСЋС‰РёР№ С†РёРєР» РЅР°С‡РЅС‘С‚ Р·Р°РЅРѕРІРѕ.
+    -- Сбросить курсор окна OPT — следующий цикл начнёт заново.
     DELETE FROM logic_params
     WHERE logic_id = p_logic_id
       AND param_key = 'last_opt_eval_bar_dt';
@@ -17290,7 +17649,7 @@ BEGIN
         p_logic_id,
         'opt.reset',
         format(
-            'РЎР±СЂРѕСЃ OPT: source=%s, formulas=%s, deleted_opt_trades=%s',
+            'Сброс OPT: source=%s, formulas=%s, deleted_opt_trades=%s',
             v_source, v_restored, v_deleted
         ),
         jsonb_build_object(
@@ -17309,19 +17668,19 @@ BEGIN
         'source', v_source,
         'message', CASE
             WHEN v_source = 'none' THEN
-                'РљРЅРёРіР° OPT РѕС‡РёС‰РµРЅР°; РЅР°С‡Р°Р»СЊРЅС‹Рµ Р±Р°Р·С‹ РІ РёСЃС‚РѕСЂРёРё РЅРµ РЅР°Р№РґРµРЅС‹ вЂ” С„РѕСЂРјСѓР»С‹ РЅРµ РјРµРЅСЏР»РёСЃСЊ'
+                'Книга OPT очищена; начальные базы в истории не найдены — формулы не менялись'
             ELSE
-                format('OPT СЃР±СЂРѕС€РµРЅ Рє РЅР°С‡Р°Р»СЊРЅС‹Рј (%s)', v_source)
+                format('OPT сброшен к начальным (%s)', v_source)
         END
     );
 END;
 $$;
 
 COMMENT ON FUNCTION logic_opt_reset_to_initial(INTEGER) IS
-'РЎР±СЂРѕСЃ OPT: РІРµСЂРЅСѓС‚СЊ РЅР°С‡Р°Р»СЊРЅС‹Рµ Р±Р°Р·С‹ С„РѕСЂРјСѓР», СѓРґР°Р»РёС‚СЊ live opt_lane, СЃР±СЂРѕСЃРёС‚СЊ last_opt_eval_bar_dt Рё last_opt_grid_* (РєСЌС€ Apply best).';
+'Сброс OPT: вернуть начальные базы формул, удалить live opt_lane, сбросить last_opt_eval_bar_dt и last_opt_grid_* (кэш Apply best).';
 
 -- ---------------------------------------------------------------------------
--- РСЃС‚РѕСЂРёСЏ РїР°СЂР°РјРµС‚СЂРѕРІ OPT / С„РѕСЂРјСѓР» (РѕС‚С‡С‘С‚ С‚РµСЃС‚Р°)
+-- История параметров OPT / формул (отчёт теста)
 -- ---------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION logic_opt_collect_formula_state(p_logic_id INTEGER)
@@ -17397,7 +17756,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_opt_collect_formula_state(INTEGER) IS
-'РўРµРєСѓС‰РёРµ Р±Р°Р·С‹ С„РѕСЂРјСѓР» + OPT(key,pct) Рё СЃРїРёСЃРѕРє С„РѕСЂРјСѓР» РґР»СЏ СЃРЅРёРјРєР°/РѕС‚С‡С‘С‚Р°.';
+'Текущие базы формул + OPT(key,pct) и список формул для снимка/отчёта.';
 
 CREATE OR REPLACE FUNCTION logic_opt_record_param_event(
     p_logic_id INTEGER,
@@ -17443,7 +17802,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_opt_record_param_event IS
-'РџРёС€РµС‚ СЃРЅРёРјРѕРє РёР»Рё promote РІ logic_opt_param_history (РЅРµ Р·Р°РІРёСЃРёС‚ РѕС‚ tech log).';
+'Пишет снимок или promote в logic_opt_param_history (не зависит от tech log).';
 
 CREATE OR REPLACE FUNCTION logic_opt_snapshot_params(
     p_logic_id INTEGER,
@@ -17458,7 +17817,7 @@ LANGUAGE sql AS $$
 $$;
 
 COMMENT ON FUNCTION logic_opt_snapshot_params(INTEGER, BIGINT, TIMESTAMP) IS
-'РЎРЅРёРјРѕРє С‚РµРєСѓС‰РёС… РїР°СЂР°РјРµС‚СЂРѕРІ С„РѕСЂРјСѓР»/OPT (СЃС‚Р°СЂС‚ С‚РµСЃС‚Р° РёР»Рё fallback РІ РѕС‚С‡С‘С‚Рµ).';
+'Снимок текущих параметров формул/OPT (старт теста или fallback в отчёте).';
 
 CREATE OR REPLACE FUNCTION logic_opt_param_history_for_report(
     p_logic_id INTEGER,
@@ -17470,7 +17829,7 @@ DECLARE
     v_rows JSONB;
     v_state JSONB;
 BEGIN
-    -- 1) РЎРѕР±С‹С‚РёСЏ СЌС‚РѕРіРѕ РїСЂРѕРіРѕРЅР° (СЃРЅРёРјРѕРє СЃС‚Р°СЂС‚Р° + promote СЃ run_id, РµСЃР»Рё Р±СѓРґСѓС‚)
+    -- 1) События этого прогона (снимок старта + promote с run_id, если будут)
     IF p_run_id IS NOT NULL THEN
         SELECT COALESCE(
             jsonb_agg(
@@ -17502,7 +17861,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- 2) Live promote (run_id IS NULL) + Р»СЋР±С‹Рµ СЃРЅРёРјРєРё Р»РѕРіРёРєРё вЂ” РґР»СЏ РћС‚С‡С‘С‚Р° Р±РµР· run / СЃС‚Р°СЂС‹С… РїСЂРѕРіРѕРЅРѕРІ
+    -- 2) Live promote (run_id IS NULL) + любые снимки логики — для Отчёта без run / старых прогонов
     SELECT COALESCE(
         jsonb_agg(
             jsonb_build_object(
@@ -17533,7 +17892,7 @@ BEGIN
         RETURN v_rows;
     END IF;
 
-    -- 3) Fallback: РѕРґРёРЅ СЃРЅРёРјРѕРє В«РЅР° Р»РµС‚СѓВ» Р±РµР· INSERT
+    -- 3) Fallback: один снимок «на лету» без INSERT
     v_state := logic_opt_collect_formula_state(p_logic_id);
     RETURN jsonb_build_array(
         jsonb_build_object(
@@ -17556,7 +17915,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_opt_param_history_for_report(INTEGER, BIGINT) IS
-'JSON-РјР°СЃСЃРёРІ РёСЃС‚РѕСЂРёРё OPT/РїР°СЂР°РјРµС‚СЂРѕРІ РґР»СЏ РѕС‚С‡С‘С‚Р°; РїСЂРё РїСѓСЃС‚РѕР№ РёСЃС‚РѕСЂРёРё вЂ” РІРёСЂС‚СѓР°Р»СЊРЅС‹Р№ СЃРЅРёРјРѕРє.';
+'JSON-массив истории OPT/параметров для отчёта; при пустой истории — виртуальный снимок.';
 
 -- Rank offline grid lanes on the same backtest run (champion = empty opt_lane).
 CREATE OR REPLACE FUNCTION logic_opt_grid_finalize(p_run_id BIGINT)
@@ -17665,16 +18024,16 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_opt_grid_finalize(BIGINT) IS
-'РџРѕСЃР»Рµ С‚РµСЃС‚Р° СЃ opt_grid_arms: FinRes С‡РµРјРїРёРѕРЅР° Рё РєР°Р¶РґРѕР№ grid-РІРµС‚РєРё, rank; РїРёС€РµС‚ opt_grid_results Рё logics.last_opt_grid_*.';
+'После теста с opt_grid_arms: FinRes чемпиона и каждой grid-ветки, rank; пишет opt_grid_results и logics.last_opt_grid_*.';
 
 -- ============================================
--- РђРІС‚Рѕ РѕРїС‚РёРјРёР·Р°С†РёСЏ (auto_optimize): РїРѕРґСЃС‚СЂРѕР№РєР° Р“Р›РђР’РќРћР“Рћ РїРµСЂРёРѕРґР° РёРЅРґРёРєР°С‚РѕСЂР°
--- РїРѕ С„Р°РєС‚Сѓ Р·Р°РєСЂС‹С‚РёСЏ РїРѕР·РёС†РёРё. Р­РјРїРёСЂРёС‡РµСЃРєРё (РїРµСЂРµСЃС‡С‘С‚РѕРј СЃРёРіРЅР°Р»Р°), Р±РµР· СѓРіР°РґС‹РІР°РЅРёСЏ
--- РЅР°РїСЂР°РІР»РµРЅРёСЏ: РґР»СЏ РїСЂРѕРёРіСЂР°РЅРЅРѕР№ СЃРґРµР»РєРё РёС‰РµРј Р±Р»РёР¶Р°Р№С€РёР№ РїРµСЂРёРѕРґ, РїСЂРё РєРѕС‚РѕСЂРѕРј СЃРёРіРЅР°Р»
--- РІС…РѕРґР° РќР• СЃСЂР°Р±РѕС‚Р°Р» Р±С‹ РЅР° Р±Р°СЂРµ РІС…РѕРґР° (СѓСЃР»РѕРІРёСЏ Р¶С‘СЃС‚С‡Рµ); РґР»СЏ РІС‹РёРіСЂР°РЅРЅРѕР№ вЂ” Р±Р»РёР¶Р°Р№С€РёР№
--- РїРµСЂРёРѕРґ, РїСЂРё РєРѕС‚РѕСЂРѕРј СЃРёРіРЅР°Р» СЃСЂР°Р±РѕС‚Р°Р» Р±С‹ РЅР° РџР Р•Р”Р«Р”РЈР©Р•Рњ Р±Р°СЂРµ, РµСЃР»Рё РІС…РѕРґ С‚Р°Рј Р±С‹Р» Р±С‹
--- РІС‹РіРѕРґРЅРµРµ. РџР°СЂР°РјРµС‚СЂС‹ Р¶РёРІСѓС‚ РІ formula СЃРёРіРЅР°Р»Р° (period=), РєР°Рє Сѓ OPT; Р±Р°Р·Р°
--- РїРµСЂРµР·Р°РїРёСЃС‹РІР°РµС‚СЃСЏ, OPT() РІ С„РѕСЂРјСѓР»Рµ СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ.
+-- Авто оптимизация (auto_optimize): подстройка ГЛАВНОГО периода индикатора
+-- по факту закрытия позиции. Эмпирически (пересчётом сигнала), без угадывания
+-- направления: для проигранной сделки ищем ближайший период, при котором сигнал
+-- входа НЕ сработал бы на баре входа (условия жёстче); для выигранной — ближайший
+-- период, при котором сигнал сработал бы на ПРЕДЫДУЩЕМ баре, если вход там был бы
+-- выгоднее. Параметры живут в formula сигнала (period=), как у OPT; база
+-- перезаписывается, OPT() в формуле сохраняется.
 -- ============================================
 
 CREATE OR REPLACE FUNCTION logic_autoopt_find_period(
@@ -17719,7 +18078,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_autoopt_find_period(INTEGER, INTEGER, INTEGER, TIMESTAMP, INTEGER, BOOLEAN, INTEGER) IS
-'РђРІС‚Рѕ РѕРїС‚РёРјРёР·Р°С†РёСЏ: Р±Р»РёР¶Р°Р№С€РёР№ Рє base РїРµСЂРёРѕРґ (В±), РґР°СЋС‰РёР№ РЅСѓР¶РЅРѕ СЃСЂР°Р±Р°С‚С‹РІР°РЅРёРµ СЃРёРіРЅР°Р»Р° РЅР° Р±Р°СЂРµ.';
+'Авто оптимизация: ближайший к base период (±), дающий нужно срабатывание сигнала на баре.';
 
 CREATE OR REPLACE FUNCTION logic_auto_optimize_on_close(
     p_logic_id INTEGER,
@@ -17755,7 +18114,7 @@ DECLARE
     v_changed INTEGER := 0;
 BEGIN
     v_enabled := lower(btrim(COALESCE(get_logic_param_text(p_logic_id, 'auto_optimize'), 'false')));
-    IF v_enabled NOT IN ('true', 't', '1', 'on', 'yes', 'РґР°') THEN
+    IF v_enabled NOT IN ('true', 't', '1', 'on', 'yes', 'да') THEN
         RETURN 0;
     END IF;
 
@@ -17807,7 +18166,7 @@ BEGIN
         END IF;
         v_is_profit := v_pnl > 0;
 
-        -- РўРѕС‡РЅР°СЏ С†РµРЅР°/Р±Р°СЂ РІС…РѕРґР° РёР· РїР°РєРµС‚РѕРІ Р·Р°РєСЂС‹С‚РёСЏ; РёРЅР°С‡Рµ вЂ” РїРѕСЃР»РµРґРЅСЏСЏ РѕС‚РєСЂС‹РІР°СЋС‰Р°СЏ СЃРґРµР»РєР°.
+        -- Точная цена/бар входа из пакетов закрытия; иначе — последняя открывающая сделка.
         SELECT SUM(l.open_amount) / NULLIF(SUM(l.quantity), 0), MIN(o.bar_dt)
         INTO v_entry_price, v_entry_bar_dt
         FROM logic_trade_lots l
@@ -17848,7 +18207,7 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- Р’С‹РіРѕРґРЅРµРµ Р»Рё Р±С‹Р» Р±С‹ РІС…РѕРґ РЅР° РїСЂРµРґС‹РґСѓС‰РµРј Р±Р°СЂРµ (РґР»СЏ РЅР°С€РµР№ СЃС‚РѕСЂРѕРЅС‹).
+        -- Выгоднее ли был бы вход на предыдущем баре (для нашей стороны).
         v_earlier_better := CASE v_side
             WHEN 'long' THEN v_prev_price < v_entry_price
             ELSE v_prev_price > v_entry_price
@@ -17870,7 +18229,7 @@ BEGIN
             IF NOT COALESCE(v_parsed.valid, FALSE) THEN
                 CONTINUE;
             END IF;
-            -- РЎРёРіРЅР°Р»С‹ СЃРѕ СЃРІРѕРёРј tf= РЅРµ С‚СЂРѕРіР°РµРј: РѕС†РµРЅРєР° РёРґС‘С‚ РїРѕ TF Р»РѕРіРёРєРё.
+            -- Сигналы со своим tf= не трогаем: оценка идёт по TF логики.
             IF parse_signal_param_num(v_parsed.params, 'tf') IS NOT NULL THEN
                 CONTINUE;
             END IF;
@@ -17907,7 +18266,7 @@ BEGIN
                 p_logic_id,
                 'auto_opt.adjust',
                 format(
-                    'РђРІС‚Рѕ РѕРїС‚РёРјРёР·Р°С†РёСЏ (%s): РїРµСЂРёРѕРґ СЃРёРіРЅР°Р»РѕРІ РІС…РѕРґР° РёР·РјРµРЅС‘РЅ, %s СЃРёРіРЅ.; PnL=%s, РІС…РѕРґ=%s, РїСЂРµРґ.%s',
+                    'Авто оптимизация (%s): период сигналов входа изменён, %s сигн.; PnL=%s, вход=%s, пред.%s',
                     v_side, v_changed, v_pnl, v_entry_price, v_prev_price
                 ),
                 jsonb_build_object(
@@ -17934,17 +18293,17 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_auto_optimize_on_close(INTEGER, INTEGER, INTEGER, TIMESTAMP, TEXT, BOOLEAN, BIGINT) IS
-'РђРІС‚Рѕ РѕРїС‚РёРјРёР·Р°С†РёСЏ: РїРѕ Р·Р°РєСЂС‹С‚РёСЋ РїРѕР·РёС†РёРё РїРѕРґР±РёСЂР°РµС‚ РіР»Р°РІРЅС‹Р№ РїРµСЂРёРѕРґ (period) СЃРёРіРЅР°Р»РѕРІ РІС…РѕРґР° вЂ” РїСЂРѕРёРіСЂС‹С€: РїРµСЂРёРѕРґ, РїСЂРё РєРѕС‚РѕСЂРѕРј СЃРёРіРЅР°Р» РЅРµ СЃСЂР°Р±РѕС‚Р°Р» Р±С‹ РЅР° Р±Р°СЂРµ РІС…РѕРґР°; РІС‹РёРіСЂС‹С€: РїРµСЂРёРѕРґ, РїСЂРё РєРѕС‚РѕСЂРѕРј СЃРёРіРЅР°Р» СЃСЂР°Р±РѕС‚Р°Р» Р±С‹ РЅР° РїСЂРµРґС‹РґСѓС‰РµРј Р±Р°СЂРµ (РµСЃР»Рё РІС…РѕРґ С‚Р°Рј РІС‹РіРѕРґРЅРµРµ).';
+'Авто оптимизация: по закрытию позиции подбирает главный период (period) сигналов входа — проигрыш: период, при котором сигнал не сработал бы на баре входа; выигрыш: период, при котором сигнал сработал бы на предыдущем баре (если вход там выгоднее).';
 
--- Р РµР№С‚РёРЅРі СЃРёРіРЅР°Р»Р° РЅР° Р»РѕРіРёРєРµ: Р±РѕРµРІРѕР№ (rating) Рё С‚РµСЃС‚РѕРІС‹Р№ (rating_test) СЂР°Р·РґРµР»СЊРЅРѕ.
--- РќРµ РїСѓС‚Р°С‚СЊ СЃ СЂРµР№С‚РёРЅРіРѕРј РёРЅРґРёРєР°С‚РѕСЂР° РІ СЃРїСЂР°РІРѕС‡РЅРёРєРµ indicators.
+-- Рейтинг сигнала на логике: боевой (rating) и тестовый (rating_test) раздельно.
+-- Не путать с рейтингом индикатора в справочнике indicators.
 --
--- РђР»РіРѕСЂРёС‚Рј СѓСЃРїРµС…Р° (РЅРµ В«РїСЂРѕСЃС‚Рѕ СЃСЂР°Р±РѕС‚Р°Р»В»):
---   1) СЃРёРіРЅР°Р» СЃСЂР°Р±РѕС‚Р°Р» РЅР° СЃРІРµС‡Рµ в†’ pending (Р·Р°РїРѕРјРЅРёС‚СЊ С†РµРЅСѓ);
---   2) РЅР° РЎР›Р•Р”РЈР®Р©Р•Р™ СЃРІРµС‡Рµ TF: С…РѕРґ С†РµРЅС‹ в†’ % РіРѕРґРѕРІС‹С… Р·Р° РґР»РёС‚РµР»СЊРЅРѕСЃС‚СЊ TF;
---   3) СЃСЂР°РІРЅРёС‚СЊ СЃ base_annual_rate_pct Р»РѕРіРёРєРё (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ 20);
---   4) СѓСЃРїРµС… в†’ +1, РЅРµСѓСЃРїРµС… в†’ в€’1 (СЂРµР№С‚РёРЅРі РјРѕР¶РµС‚ Р±С‹С‚СЊ РѕС‚СЂРёС†Р°С‚РµР»СЊРЅС‹Рј).
--- РСЃС‚РѕСЂРёСЏ РїРёС€РµС‚СЃСЏ РїРѕ (signal Г— security); РіСЂР°С„РёРє вЂ” РїРѕ Р±СѓРјР°РіРµ.
+-- Алгоритм успеха (не «просто сработал»):
+--   1) сигнал сработал на свече → pending (запомнить цену);
+--   2) на СЛЕДУЮЩЕЙ свече TF: ход цены → % годовых за длительность TF;
+--   3) сравнить с base_annual_rate_pct логики (по умолчанию 20);
+--   4) успех → +1, неуспех → −1 (рейтинг может быть отрицательным).
+-- История пишется по (signal × security); график — по бумаге.
 
 DROP FUNCTION IF EXISTS logic_signal_record_fire(INTEGER, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC, TEXT, TEXT);
 DROP FUNCTION IF EXISTS logic_signal_rating_resolve_pending(INTEGER, INTEGER, TIMESTAMP);
@@ -17985,12 +18344,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION get_logic_param_boolean(INTEGER, TEXT, BOOLEAN) IS
-'Р‘СѓР»РµРІ РїР°СЂР°РјРµС‚СЂ logic_params (true/1/yes вЂ¦); РїСѓСЃС‚Рѕ в†’ p_default';
+'Булев параметр logic_params (true/1/yes …); пусто → p_default';
 
--- РРЅРІРµСЂСЃРёСЏ СЃСЂР°РІРЅРµРЅРёСЏ: >=в†”<=, >в†”< (legacy helper).
--- Param В«inversionВ» / ReverseSides Р±РѕР»СЊС€Рµ РќР• РІС‹Р·С‹РІР°РµС‚ СЌС‚Рѕ РЅР° СЃРёРіРЅР°Р»Р°С…:
--- РґР»СЏ РєР°РЅР°Р»РѕРІ (pp<=LOWER) РёРЅРІРµСЂСЃРёСЏ СѓСЃР»РѕРІРёСЏ РґР°С‘С‚ pp>=LOWER в‰€ РІСЃРµРіРґР° true в†’ СЃРїР°Рј СЃРґРµР»РѕРє.
--- РРЅРІРµСЂСЃРёСЏ Р»РѕРіРёРєРё = С‚РѕР»СЊРєРѕ Longв†”Short РїСЂРё С‚РѕРј Р¶Рµ СѓСЃР»РѕРІРёРё.
+-- Инверсия сравнения: >=↔<=, >↔< (legacy helper).
+-- Param «inversion» / ReverseSides больше НЕ вызывает это на сигналах:
+-- для каналов (pp<=LOWER) инверсия условия даёт pp>=LOWER ≈ всегда true → спам сделок.
+-- Инверсия логики = только Long↔Short при том же условии.
 CREATE OR REPLACE FUNCTION logic_invert_comparison_condition(p_condition TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql IMMUTABLE AS $$
@@ -18001,16 +18360,16 @@ BEGIN
     IF v = '' THEN
         RETURN v;
     END IF;
-    -- РЎРЅР°С‡Р°Р»Р° РґРІСѓС…СЃРёРјРІРѕР»СЊРЅС‹Рµ РѕРїРµСЂР°С‚РѕСЂС‹ С‡РµСЂРµР· РјР°СЂРєРµСЂС‹
+    -- Сначала двухсимвольные операторы через маркеры
     v := replace(v, '>=', E'\x01');
     v := replace(v, '<=', E'\x02');
     v := replace(v, '<>', E'\x03');
     v := replace(v, '!=', E'\x04');
-    -- РћРґРЅРѕСЃРёРјРІРѕР»СЊРЅС‹Рµ > Рё <
+    -- Односимвольные > и <
     v := replace(v, '>', E'\x05');
     v := replace(v, '<', '>');
     v := replace(v, E'\x05', '<');
-    -- Р’РѕСЃСЃС‚Р°РЅРѕРІРёС‚СЊ РґРІСѓС…СЃРёРјРІРѕР»СЊРЅС‹Рµ СЃ РёРЅРІРµСЂСЃРёРµР№
+    -- Восстановить двухсимвольные с инверсией
     v := replace(v, E'\x01', '<=');
     v := replace(v, E'\x02', '>=');
     v := replace(v, E'\x03', '<>');
@@ -18020,7 +18379,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_invert_comparison_condition(TEXT) IS
-'РРЅРІРµСЂСЃРёСЏ РѕРїРµСЂР°С‚РѕСЂРѕРІ СЃСЂР°РІРЅРµРЅРёСЏ РІ СѓСЃР»РѕРІРёРё СЃРёРіРЅР°Р»Р° (в‰Ґв†”в‰¤, >в†”<)';
+'Инверсия операторов сравнения в условии сигнала (≥↔≤, >↔<)';
 
 CREATE OR REPLACE FUNCTION logic_signal_annualized_move_pct(
     p_move_pct NUMERIC,
@@ -18033,7 +18392,7 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_signal_annualized_move_pct(NUMERIC, INTEGER) IS
-'РџРµСЂРµРІРѕРґРёС‚ % С…РѕРґР° Р·Р° РѕРґРЅСѓ СЃРІРµС‡Сѓ TF РІ СЌРєРІРёРІР°Р»РµРЅС‚ % РіРѕРґРѕРІС‹С…';
+'Переводит % хода за одну свечу TF в эквивалент % годовых';
 
 CREATE OR REPLACE FUNCTION logic_bar_annual_threshold_pct(
     p_tf_sec INTEGER,
@@ -18049,9 +18408,9 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_bar_annual_threshold_pct(INTEGER, NUMERIC) IS
-'Р­РєРІРёРІР°Р»РµРЅС‚ РїРѕСЂРѕРіР° РЅР° 1 СЃРІРµС‡Рµ: base_annual Г— (tf_sec / РіРѕРґ). РЎРѕРіР»Р°СЃРѕРІР°РЅ СЃ annualized_move >= base.';
+'Эквивалент порога на 1 свече: base_annual × (tf_sec / год). Согласован с annualized_move >= base.';
 
--- РЈСЃРїРµС…: РіРѕРґРѕРІР°СЏ СЃС‚Р°РІРєР° С…РѕРґР° РІ РѕР¶РёРґР°РµРјСѓСЋ СЃС‚РѕСЂРѕРЅСѓ >= base_annual_rate_pct
+-- Успех: годовая ставка хода в ожидаемую сторону >= base_annual_rate_pct
 CREATE OR REPLACE FUNCTION logic_signal_move_success(
     p_position_side TEXT,
     p_signal_kind TEXT,
@@ -18072,7 +18431,7 @@ BEGIN
     END IF;
     v_raw_pct := ((p_price_to - p_price_from) / p_price_from) * 100.0;
 
-    -- РћР¶РёРґР°РµРјРѕРµ РЅР°РїСЂР°РІР»РµРЅРёРµ: long/trend Рё short/counter вЂ” СЂРѕСЃС‚; РёРЅР°С‡Рµ вЂ” РїР°РґРµРЅРёРµ
+    -- Ожидаемое направление: long/trend и short/counter — рост; иначе — падение
     IF lower(p_position_side) = 'long' THEN
         IF lower(p_signal_kind) = 'trend' THEN
             v_dir_pct := v_raw_pct;
@@ -18093,9 +18452,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_move_success(TEXT, TEXT, NUMERIC, NUMERIC, INTEGER, NUMERIC) IS
-'РЈСЃРїРµС… СЃРёРіРЅР°Р»Р°: (С…РѕРґ Рє СЃР»РµРґСѓСЋС‰РµР№ СЃРІРµС‡Рµ в†’ % РіРѕРґРѕРІС‹С… РІ СЃС‚РѕСЂРѕРЅСѓ СЃРёРіРЅР°Р»Р°) >= base_annual_rate_pct';
+'Успех сигнала: (ход к следующей свече → % годовых в сторону сигнала) >= base_annual_rate_pct';
 
--- Р‘Р°Р·РѕРІС‹Р№ Р°РєС‚РёРІ С„СЊСЋС‡РµСЂСЃР° (security_prefixes.underlying_security_id).
+-- Базовый актив фьючерса (security_prefixes.underlying_security_id).
 CREATE OR REPLACE FUNCTION logic_future_underlying_security_id(p_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE sql STABLE AS $$
@@ -18109,9 +18468,9 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_future_underlying_security_id(INTEGER) IS
-'security_id Р±Р°Р·РѕРІРѕРіРѕ Р°РєС‚РёРІР° РґР»СЏ С„СЊСЋС‡РµСЂСЃР°; NULL РµСЃР»Рё РЅРµ futures РёР»Рё РЅРµС‚ mapping';
+'security_id базового актива для фьючерса; NULL если не futures или нет mapping';
 
--- РЎРѕР·РґР°С‚СЊ/РЅР°Р№С‚Рё СЃРёРЅС‚РµС‚РёС‡РµСЃРєСѓСЋ Р±СѓРјР°РіСѓ РєРѕРЅС‚Р°РЅРіРѕ (fut в€’ und) РґР»СЏ С„СЊСЋС‡РµСЂСЃР°.
+-- Создать/найти синтетическую бумагу контанго (fut − und) для фьючерса.
 CREATE OR REPLACE FUNCTION logic_ensure_contango_security(p_future_security_id INTEGER)
 RETURNS INTEGER
 LANGUAGE plpgsql AS $$
@@ -18173,7 +18532,7 @@ BEGIN
         v_exch_id,
         left(format('CTG:%s', COALESCE(NULLIF(btrim(v_prefix), ''), p_future_security_id::TEXT)), 50),
         'other',
-        'РЎРёРЅС‚РµС‚РёРєР°: РєРѕРЅС‚Р°РЅРіРѕ (С„СЊСЋС‡РµСЂСЃ в€’ Р±Р°Р·РѕРІС‹Р№ Р°РєС‚РёРІ)',
+        'Синтетика: контанго (фьючерс − базовый актив)',
         v_und
     )
     ON CONFLICT (security_id, exchange_id) DO UPDATE SET
@@ -18196,7 +18555,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_ensure_contango_security(INTEGER) IS
-'РЎРёРЅС‚РµС‚РёС‡РµСЃРєР°СЏ Р±СѓРјР°РіР° РєРѕРЅС‚Р°РЅРіРѕ РґР»СЏ С„СЊСЋС‡РµСЂСЃР°; NULL РµСЃР»Рё РЅРµС‚ underlying';
+'Синтетическая бумага контанго для фьючерса; NULL если нет underlying';
 
 CREATE OR REPLACE FUNCTION logic_contango_security_id(p_future_security_id INTEGER)
 RETURNS INTEGER
@@ -18205,9 +18564,9 @@ LANGUAGE sql AS $$
 $$;
 
 COMMENT ON FUNCTION logic_contango_security_id(INTEGER) IS
-'security_id СЃРёРЅС‚РµС‚РёРєРё contango (СЃРѕР·РґР°С‘С‚ РїСЂРё РѕС‚СЃСѓС‚СЃС‚РІРёРё)';
+'security_id синтетики contango (создаёт при отсутствии)';
 
--- РњР°С‚РµСЂРёР°Р»РёР·РѕРІР°С‚СЊ OHLC РєРѕРЅС‚Р°РЅРіРѕ: fut в€’ und РЅР° РѕР±С‰РёС… timestamp.
+-- Материализовать OHLC контанго: fut − und на общих timestamp.
 CREATE OR REPLACE FUNCTION sync_contango_prices(
     p_future_security_id INTEGER,
     p_timeframe_id INTEGER,
@@ -18282,9 +18641,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION sync_contango_prices(INTEGER, INTEGER, DATE, DATE) IS
-'Р—Р°РїРёСЃР°С‚СЊ/РѕР±РЅРѕРІРёС‚СЊ СЃРёРЅС‚РµС‚РёС‡РµСЃРєРёРµ СЃРІРµС‡Рё РєРѕРЅС‚Р°РЅРіРѕ (futв€’und) Р·Р° РїРµСЂРёРѕРґ';
+'Записать/обновить синтетические свечи контанго (fut−und) за период';
 
--- acts_on + trade security в†’ eval security_id (Р±РµР· id СЃРёРіРЅР°Р»Р°).
+-- acts_on + trade security → eval security_id (без id сигнала).
 CREATE OR REPLACE FUNCTION logic_signal_resolve_eval_security(
     p_acts_on TEXT,
     p_trade_security_id INTEGER
@@ -18308,9 +18667,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_resolve_eval_security(TEXT, INTEGER) IS
-'security | base_asset | contango в†’ security_id РґР»СЏ С†РµРЅ/РёРЅРґРёРєР°С‚РѕСЂРѕРІ';
+'security | base_asset | contango → security_id для цен/индикаторов';
 
--- РќР° РєР°РєРѕР№ security_id СЃС‡РёС‚Р°С‚СЊ СЃРёРіРЅР°Р»: С‚РѕСЂРіСѓРµРјР°СЏ Р±СѓРјР°РіР°, underlying РёР»Рё contango.
+-- На какой security_id считать сигнал: торгуемая бумага, underlying или contango.
 CREATE OR REPLACE FUNCTION logic_signal_eval_security_id(
     p_signal_id INTEGER,
     p_trade_security_id INTEGER
@@ -18333,7 +18692,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_eval_security_id(INTEGER, INTEGER) IS
-'signal_acts_on в†’ security | base_asset | contango eval security_id';
+'signal_acts_on → security | base_asset | contango eval security_id';
 
 CREATE OR REPLACE FUNCTION logic_signal_evaluate_at(
     p_signal_id INTEGER,
@@ -18361,9 +18720,13 @@ DECLARE
     v_bar RECORD;
     v_condition TEXT;
     v_eval_sec INTEGER;
+    v_run_id BIGINT;
+    v_logic_id INTEGER;
+    v_acts TEXT;
 BEGIN
     ok := FALSE;
-    SELECT lis.id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id
+    SELECT lis.id, lis.logic_id, lis.formula, lis.position_event, lis.position_side, lis.signal_kind, lis.indicator_id,
+           COALESCE(NULLIF(btrim(lis.signal_acts_on), ''), 'security') AS acts_on
     INTO v_sig
     FROM logic_indicator_signals lis
     WHERE lis.id = p_signal_id AND lis.is_active = TRUE;
@@ -18377,12 +18740,8 @@ BEGIN
     position_side := v_sig.position_side;
     signal_kind := v_sig.signal_kind;
     indicator_id := v_sig.indicator_id;
-
-    v_eval_sec := logic_signal_eval_security_id(p_signal_id, p_security_id);
-    IF v_eval_sec IS NULL THEN
-        RETURN NEXT;
-        RETURN;
-    END IF;
+    v_acts := v_sig.acts_on;
+    v_logic_id := v_sig.logic_id;
 
     SELECT * INTO v_parsed FROM parse_signal_formula(v_sig.formula);
     IF NOT COALESCE(v_parsed.valid, FALSE) THEN
@@ -18390,10 +18749,24 @@ BEGIN
         RETURN;
     END IF;
     v_series := parse_signal_series(v_parsed.params);
-    SELECT * INTO v_bar FROM logic_bar_data_at(
-        v_eval_sec, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt
-    );
-    IF NOT FOUND THEN
+
+    IF v_acts = 'portfolio' THEN
+        v_run_id := NULLIF(current_setting('app.portfolio_backtest_run_id', TRUE), '')::BIGINT;
+        SELECT * INTO v_bar FROM logic_portfolio_bar_data_at(
+            v_logic_id, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt, v_parsed.params, v_run_id
+        );
+    ELSE
+        v_eval_sec := logic_signal_resolve_eval_security(v_acts, p_security_id);
+        IF v_eval_sec IS NULL THEN
+            RETURN NEXT;
+            RETURN;
+        END IF;
+        SELECT * INTO v_bar FROM logic_bar_data_at(
+            v_eval_sec, p_tf_id, v_sig.indicator_id, v_series, p_bar_dt
+        );
+    END IF;
+
+    IF NOT FOUND OR v_bar.bar_dt IS NULL THEN
         RETURN NEXT;
         RETURN;
     END IF;
@@ -18424,7 +18797,15 @@ CREATE OR REPLACE FUNCTION logic_signal_record_fire(
 RETURNS VOID
 LANGUAGE plpgsql AS $$
 BEGIN
-    -- РўРѕР»СЊРєРѕ Р·Р°РїРѕРјРёРЅР°РµРј: В±1 СЃС‚Р°РІРёС‚СЃСЏ РЅР° СЃР»РµРґСѓСЋС‰РµР№ СЃРІРµС‡Рµ РІ resolve_pending
+    -- Portfolio signals: no rating/fires
+    IF EXISTS (
+        SELECT 1 FROM logic_indicator_signals lis
+        WHERE lis.id = p_signal_id
+          AND COALESCE(lis.signal_acts_on, 'security') = 'portfolio'
+    ) THEN
+        RETURN;
+    END IF;
+
     INSERT INTO logic_signal_rating_pending (
         signal_id, logic_id, security_id, timeframe_id,
         bar_dt, price, position_side, signal_kind, is_test, run_id
@@ -18499,7 +18880,7 @@ BEGIN
         );
         v_delta := CASE WHEN v_ok THEN 1 ELSE -1 END;
 
-        -- Р“Р»РѕР±Р°Р»СЊРЅС‹Р№ СЂРµР№С‚РёРЅРі СЃРёРіРЅР°Р»Р° (СЃСѓРјРјР° РїРѕ РІСЃРµРј Р±СѓРјР°РіР°Рј), РјРѕР¶РµС‚ Р±С‹С‚СЊ < 0
+        -- Глобальный рейтинг сигнала (сумма по всем бумагам), может быть < 0
         IF COALESCE(p_is_test, FALSE) THEN
             UPDATE logic_indicator_signals lis
             SET rating_test = lis.rating_test + v_delta
@@ -18512,7 +18893,7 @@ BEGIN
             RETURNING rating INTO v_new_rating;
         END IF;
 
-        -- Р РµР№С‚РёРЅРі РЅР° Р±СѓРјР°РіРµ РґР»СЏ РіСЂР°С„РёРєР°
+        -- Рейтинг на бумаге для графика
         SELECT COALESCE((
             SELECT h.rating
             FROM logic_signal_rating_history h
@@ -18544,9 +18925,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_rating_resolve_pending(INTEGER, INTEGER, TIMESTAMP, BOOLEAN, BIGINT) IS
-'РќР° СЃР»РµРґСѓСЋС‰РµР№ СЃРІРµС‡Рµ: РіРѕРґРѕРІР°СЏ СЃС‚Р°РІРєР° С…РѕРґР° vs base_annual_rate_pct в†’ В±1; history РїРѕ Р±СѓРјР°РіРµ';
+'На следующей свече: годовая ставка хода vs base_annual_rate_pct → ±1; history по бумаге';
 
--- РћР±С‰РёР№ РїСЂРѕС…РѕРґ РїРѕ Р±Р°СЂСѓ: resolve pending + Р·Р°РїРёСЃСЊ СЃСЂР°Р±Р°С‚С‹РІР°РЅРёР№ (Р±РѕР№ РёР»Рё С‚РµСЃС‚)
+-- Общий проход по бару: resolve pending + запись срабатываний (бой или тест)
 CREATE OR REPLACE FUNCTION logic_signal_rate_bar(
     p_logic_id INTEGER,
     p_tf_id INTEGER,
@@ -18587,6 +18968,7 @@ BEGIN
             SELECT lis.id, lis.position_side, lis.signal_kind
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+              AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
             ORDER BY lis.display_order, lis.id
         LOOP
             SELECT * INTO v_eval
@@ -18610,7 +18992,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_rate_bar(INTEGER, INTEGER, TIMESTAMP, BOOLEAN, BIGINT) IS
-'РџРѕ РѕРґРЅРѕР№ СЃРІРµС‡Рµ TF: resolve pending В±1 + record_fire РґР»СЏ РІСЃРµС… СЃРёРіРЅР°Р»РѕРІГ—Р±СѓРјР°Рі (Р±РѕР№/С‚РµСЃС‚)';
+'По одной свече TF: resolve pending ±1 + record_fire для всех сигналов×бумаг (бой/тест)';
 
 CREATE OR REPLACE FUNCTION logic_backtest_rate_signals(
     p_run_id BIGINT,
@@ -18626,7 +19008,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_rate_signals(BIGINT, INTEGER, INTEGER, TIMESTAMP) IS
-'Р‘СЌРєС‚РµСЃС‚: РѕР±С‘СЂС‚РєР° logic_signal_rate_bar(..., is_test=true)';
+'Бэктест: обёртка logic_signal_rate_bar(..., is_test=true)';
 
 CREATE OR REPLACE FUNCTION logic_backtest_reset_signal_ratings(p_logic_id INTEGER)
 RETURNS VOID
@@ -18645,7 +19027,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_reset_signal_ratings(INTEGER) IS
-'РЎР±СЂРѕСЃ С‚РµСЃС‚РѕРІРѕРіРѕ СЂРµР№С‚РёРЅРіР° Рё РёСЃС‚РѕСЂРёРё РїРµСЂРµРґ РЅРѕРІС‹Рј РїСЂРѕРіРѕРЅРѕРј Р±СЌРєС‚РµСЃС‚Р°';
+'Сброс тестового рейтинга и истории перед новым прогоном бэктеста';
 
 CREATE OR REPLACE FUNCTION logic_signal_rating_reset_live(p_logic_id INTEGER)
 RETURNS VOID
@@ -18664,9 +19046,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_rating_reset_live(INTEGER) IS
-'РЎР±СЂРѕСЃ Р±РѕРµРІРѕРіРѕ СЂРµР№С‚РёРЅРіР° Рё РёСЃС‚РѕСЂРёРё РїРµСЂРµРґ РїСЂРµРґСЂР°СЃС‡С‘С‚РѕРј РїСЂРё РІРєР»СЋС‡РµРЅРёРё Р»РѕРіРёРєРё';
+'Сброс боевого рейтинга и истории перед предрасчётом при включении логики';
 
--- РџРѕРґРіРѕС‚РѕРІРєР° РґР°РЅРЅС‹С… РѕРєРЅР° РїСЂРµРґСЂР°СЃС‡С‘С‚Р°: С†РµРЅС‹ + РёРЅРґРёРєР°С‚РѕСЂС‹ СЃРёРіРЅР°Р»РѕРІ Р»РѕРіРёРєРё
+-- Подготовка данных окна предрасчёта: цены + индикаторы сигналов логики
 CREATE OR REPLACE PROCEDURE logic_rating_precalc_ensure_data(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER,
@@ -18687,11 +19069,11 @@ BEGIN
     v_days := GREATEST(1, LEAST(90, COALESCE(p_lookback_days, 7)));
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = p_timeframe_id;
     IF v_tf_sec IS NULL OR v_tf_sec <= 0 THEN
-        RAISE EXCEPTION 'logic_rating_precalc_ensure_data: РЅРµРёР·РІРµСЃС‚РЅС‹Р№ timeframe_id %', p_timeframe_id;
+        RAISE EXCEPTION 'logic_rating_precalc_ensure_data: неизвестный timeframe_id %', p_timeframe_id;
     END IF;
 
     v_date_to := CURRENT_DATE;
-    -- M1/M2: Сѓ T-Bank РѕР±С‹С‡РЅРѕ С‚РѕР»СЊРєРѕ С‚РµРєСѓС‰РёР№ РґРµРЅСЊ
+    -- M1/M2: у T-Bank обычно только текущий день
     IF COALESCE(v_tf_sec, 0) <= 120 THEN
         v_date_from := v_date_to;
     ELSE
@@ -18720,7 +19102,7 @@ BEGIN
                 PERFORM logic_trade_log(
                     p_logic_id,
                     'rating.precalc.prices.error',
-                    format('РџСЂРµРґСЂР°СЃС‡С‘С‚: РѕС€РёР±РєР° С†РµРЅ sec=%s: %s', v_sec.security_id, v_err),
+                    format('Предрасчёт: ошибка цен sec=%s: %s', v_sec.security_id, v_err),
                     jsonb_build_object(
                         'security_id', v_sec.security_id,
                         'date_from', v_date_from,
@@ -18732,7 +19114,7 @@ BEGIN
                 );
         END;
 
-        -- underlying + contango РґР»СЏ СЃРёРіРЅР°Р»РѕРІ base_asset/contango
+        -- underlying + contango для сигналов base_asset/contango
         FOR v_sig IN
             SELECT DISTINCT logic_future_underlying_security_id(v_sec.security_id) AS und_id
             FROM logic_indicator_signals lis
@@ -18789,7 +19171,7 @@ BEGIN
                 PERFORM logic_trade_log(
                     p_logic_id,
                     'rating.precalc.indicator.error',
-                    format('РџСЂРµРґСЂР°СЃС‡С‘С‚: РѕС€РёР±РєР° РёРЅРґРёРєР°С‚РѕСЂР° sec=%s ind=%s: %s',
+                    format('Предрасчёт: ошибка индикатора sec=%s ind=%s: %s',
                            v_sig.eval_sec_id, v_sig.indicator_id, v_err),
                     jsonb_build_object(
                         'security_id', v_sig.eval_sec_id,
@@ -18807,37 +19189,37 @@ END;
 $$;
 
 COMMENT ON PROCEDURE logic_rating_precalc_ensure_data(INTEGER, INTEGER, INTEGER) IS
-'РџРµСЂРµРґ Р±РѕРµРІС‹Рј РїСЂРµРґСЂР°СЃС‡С‘С‚РѕРј СЂРµР№С‚РёРЅРіР°: load_prices + contango sync + sync РёРЅРґРёРєР°С‚РѕСЂРѕРІ';
+'Перед боевым предрасчётом рейтинга: load_prices + contango sync + sync индикаторов';
 
 -- ============================================================================
--- РўРµСЃС‚ Р’Р«Р§РРЎР›РРњР«РҐ РёРЅРґРёРєР°С‚РѕСЂРѕРІ СЃРїСЂР°РІРѕС‡РЅРёРєР° в†’ СЂРµР№С‚РёРЅРі (% РіРѕРґРѕРІС‹С…).
--- Р¤РѕРЅРѕРІС‹Р№, РїРѕ РѕСЃС‚Р°С‚РѕС‡РЅРѕРјСѓ РїСЂРёРЅС†РёРїСѓ, РЅР° РЈР–Р• Р·Р°РіСЂСѓР¶РµРЅРЅС‹С… С†РµРЅР°С… (Р±РµР· load_prices).
--- РџСЂРёСЃС‚СЂР°РёРІР°РµС‚СЃСЏ Рє СЂР°Р±РѕС‚Р°СЋС‰РµР№ Р»РѕРіРёРєРµ: РїРѕСЃР»Рµ РµС‘ С†РёРєР»Р°/Р·Р°РіСЂСѓР·РєРё С†РµРЅ РїРµСЂРµСЃС‡РёС‚С‹РІР°РµРј
--- СЂРµР№С‚РёРЅРі РїРѕ СЋРЅРёРІРµСЂСЃСѓ РїР°СЂ (Р±СѓРјР°РіР° Г— РўР¤) РёРјРµРЅРЅРѕ СЌС‚РѕР№ Р»РѕРіРёРєРё (p_logic_id), РІ С„РѕРЅРµ.
+-- Тест ВЫЧИСЛИМЫХ индикаторов справочника → рейтинг (% годовых).
+-- Фоновый, по остаточному принципу, на УЖЕ загруженных ценах (без load_prices).
+-- Пристраивается к работающей логике: после её цикла/загрузки цен пересчитываем
+-- рейтинг по юниверсу пар (бумага × ТФ) именно этой логики (p_logic_id), в фоне.
 --
--- Р”Р»СЏ РєР°Р¶РґРѕРіРѕ РІС‹С‡РёСЃР»РёРјРѕРіРѕ РёРЅРґРёРєР°С‚РѕСЂР° (РµСЃС‚СЊ formula/script Рё non-threshold С‚РёРїС‹):
---   1) РїРѕ РєР°Р¶РґРѕР№ РїР°СЂРµ (Р±СѓРјР°РіР° Г— РўР¤) вЂ” РёР· СЋРЅРёРІРµСЂСЃР° Р»РѕРіРёРєРё (РёР»Рё РІСЃРµС… Р»РѕРіРёРє, РµСЃР»Рё
---      p_logic_id IS NULL) вЂ” РѕРґРёРЅ СЂР°Р· СЃС‡РёС‚Р°РµРј Р·РЅР°С‡РµРЅРёСЏ РёРЅРґРёРєР°С‚РѕСЂР° РёР· СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёС…
---      С†РµРЅ (РёРЅРєСЂРµРјРµРЅС‚Р°Р»СЊРЅРѕ);
---      РґР»СЏ РѕС†РµРЅРєРё Р±РµСЂС‘Рј РїРѕСЃР»РµРґРЅРёРµ p_bars_window Р·Р°РіСЂСѓР¶РµРЅРЅС‹С… СЃРІРµС‡РµР№ РїР°СЂС‹ (Р·Р°С‰РёС‚Р°
---      РѕС‚ СЂРѕСЃС‚Р° РЅР° РґР»РёРЅРЅС‹С… РёСЃС‚РѕСЂРёСЏС… M1);
---   2) РїРѕ РєР°Р¶РґРѕР№ Р·Р°РєСЂС‹С‚РѕР№ СЃРІРµС‡Рµ РїСЂРѕРІРµСЂСЏРµРј СѓСЃР»РѕРІРёСЏ С‚СЂРµРЅРґ/РєРѕРЅС‚СЂС‚СЂРµРЅРґ РёР·
---      indicators.sig_trend_def / sig_ct_def (РЅРѕСЂРјР°Р»РёР·РѕРІР°РЅС‹ Рє РѕРґРЅРѕРјСѓ СЂСЏРґСѓ VALUE);
---   3) В«РїСЂРёР±С‹Р»СЊВ» = Р»СѓС‡С€РёР№ С…РѕРґ: РјР°РєСЃРёРјР°Р»СЊРЅС‹Р№ high (Р»РѕРЅРі) / РјРёРЅРёРјР°Р»СЊРЅС‹Р№ low (С€РѕСЂС‚)
---      СЃСЂРµРґРё Р’РЎР•РҐ СѓР¶Рµ Р·Р°РіСЂСѓР¶РµРЅРЅС‹С… РїРѕСЃР»РµРґСѓСЋС‰РёС… СЃРІРµС‡РµР№, РІ % РіРѕРґРѕРІС‹С… РїРѕ РІСЂРµРјРµРЅРё
---      СѓРґРµСЂР¶Р°РЅРёСЏ РґРѕ СЌС‚РѕР№ Р»СѓС‡С€РµР№ С‚РѕС‡РєРё;
---   4) СѓСЃСЂРµРґРЅСЏРµРј РїРѕ Р±СѓРјР°РіР°Рј РІ СЂР°Р·СЂРµР·Рµ (Р»РѕРЅРі/С€РѕСЂС‚ Г— С‚СЂРµРЅРґ/РєРѕРЅС‚СЂ Г— С‚РёРї РІСЂРµРјРµРЅРё),
---      РіРґРµ С‚РёРї РІСЂРµРјРµРЅРё: СЂР°Р±РѕС‡РёР№ РґРµРЅСЊ/РІС‹С…РѕРґРЅРѕР№ Г— С‚РѕСЂРіРѕРІР°СЏ/РЅРµС‚РѕСЂРіРѕРІР°СЏ СЃРµСЃСЃРёСЏ
---      (СЂС‹РЅРѕС‡РЅС‹Р№ С€Р°Р±Р»РѕРЅ MOEX logic_moex_equity_non_trading_template);
---   5) СЂР°Р·СЂРµР·С‹ СЃ С‡РёСЃР»РѕРј СЃРёРіРЅР°Р»РѕРІ РјРµРЅСЊС€Рµ РїРѕСЂРѕРіР° РЅРµ СѓС‡РёС‚С‹РІР°СЋС‚СЃСЏ; РіРѕРґРѕРІС‹Рµ РѕР±СЂРµР·Р°СЋС‚СЃСЏ
---      (СѓРёРЅСЃРѕСЂРёР·Р°С†РёСЏ) РґР»СЏ РіР°С€РµРЅРёСЏ РІС‹Р±СЂРѕСЃРѕРІ.
---   Р РµР№С‚РёРЅРі РёРЅРґРёРєР°С‚РѕСЂР° = РјР°РєСЃРёРјСѓРј СЃСЂРµРґРЅРµРіРѕ % РіРѕРґРѕРІС‹С… РїРѕ РІСЃРµРј СЂР°Р·СЂРµР·Р°Рј.
+-- Для каждого вычислимого индикатора (есть formula/script и non-threshold типы):
+--   1) по каждой паре (бумага × ТФ) — из юниверса логики (или всех логик, если
+--      p_logic_id IS NULL) — один раз считаем значения индикатора из существующих
+--      цен (инкрементально);
+--      для оценки берём последние p_bars_window загруженных свечей пары (защита
+--      от роста на длинных историях M1);
+--   2) по каждой закрытой свече проверяем условия тренд/контртренд из
+--      indicators.sig_trend_def / sig_ct_def (нормализованы к одному ряду VALUE);
+--   3) «прибыль» = лучший ход: максимальный high (лонг) / минимальный low (шорт)
+--      среди ВСЕХ уже загруженных последующих свечей, в % годовых по времени
+--      удержания до этой лучшей точки;
+--   4) усредняем по бумагам в разрезе (лонг/шорт × тренд/контр × тип времени),
+--      где тип времени: рабочий день/выходной × торговая/неторговая сессия
+--      (рыночный шаблон MOEX logic_moex_equity_non_trading_template);
+--   5) разрезы с числом сигналов меньше порога не учитываются; годовые обрезаются
+--      (уинсоризация) для гашения выбросов.
+--   Рейтинг индикатора = максимум среднего % годовых по всем разрезам.
 --
--- РќР• РїСѓС‚Р°С‚СЊ СЃ СЂРµР№С‚РёРЅРіРѕРј СЃРёРіРЅР°Р»Р° РЅР° Р»РѕРіРёРєРµ (sql/logic_signal_and_rating.sql).
--- Р РµР·СѓР»СЊС‚Р°С‚С‹: indicator_rating_sample (СЃС‹СЂСЊС‘, СЃСѓС‚РєРё) Рё indicator_rating (Р°РіСЂРµРіР°С‚).
+-- НЕ путать с рейтингом сигнала на логике (sql/logic_signal_and_rating.sql).
+-- Результаты: indicator_rating_sample (сырьё, сутки) и indicator_rating (агрегат).
 -- ============================================================================
 
--- РџР°СЂР°РјРµС‚СЂС‹ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ Р°РІС‚Рѕ-С„РѕСЂРјСѓР»С‹ РёРЅРґРёРєР°С‚РѕСЂР° (СЃРµСЂРёСЏ РІС‹РЅРµСЃРµРЅР° РІ series=).
+-- Параметры по умолчанию для авто-формулы индикатора (серия вынесена в series=).
 CREATE OR REPLACE FUNCTION indicator_signal_default_params(
     p_code TEXT,
     p_series TEXT
@@ -18856,18 +19238,18 @@ LANGUAGE sql IMMUTABLE AS $$
         WHEN 'BB' THEN 'period=20,std_dev=2,series=' || p_series
         WHEN 'KELTNER' THEN 'period=20,multiplier=2,atr_period=10,series=' || p_series
         WHEN 'DONCHIAN' THEN 'period=20,series=' || p_series
-        -- 3 РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅС‹Рµ СЃРІРµС‡Рё вЂ” СЂР°Р±РѕС‡РёР№ РїРµСЂРёРѕРґ SOLDIERS (period=20 РЅРµ РґР°С‘С‚ СЃРёРіРЅР°Р»РѕРІ РІРѕРѕР±С‰Рµ).
+        -- 3 последовательные свечи — рабочий период SOLDIERS (period=20 не даёт сигналов вообще).
         WHEN 'SOLDIERS' THEN 'period=3,series=' || p_series
         ELSE 'period=20,series=' || p_series
     END;
 $$;
 
 COMMENT ON FUNCTION indicator_signal_default_params(TEXT, TEXT) IS
-'РџР°СЂР°РјРµС‚СЂС‹ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ Р°РІС‚Рѕ-С„РѕСЂРјСѓР»С‹ РёРЅРґРёРєР°С‚РѕСЂР° РІ С‚РµСЃС‚Рµ СЂРµР№С‚РёРЅРіР° (СЃРµСЂРёСЏ РІС‹РЅРµСЃРµРЅР° РІ series=)';
+'Параметры по умолчанию для авто-формулы индикатора в тесте рейтинга (серия вынесена в series=)';
 
--- РР· РѕС„РёС†РёР°Р»СЊРЅРѕРіРѕ СѓСЃР»РѕРІРёСЏ (indicators.sig_trend_def / sig_ct_def) РІС‹РґРµР»СЏРµРј РћР”РРќ
--- СЂСЏРґ РёРЅРґРёРєР°С‚РѕСЂР° Рё РїСЂРёРІРѕРґРёРј СѓСЃР»РѕРІРёРµ Рє РІРёРґСѓ, РєРѕС‚РѕСЂС‹Р№ РїРѕРЅРёРјР°РµС‚ evaluate_signal_condition
--- (РѕРЅ РїРѕРґСЃС‚Р°РІР»СЏРµС‚ С‚РѕР»СЊРєРѕ pp Рё VALUE). Р”РІСѓС…СЂСЏРґРЅС‹Рµ/РЅРµРёР·РІРµСЃС‚РЅС‹Рµ СѓСЃР»РѕРІРёСЏ в†’ VALUE vs 50.
+-- Из официального условия (indicators.sig_trend_def / sig_ct_def) выделяем ОДИН
+-- ряд индикатора и приводим условие к виду, который понимает evaluate_signal_condition
+-- (он подставляет только pp и VALUE). Двухрядные/неизвестные условия → VALUE vs 50.
 CREATE OR REPLACE FUNCTION indicator_signal_series_and_condition(
     p_indicator_id INTEGER,
     p_kind TEXT
@@ -18927,9 +19309,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION indicator_signal_series_and_condition(INTEGER, TEXT) IS
-'Р СЏРґ (series) Рё СѓСЃР»РѕРІРёРµ (VALUE/pp) РґР»СЏ Р°РІС‚Рѕ-СЃРёРіРЅР°Р»Р° С‚РµСЃС‚Р°; РґРІСѓС…СЂСЏРґРЅС‹Рµ СѓСЃР»РѕРІРёСЏ в†’ VALUE vs 50';
+'Ряд (series) и условие (VALUE/pp) для авто-сигнала теста; двухрядные условия → VALUE vs 50';
 
--- Р“РѕС‚РѕРІР°СЏ СЃС‚СЂРѕРєР° С„РѕСЂРјСѓР»С‹ РІРёРґР° @CODE(params,series=X) VALUE > 50 (РґРёР°РіРЅРѕСЃС‚РёРєР°/РѕС‚Р»Р°РґРєР°).
+-- Готовая строка формулы вида @CODE(params,series=X) VALUE > 50 (диагностика/отладка).
 CREATE OR REPLACE FUNCTION indicator_signal_formula(
     p_indicator_id INTEGER,
     p_kind TEXT
@@ -18954,10 +19336,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION indicator_signal_formula(INTEGER, TEXT) IS
-'Р“РѕС‚РѕРІР°СЏ СЃС‚СЂРѕРєР° Р°РІС‚Рѕ-С„РѕСЂРјСѓР»С‹ С‚РµСЃС‚Р° СЂРµР№С‚РёРЅРіР° РёРЅРґРёРєР°С‚РѕСЂР° (РґРёР°РіРЅРѕСЃС‚РёРєР°/РѕС‚Р»Р°РґРєР°)';
+'Готовая строка авто-формулы теста рейтинга индикатора (диагностика/отладка)';
 
--- Р Р°Р·Р±РѕСЂ РїСЂРѕСЃС‚РѕРіРѕ СѓСЃР»РѕРІРёСЏ РІРёРґР° В«pp <op> VALUEВ» (РёР»Рё В«VALUE <op> ppВ») РѕРґРёРЅ СЂР°Р·,
--- С‡С‚РѕР±С‹ РІ С‚СЏР¶С‘Р»РѕРј С†РёРєР»Рµ РЅРµ РІС‹Р·С‹РІР°С‚СЊ evaluate_signal_condition РЅР° РєР°Р¶РґСѓСЋ СЃРІРµС‡Сѓ.
+-- Разбор простого условия вида «pp <op> VALUE» (или «VALUE <op> pp») один раз,
+-- чтобы в тяжёлом цикле не вызывать evaluate_signal_condition на каждую свечу.
 CREATE OR REPLACE FUNCTION indicator_simple_condition(p_condition TEXT)
 RETURNS TABLE(is_simple BOOLEAN, op TEXT, pp_left BOOLEAN)
 LANGUAGE plpgsql IMMUTABLE AS $$
@@ -18983,10 +19365,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION indicator_simple_condition(TEXT) IS
-'Р Р°Р·Р±РѕСЂ РїСЂРѕСЃС‚РѕРіРѕ СѓСЃР»РѕРІРёСЏ В«pp <op> VALUEВ» РґР»СЏ РёРЅР»Р°Р№РЅР° РІ С‚РµСЃС‚Рµ СЂРµР№С‚РёРЅРіР° (is_simple, op, pp_left)';
+'Разбор простого условия «pp <op> VALUE» для инлайна в тесте рейтинга (is_simple, op, pp_left)';
 
--- #1011: СЂСѓС‡РЅРѕР№ СЂР°СЃС‡С‘С‚ СЂРµР№С‚РёРЅРіР° РћР”РќРћР“Рћ РёРЅРґРёРєР°С‚РѕСЂР° РїРѕ РєРЅРѕРїРєРµ. РќР°Р±РѕСЂ РІРЅСѓС‚СЂРёРґРЅРµРІРЅС‹С… РўР¤
--- В«РѕС‚ РјРёРЅСѓС‚РЅРѕРіРѕ РґРѕ С‡Р°СЃРѕРІРѕРіРѕВ»: M1, M5, M15, M30, H1.
+-- #1011: ручной расчёт рейтинга ОДНОГО индикатора по кнопке. Набор внутридневных ТФ
+-- «от минутного до часового»: M1, M5, M15, M30, H1.
 CREATE OR REPLACE FUNCTION indicator_rating_intraday_timeframes()
 RETURNS INTEGER[]
 LANGUAGE sql IMMUTABLE AS $$
@@ -18994,11 +19376,11 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 COMMENT ON FUNCTION indicator_rating_intraday_timeframes() IS
-'Р’РЅСѓС‚СЂРёРґРЅРµРІРЅС‹Рµ РўР¤ РґР»СЏ СЂСѓС‡РЅРѕРіРѕ СЂР°СЃС‡С‘С‚Р° СЂРµР№С‚РёРЅРіР° РѕРґРЅРѕРіРѕ РёРЅРґРёРєР°С‚РѕСЂР° (M1,M5,M15,M30,H1)';
+'Внутридневные ТФ для ручного расчёта рейтинга одного индикатора (M1,M5,M15,M30,H1)';
 
--- #1011: Р°РіСЂРµРіР°С†РёСЏ 1-РјРёРЅСѓС‚РЅС‹С… СЃРІРµС‡РµР№ РІ СЃС‚Р°СЂС€РёРµ РІРЅСѓС‚СЂРёРґРЅРµРІРЅС‹Рµ РўР¤ РїРµСЂРµРґ СЂСѓС‡РЅС‹Рј
--- СЂР°СЃС‡С‘С‚РѕРј (С‡РёС‚Р°РµРј M1 Рё СЃС‚СЂРѕРёРј РёР· РЅРёС… M5/M15/M30/H1). РћР±С‘СЂС‚РєР° РЅР°Рґ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёРј
--- resample_prices_to_timeframe; РѕС€РёР±РєР° РїРѕ РѕРґРЅРѕР№ Р±СѓРјР°РіРµ/РўР¤ РЅРµ СЂСѓС€РёС‚ РІРµСЃСЊ СЂР°СЃС‡С‘С‚.
+-- #1011: агрегация 1-минутных свечей в старшие внутридневные ТФ перед ручным
+-- расчётом (читаем M1 и строим из них M5/M15/M30/H1). Обёртка над существующим
+-- resample_prices_to_timeframe; ошибка по одной бумаге/ТФ не рушит весь расчёт.
 CREATE OR REPLACE PROCEDURE indicator_rating_resample_intraday(
     p_security_ids INTEGER[],
     p_dst_timeframe_ids INTEGER[],
@@ -19030,12 +19412,12 @@ END;
 $$;
 
 COMMENT ON PROCEDURE indicator_rating_resample_intraday(INTEGER[], INTEGER[], DATE, DATE) IS
-'#1011: Р°РіСЂРµРіР°С†РёСЏ M1 в†’ СЃС‚Р°СЂС€РёРµ РІРЅСѓС‚СЂРёРґРЅРµРІРЅС‹Рµ РўР¤ (M5/M15/M30/H1) РїРµСЂРµРґ СЂСѓС‡РЅС‹Рј СЂР°СЃС‡С‘С‚РѕРј СЂРµР№С‚РёРЅРіР°';
+'#1011: агрегация M1 → старшие внутридневные ТФ (M5/M15/M30/H1) перед ручным расчётом рейтинга';
 
--- РћСЃРЅРѕРІРЅРѕР№ СЂР°СЃС‡С‘С‚. Р’РѕР·РІСЂР°С‰Р°РµС‚ С‡РёСЃР»Рѕ РѕР±СЂР°Р±РѕС‚Р°РЅРЅС‹С… РёРЅРґРёРєР°С‚РѕСЂРѕРІ.
--- p_logic_id IS NULL вЂ” СЋРЅРёРІРµСЂСЃ РїР°СЂ РёР· РІСЃРµС… Р»РѕРіРёРє (РїРѕР»РЅС‹Р№ РїСЂРѕРіРѕРЅ); РµСЃР»Рё Р»РѕРіРёРє РЅРµС‚ вЂ”
---   РѕС‚РєР°С‚ Рє Р±СѓРјР°РіР°Рј СЃ РЅРµРґР°РІРЅРёРјРё СЃРІРµС‡Р°РјРё (Р»СЋР±РѕР№ Р°РєС‚РёРІРЅС‹Р№ РўР¤), С‡С‚РѕР±С‹ СЃС‡РёС‚Р°С‚СЊ РІСЃРµРіРґР°.
--- p_logic_id Р·Р°РґР°РЅ вЂ” С‚РѕР»СЊРєРѕ РїР°СЂС‹ СЌС‚РѕР№ Р»РѕРіРёРєРё (СЃРѕР±С‹С‚РёР№РЅС‹Р№ РїРµСЂРµСЃС‡С‘С‚ РїРѕСЃР»Рµ РЅРµС‘).
+-- Основной расчёт. Возвращает число обработанных индикаторов.
+-- p_logic_id IS NULL — юниверс пар из всех логик (полный прогон); если логик нет —
+--   откат к бумагам с недавними свечами (любой активный ТФ), чтобы считать всегда.
+-- p_logic_id задан — только пары этой логики (событийный пересчёт после неё).
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER);
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC);
 DROP FUNCTION IF EXISTS run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC);
@@ -19098,16 +19480,16 @@ DECLARE
     v_tf_kind TEXT;
     v_tf_time TEXT;
 BEGIN
-    -- СЃСЌРјРїР»С‹ Р¶РёРІСѓС‚ СЃСѓС‚РєРё (РєР°Рє РїСЂРѕС‡РёРµ РґРёР°РіРЅРѕСЃС‚РёС‡РµСЃРєРёРµ Р·Р°РїРёСЃРё)
+    -- сэмплы живут сутки (как прочие диагностические записи)
     DELETE FROM indicator_rating_sample
     WHERE computed_at < CURRENT_TIMESTAMP - INTERVAL '24 hours';
 
     v_cap_sql := CASE WHEN v_cap IS NULL THEN 'NULL' ELSE v_cap::TEXT END;
 
-    -- Р®РЅРёРІРµСЂСЃ РїР°СЂ (Р±СѓРјР°РіР° Г— РўР¤) СЃС‡РёС‚Р°РµРј РћР”РРќ СЂР°Р·. РСЃС‚РѕС‡РЅРёРє вЂ” Р°РєС‚РёРІРЅС‹Рµ Р»РѕРіРёРєРё;
-    -- РµСЃР»Рё С‚Р°РєРёС… РїР°СЂ РЅРµС‚ (РЅРµС‚ РІРєР»СЋС‡С‘РЅРЅС‹С…/СЃРёРіРЅР°Р»СЊРЅС‹С… Р»РѕРіРёРє), РѕС‚РєР°С‚С‹РІР°РµРјСЃСЏ РЅР°
-    -- Р±СѓРјР°РіРё, РїРѕ РєРѕС‚РѕСЂС‹Рј РЅРµРґР°РІРЅРѕ Р±С‹Р»Рё СЃРІРµС‡Рё (Р»СЋР±РѕР№ Р°РєС‚РёРІРЅС‹Р№ РўР¤) вЂ” СЂРµР№С‚РёРЅРі
-    -- СЃС‡РёС‚Р°РµС‚СЃСЏ РІСЃРµРіРґР°, Р±РµР· РїСЂРѕСЃС‚РѕСЏ РјР°С€РёРЅРЅРѕРіРѕ РІСЂРµРјРµРЅРё.
+    -- Юниверс пар (бумага × ТФ) считаем ОДИН раз. Источник — активные логики;
+    -- если таких пар нет (нет включённых/сигнальных логик), откатываемся на
+    -- бумаги, по которым недавно были свечи (любой активный ТФ) — рейтинг
+    -- считается всегда, без простоя машинного времени.
     DROP TABLE IF EXISTS irt_pairs;
     DROP TABLE IF EXISTS irt_window;
     CREATE TEMP TABLE irt_pairs (
@@ -19123,9 +19505,9 @@ BEGIN
     ) ON COMMIT DROP;
 
     IF p_indicator_id IS NOT NULL THEN
-        -- #1011: СЂСѓС‡РЅРѕР№ СЂР°СЃС‡С‘С‚ СЂРµР№С‚РёРЅРіР° РћР”РќРћР“Рћ РёРЅРґРёРєР°С‚РѕСЂР° РїРѕ РєРЅРѕРїРєРµ. Р®РЅРёРІРµСЂСЃ вЂ”
-        -- Р±СѓРјР°РіРё СЃРѕ СЃРІРµР¶РёРјРё M1-СЃРІРµС‡Р°РјРё Г— РІРЅСѓС‚СЂРёРґРЅРµРІРЅС‹Рµ РўР¤ (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ M1..H1).
-        -- РЎС‚Р°СЂС€РёРµ РІРЅСѓС‚СЂРёРґРЅРµРІРЅС‹Рµ СЃРІРµС‡Рё Р°РіСЂРµРіРёСЂСѓСЋС‚СЃСЏ РёР· M1 Р”Рћ РІС‹Р·РѕРІР° (РѕР±С‘СЂС‚РєР°).
+        -- #1011: ручной расчёт рейтинга ОДНОГО индикатора по кнопке. Юниверс —
+        -- бумаги со свежими M1-свечами × внутридневные ТФ (по умолчанию M1..H1).
+        -- Старшие внутридневные свечи агрегируются из M1 ДО вызова (обёртка).
         INSERT INTO irt_pairs (security_id, tf, logic_id)
         SELECT s.security_id, t.tf_id, NULL
         FROM (
@@ -19162,13 +19544,13 @@ BEGIN
         END IF;
     END IF;
 
-    -- РћРіСЂР°РЅРёС‡РµРЅРёРµ РЅР°Р±РѕСЂР° РўР¤ (РґР»СЏ СЂСѓС‡РЅРѕРіРѕ СЂР°СЃС‡С‘С‚Р° РѕРґРЅРѕРіРѕ РёРЅРґРёРєР°С‚РѕСЂР° вЂ” M1..H1).
+    -- Ограничение набора ТФ (для ручного расчёта одного индикатора — M1..H1).
     IF p_timeframe_ids IS NOT NULL THEN
         DELETE FROM irt_pairs WHERE NOT (tf = ANY(p_timeframe_ids));
     END IF;
 
-    -- Р РµР№С‚РёРЅРіСѓРµРј Р’РЎР• РІС‹С‡РёСЃР»РёРјС‹Рµ РёРЅРґРёРєР°С‚РѕСЂС‹ (РІ С‚.С‡. Р·Р°РґРµР№СЃС‚РІРѕРІР°РЅРЅС‹Рµ СЃРёРіРЅР°Р»Р°РјРё
-    -- Р»РѕРіРёРє): СЃРёРіРЅР°Р»СЊРЅР°СЏ/РёСЃСЃР»РµРґРѕРІР°С‚РµР»СЊСЃРєР°СЏ Р»РѕРіРёРєР° РЅРµ В«СЂР°СЃС…РѕРґСѓРµС‚В» РёРЅРґРёРєР°С‚РѕСЂ.
+    -- Рейтингуем ВСЕ вычислимые индикаторы (в т.ч. задействованные сигналами
+    -- логик): сигнальная/исследовательская логика не «расходует» индикатор.
     FOR v_ind IN
         SELECT i.id
         FROM indicators i
@@ -19199,7 +19581,7 @@ BEGIN
         v_vt_c := (SELECT ivt.id FROM indicator_value_types ivt
                    WHERE ivt.indicator_id = v_ind.id AND upper(ivt.code) = upper(v_series_c) LIMIT 1);
 
-        -- СѓСЃР»РѕРІРёСЏ РїСЂРѕРІРµСЂРєРё СЃРёРіРЅР°Р»Р° (РїСЂРѕСЃС‚РѕРµ СЃСЂР°РІРЅРµРЅРёРµ вЂ” Р·Р°РёРЅР»Р°Р№РЅРµРЅРѕ, РёРЅР°С‡Рµ С„СѓРЅРєС†РёСЏ)
+        -- условия проверки сигнала (простое сравнение — заинлайнено, иначе функция)
         v_expr_t := CASE WHEN v_simple_t
             THEN (CASE WHEN v_ppleft_t THEN '(b.close_price ' || v_op_t || ' b.tv)'
                        ELSE '(b.tv ' || v_op_t || ' b.close_price)' END)
@@ -19213,7 +19595,7 @@ BEGIN
             SELECT security_id, tf, logic_id FROM irt_pairs ORDER BY security_id, tf
         LOOP
             BEGIN
-                -- Р—РЅР°С‡РµРЅРёСЏ РёРЅРґРёРєР°С‚РѕСЂР°: РѕРґРёРЅ СЂР°СЃС‡С‘С‚ РЅР° РїР°СЂСѓ (Р±СѓРјР°РіР° Г— РўР¤).
+                -- Значения индикатора: один расчёт на пару (бумага × ТФ).
                 CALL ensure_security_indicator_series(v_pair.security_id, v_ind.id);
                 UPDATE security_indicator_series
                 SET param_period = COALESCE(param_period, 20)
@@ -19224,9 +19606,9 @@ BEGIN
                     v_pair.security_id, v_ind.id, v_pair.tf, NULL, v_bars, TRUE
                 );
 
-                -- РўСЏР¶С‘Р»С‹Р№ Р·Р°РїСЂРѕСЃ СЃРѕР±РёСЂР°РµРј РєР°Рє РґРёРЅР°РјРёС‡РµСЃРєРёР№ SQL СЃ Р»РёС‚РµСЂР°Р»Р°РјРё: СЃС‚Р°С‚РёС‡РµСЃРєРёР№
-                -- SQL РІ plpgsql РїР»Р°РЅРёСЂСѓРµС‚СЃСЏ СЃ РїР°СЂР°РјРµС‚СЂР°РјРё Рё РїРѕР»СѓС‡Р°РµС‚ РЅРµРіРѕРґРЅС‹Р№ РїР»Р°РЅ
-                -- (РІ ~150 СЂР°Р· РјРµРґР»РµРЅРЅРµРµ). Р—РґРµСЃСЊ Р·РЅР°С‡РµРЅРёСЏ РёРЅР»Р°Р№РЅСЏС‚СЃСЏ РІ С‚РµРєСЃС‚ Р·Р°РїСЂРѕСЃР°.
+                -- Тяжёлый запрос собираем как динамический SQL с литералами: статический
+                -- SQL в plpgsql планируется с параметрами и получает негодный план
+                -- (в ~150 раз медленнее). Здесь значения инлайнятся в текст запроса.
                 v_sql := format($sql$
 INSERT INTO indicator_rating_sample (
     indicator_id, logic_id, security_id, timeframe_id,
@@ -19261,9 +19643,9 @@ bars AS (
         CASE WHEN high_price >= fut_hi THEN dt END AS hi_rec,
         CASE WHEN low_price  <= fut_lo THEN dt END AS lo_rec
     FROM (
-        -- Р’РђР–РќРћ: РєР°РґСЂ В«1 FOLLOWING .. UNBOUNDED FOLLOWINGВ» РІ PG СЃС‡РёС‚Р°РµС‚СЃСЏ O(n^2)
-        -- Рё РІРµС€Р°РµС‚ Р·Р°РїСЂРѕСЃ. Р‘РµСЂС‘Рј СЌРєРІРёРІР°Р»РµРЅС‚ РІ РѕР±СЂР°С‚РЅРѕРј РїРѕСЂСЏРґРєРµ: СЃС‚СЂРѕРіРѕ Р±СѓРґСѓС‰РёРµ
-        -- СЃРІРµС‡Рё = СЃС‚СЂРѕРєРё СЃ dt Р±РѕР»СЊС€Рµ С‚РµРєСѓС‰РµР№ = РїСЂРµРґС€РµСЃС‚РІСѓСЋС‰РёРµ РІ РїРѕСЂСЏРґРєРµ dt DESC.
+        -- ВАЖНО: кадр «1 FOLLOWING .. UNBOUNDED FOLLOWING» в PG считается O(n^2)
+        -- и вешает запрос. Берём эквивалент в обратном порядке: строго будущие
+        -- свечи = строки с dt больше текущей = предшествующие в порядке dt DESC.
         SELECT dt, close_price, high_price, low_price, tf_sec, tv, cv,
             max(high_price) OVER wf AS fut_hi,
             min(low_price)  OVER wf AS fut_lo
@@ -19360,8 +19742,8 @@ $sql$,
                 );
                 EXECUTE v_sql;
 
-                -- РћРєРЅРѕ СЃРІРµС‡РµР№ РїР°СЂС‹ (РґР»СЏ СЃС‚Р°С‚РёСЃС‚РёРєРё СЂР°Р·РІРѕСЂРѕС‚Р° СЃС‚СЂРѕРєРё): СЃРєРѕР»СЊРєРѕ
-                -- РїРѕСЃР»РµРґРЅРёС… СЃРІРµС‡РµР№ РўР¤ СЂРµР°Р»СЊРЅРѕ РІР·СЏС‚Рѕ РІ СЂР°СЃС‡С‘С‚ Рё РїРѕ РєР°РєРёРј РґР°С‚Р°Рј.
+                -- Окно свечей пары (для статистики разворота строки): сколько
+                -- последних свечей ТФ реально взято в расчёт и по каким датам.
                 SELECT count(*)::INTEGER, min(dt), max(dt)
                 INTO v_pb, v_pf, v_pt
                 FROM (
@@ -19385,8 +19767,8 @@ $sql$,
             END;
         END LOOP;
 
-        -- РђРіСЂРµРіР°С‚ РїРѕ РёРЅРґРёРєР°С‚РѕСЂСѓ: СЂР°Р·СЂРµР· = СЃС‚РѕСЂРѕРЅР° Г— С‚РёРї СЃРёРіРЅР°Р»Р° Г— С‚РёРї РІСЂРµРјРµРЅРё,
-        -- СѓСЃСЂРµРґРЅРµРЅРёРµ РїРѕ Р±СѓРјР°РіР°Рј; СЂРµР№С‚РёРЅРі = РјР°РєСЃРёРјСѓРј СЃСЂРµРґРЅРµРіРѕ % РіРѕРґРѕРІС‹С….
+        -- Агрегат по индикатору: разрез = сторона × тип сигнала × тип времени,
+        -- усреднение по бумагам; рейтинг = максимум среднего % годовых.
         SELECT
             count(*)::INTEGER,
             COALESCE(sum(signals_count), 0)::INTEGER,
@@ -19434,8 +19816,8 @@ $sql$,
                 computed_at = EXCLUDED.computed_at;
         END IF;
 
-        -- Р РµР№С‚РёРЅРі РїРѕ РєР°Р¶РґРѕРјСѓ РўР¤ РѕС‚РґРµР»СЊРЅРѕ + РѕРєРЅРѕ СЃРІРµС‡РµР№ вЂ” РґР»СЏ СЂР°Р·РІРѕСЂРѕС‚Р° СЃС‚СЂРѕРєРё
-        -- РёРЅРґРёРєР°С‚РѕСЂР° РІ СЃРїРёСЃРєРµ (РєР°РєРѕР№ РўР¤, РЅР° СЃРєРѕР»СЊРєРёС… СЃРІРµС‡Р°С…, СЃ РєР°РєРѕРіРѕ РїРѕ РєР°РєРѕРµ С‡РёСЃР»Рѕ).
+        -- Рейтинг по каждому ТФ отдельно + окно свечей — для разворота строки
+        -- индикатора в списке (какой ТФ, на скольких свечах, с какого по какое число).
         FOR v_tf IN
             SELECT DISTINCT s.timeframe_id
             FROM indicator_rating_sample s
@@ -19494,8 +19876,8 @@ $sql$,
             END IF;
         END LOOP;
 
-        -- #1006: СѓРЅРёРІРµСЂСЃСѓРј Р±СѓРјР°Рі, РїРѕ РєРѕС‚РѕСЂС‹Рј СЂРµР°Р»СЊРЅРѕ РїРѕСЃС‡РёС‚Р°РЅ СЂРµР№С‚РёРЅРі (РїРµСЂРµР¶РёРІР°РµС‚
-        -- РѕС‡РёСЃС‚РєСѓ indicator_rating_sample). РџРёС‚Р°РµС‚ СЃРѕР·РґР°РЅРёРµ Р»РѕРіРёРєРё РёР· Р»СѓС‡С€РёС… СЂРµР№С‚РёРЅРіРѕРІ.
+        -- #1006: универсум бумаг, по которым реально посчитан рейтинг (переживает
+        -- очистку indicator_rating_sample). Питает создание логики из лучших рейтингов.
         INSERT INTO indicator_rating_universe (
             indicator_id, timeframe_id, security_id, logic_id, signals_count, computed_at
         )
@@ -19515,10 +19897,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_indicator_rating_test(INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, NUMERIC, INTEGER, INTEGER, INTEGER[]) IS
-'РўРµСЃС‚ РІС‹С‡РёСЃР»РёРјС‹С… РёРЅРґРёРєР°С‚РѕСЂРѕРІ: Р»СѓС‡С€РёР№ С…РѕРґ РґРѕ РєСЂР°Р№РЅРµР№ С‚РѕС‡РєРё СЃСЂРµРґРё Р·Р°РіСЂСѓР¶РµРЅРЅС‹С… Р±СѓРґСѓС‰РёС… СЃРІРµС‡РµР№, % РіРѕРґРѕРІС‹С… РїРѕ РІСЂРµРјРµРЅРё СѓРґРµСЂР¶Р°РЅРёСЏ, РїРѕСЂРѕРі СЃРёРіРЅР°Р»РѕРІ Рё РѕР±СЂРµР·РєР° РІС‹Р±СЂРѕСЃРѕРІ; p_logic_id вЂ” СЋРЅРёРІРµСЂСЃ РїР°СЂ РѕРґРЅРѕР№ Р»РѕРіРёРєРё (NULL вЂ” РІСЃРµ Р»РѕРіРёРєРё; РµСЃР»Рё Р»РѕРіРёРє РЅРµС‚ вЂ” РѕС‚РєР°С‚ Рє Р±СѓРјР°РіР°Рј СЃ РЅРµРґР°РІРЅРёРјРё СЃРІРµС‡Р°РјРё, Р»СЋР±РѕР№ Р°РєС‚РёРІРЅС‹Р№ РўР¤, С‡С‚РѕР±С‹ СЃС‡РёС‚Р°С‚СЊ Р±РµР· РїСЂРѕСЃС‚РѕСЏ); p_indicator_id вЂ” СЃС‡РёС‚Р°С‚СЊ С‚РѕР»СЊРєРѕ СЌС‚РѕС‚ РёРЅРґРёРєР°С‚РѕСЂ РїРѕ РІРЅСѓС‚СЂРёРґРЅРµРІРЅС‹Рј Р±СѓРјР°РіР°Рј СЃРѕ СЃРІРµР¶РёРјРё M1 (СЂСѓС‡РЅРѕР№ СЂР°СЃС‡С‘С‚ РїРѕ РєРЅРѕРїРєРµ), p_timeframe_ids вЂ” РѕРіСЂР°РЅРёС‡РёС‚СЊ РЅР°Р±РѕСЂ РўР¤ (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РґР»СЏ СЂСѓС‡РЅРѕРіРѕ СЂР°СЃС‡С‘С‚Р° M1..H1); РЅР°РїРѕР»РЅСЏРµС‚ indicator_rating_sample / indicator_rating / indicator_rating_timeframe (СЂРµР№С‚РёРЅРі РІ СЂР°Р·СЂРµР·Рµ РўР¤ + РѕРєРЅРѕ СЃРІРµС‡РµР№) / indicator_rating_universe (Р±СѓРјР°РіРё СЂР°СЃС‡С‘С‚Р°)';
+'Тест вычислимых индикаторов: лучший ход до крайней точки среди загруженных будущих свечей, % годовых по времени удержания, порог сигналов и обрезка выбросов; p_logic_id — юниверс пар одной логики (NULL — все логики; если логик нет — откат к бумагам с недавними свечами, любой активный ТФ, чтобы считать без простоя); p_indicator_id — считать только этот индикатор по внутридневным бумагам со свежими M1 (ручной расчёт по кнопке), p_timeframe_ids — ограничить набор ТФ (по умолчанию для ручного расчёта M1..H1); наполняет indicator_rating_sample / indicator_rating / indicator_rating_timeframe (рейтинг в разрезе ТФ + окно свечей) / indicator_rating_universe (бумаги расчёта)';
 
--- Р‘РµР·РѕРїР°СЃРЅР°СЏ РѕР±С‘СЂС‚РєР° РґР»СЏ С„РѕРЅРѕРІРѕРіРѕ РІС‹Р·РѕРІР°: С‚СЂРѕС‚С‚Р» + advisory lock + РіР»СѓС€РµРЅРёРµ РѕС€РёР±РѕРє.
--- Р’РѕР·РІСЂР°С‚: 1 вЂ” СЃС‡РёС‚Р°Р»РѕСЃСЊ, 0 вЂ” РїСЂРѕРїСѓС‰РµРЅРѕ (С‚СЂРѕС‚С‚Р»/Р·Р°РЅСЏС‚Рѕ), -1 вЂ” РѕС€РёР±РєР° (Р·Р°РїРёСЃР°РЅР° РІ indicator_rating_run).
+-- Безопасная обёртка для фонового вызова: троттл + advisory lock + глушение ошибок.
+-- Возврат: 1 — считалось, 0 — пропущено (троттл/занято), -1 — ошибка (записана в indicator_rating_run).
 CREATE OR REPLACE FUNCTION run_indicator_rating_test_safe(
     p_min_interval_minutes INTEGER DEFAULT 180
 )
@@ -19566,12 +19948,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_indicator_rating_test_safe(INTEGER) IS
-'Р¤РѕРЅРѕРІС‹Р№ РІС‹Р·РѕРІ С‚РµСЃС‚Р° СЂРµР№С‚РёРЅРіР° РёРЅРґРёРєР°С‚РѕСЂРѕРІ: С‚СЂРѕС‚С‚Р», advisory lock, РіР»СѓС€РµРЅРёРµ РѕС€РёР±РѕРє; 1/0/-1';
+'Фоновый вызов теста рейтинга индикаторов: троттл, advisory lock, глушение ошибок; 1/0/-1';
 
--- РЎРѕР±С‹С‚РёР№РЅС‹Р№ РїРµСЂРµСЃС‡С‘С‚ РїРѕСЃР»Рµ СЂР°Р±РѕС‚С‹ РєРѕРЅРєСЂРµС‚РЅРѕР№ Р»РѕРіРёРєРё: СЋРЅРёРІРµСЂСЃ = РµС‘ РїР°СЂС‹
--- (Р±СѓРјР°РіР° Г— РўР¤). РўСЂРѕС‚С‚Р» вЂ” РїРѕ Р»РѕРіРёРєРµ (indicator_rating_logic_run); advisory lock
--- РѕР±С‰РёР№ СЃ РїРѕР»РЅС‹Рј РїСЂРѕРіРѕРЅРѕРј, С‡С‚РѕР±С‹ С‚СЏР¶С‘Р»С‹Рµ СЂР°СЃС‡С‘С‚С‹ РЅРµ С€Р»Рё РѕРґРЅРѕРІСЂРµРјРµРЅРЅРѕ.
--- Р’РѕР·РІСЂР°С‚: 1 вЂ” СЃС‡РёС‚Р°Р»РѕСЃСЊ, 0 вЂ” РїСЂРѕРїСѓС‰РµРЅРѕ (С‚СЂРѕС‚С‚Р»/Р·Р°РЅСЏС‚Рѕ/РЅРµС‚ Р»РѕРіРёРєРё), -1 вЂ” РѕС€РёР±РєР°.
+-- Событийный пересчёт после работы конкретной логики: юниверс = её пары
+-- (бумага × ТФ). Троттл — по логике (indicator_rating_logic_run); advisory lock
+-- общий с полным прогоном, чтобы тяжёлые расчёты не шли одновременно.
+-- Возврат: 1 — считалось, 0 — пропущено (троттл/занято/нет логики), -1 — ошибка.
 CREATE OR REPLACE FUNCTION run_indicator_rating_for_logic_safe(
     p_logic_id INTEGER,
     p_min_interval_minutes INTEGER DEFAULT 60
@@ -19624,15 +20006,15 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_indicator_rating_for_logic_safe(INTEGER, INTEGER) IS
-'РЎРѕР±С‹С‚РёР№РЅС‹Р№ РїРµСЂРµСЃС‡С‘С‚ СЂРµР№С‚РёРЅРіР° РёРЅРґРёРєР°С‚РѕСЂРѕРІ РїРѕ СЋРЅРёРІРµСЂСЃСѓ РѕРґРЅРѕР№ Р»РѕРіРёРєРё РїРѕСЃР»Рµ РµС‘ СЂР°Р±РѕС‚С‹: '
-'С‚СЂРѕС‚С‚Р» РїРѕ Р»РѕРіРёРєРµ + РѕР±С‰РёР№ advisory lock СЃ РїРѕР»РЅС‹Рј РїСЂРѕРіРѕРЅРѕРј; 1/0/-1';
+'Событийный пересчёт рейтинга индикаторов по юниверсу одной логики после её работы: '
+'троттл по логике + общий advisory lock с полным прогоном; 1/0/-1';
 
--- #1011: СЂСѓС‡РЅРѕР№ СЂР°СЃС‡С‘С‚ СЂРµР№С‚РёРЅРіР° РћР”РќРћР“Рћ РёРЅРґРёРєР°С‚РѕСЂР° РїРѕ РєРЅРѕРїРєРµ РІ СЃРїРёСЃРєРµ РёРЅРґРёРєР°С‚РѕСЂРѕРІ.
--- Р§РёС‚Р°РµС‚ 1-РјРёРЅСѓС‚РЅС‹Рµ СЃРІРµС‡Рё Р±СѓРјР°Рі СЃРѕ СЃРІРµР¶РёРј M1 Рё Р°РіСЂРµРіРёСЂСѓРµС‚ РёС… РІ СЃС‚Р°СЂС€РёРµ РІРЅСѓС‚СЂРёРґРЅРµРІРЅС‹Рµ
--- РўР¤ (M5/M15/M30/H1), Р·Р°С‚РµРј СЃС‡РёС‚Р°РµС‚ СЂРµР№С‚РёРЅРі С‚РѕР»СЊРєРѕ СЌС‚РѕРіРѕ РёРЅРґРёРєР°С‚РѕСЂР° РїРѕ M1..H1.
--- РўСЂРѕС‚С‚Р» вЂ” РїРѕ РёРЅРґРёРєР°С‚РѕСЂСѓ (indicator_rating_manual_run); advisory lock РѕР±С‰РёР№ СЃ РїРѕР»РЅС‹Рј
--- РїСЂРѕРіРѕРЅРѕРј, С‡С‚РѕР±С‹ С‚СЏР¶С‘Р»С‹Рµ СЂР°СЃС‡С‘С‚С‹ РЅРµ С€Р»Рё РѕРґРЅРѕРІСЂРµРјРµРЅРЅРѕ.
--- Р’РѕР·РІСЂР°С‚: 1 вЂ” СЃС‡РёС‚Р°Р»РѕСЃСЊ, 0 вЂ” РїСЂРѕРїСѓС‰РµРЅРѕ (С‚СЂРѕС‚С‚Р»/Р·Р°РЅСЏС‚Рѕ/РЅРµС‚ РёРЅРґРёРєР°С‚РѕСЂР°), -1 вЂ” РѕС€РёР±РєР°.
+-- #1011: ручной расчёт рейтинга ОДНОГО индикатора по кнопке в списке индикаторов.
+-- Читает 1-минутные свечи бумаг со свежим M1 и агрегирует их в старшие внутридневные
+-- ТФ (M5/M15/M30/H1), затем считает рейтинг только этого индикатора по M1..H1.
+-- Троттл — по индикатору (indicator_rating_manual_run); advisory lock общий с полным
+-- прогоном, чтобы тяжёлые расчёты не шли одновременно.
+-- Возврат: 1 — считалось, 0 — пропущено (троттл/занято/нет индикатора), -1 — ошибка.
 CREATE OR REPLACE FUNCTION run_indicator_rating_for_indicator_safe(
     p_indicator_id INTEGER,
     p_min_interval_minutes INTEGER DEFAULT 10,
@@ -19676,15 +20058,15 @@ BEGIN
     END IF;
 
     BEGIN
-        -- Р®РЅРёРІРµСЂСЃ: Р±СѓРјР°РіРё СЃРѕ СЃРІРµР¶РёРјРё 1-РјРёРЅСѓС‚РЅС‹РјРё СЃРІРµС‡Р°РјРё.
+        -- Юниверс: бумаги со свежими 1-минутными свечами.
         SELECT array_agg(DISTINCT p.security_id)
         INTO v_secs
         FROM prices p
         WHERE p.timeframe_id = 1 AND p.close_price > 0
           AND p.dt >= CURRENT_TIMESTAMP - INTERVAL '3 days';
 
-        -- Р“Р»СѓР±РёРЅР° Р°РіСЂРµРіР°С†РёРё: РІСЃСЏ РґРѕСЃС‚СѓРїРЅР°СЏ РёСЃС‚РѕСЂРёСЏ M1 (С‡С‚РѕР±С‹ СЃС‚Р°СЂС€РёРј РўР¤ С…РІР°С‚РёР»Рѕ
-        -- СЃРІРµС‡РµР№ РЅР° РѕРєРЅРѕ СЂР°СЃС‡С‘С‚Р°). РќРµРѕР±СЏР·Р°С‚РµР»СЊРЅС‹Р№ p_resample_days РѕРіСЂР°РЅРёС‡РёРІР°РµС‚.
+        -- Глубина агрегации: вся доступная история M1 (чтобы старшим ТФ хватило
+        -- свечей на окно расчёта). Необязательный p_resample_days ограничивает.
         SELECT min(p.dt::date)
         INTO v_from
         FROM prices p
@@ -19696,7 +20078,7 @@ BEGIN
             v_from := GREATEST(v_from, v_to - GREATEST(1, p_resample_days));
         END IF;
 
-        -- РђРіСЂРµРіР°С†РёСЏ M1 в†’ M5/M15/M30/H1 (Р±РµСЂС‘Рј С‚РѕР»СЊРєРѕ РЅСѓР¶РЅС‹Р№ СѓС‡Р°СЃС‚РѕРє РёСЃС‚РѕСЂРёРё).
+        -- Агрегация M1 → M5/M15/M30/H1 (берём только нужный участок истории).
         IF v_secs IS NOT NULL THEN
             CALL indicator_rating_resample_intraday(v_secs, v_intraday, v_from, v_to);
         END IF;
@@ -19731,8 +20113,1132 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_indicator_rating_for_indicator_safe(INTEGER, INTEGER, INTEGER) IS
-'#1011: СЂСѓС‡РЅРѕР№ СЂР°СЃС‡С‘С‚ СЂРµР№С‚РёРЅРіР° РѕРґРЅРѕРіРѕ РёРЅРґРёРєР°С‚РѕСЂР° РїРѕ РєРЅРѕРїРєРµ вЂ” Р°РіСЂРµРіРёСЂСѓРµС‚ M1 РІ M5/M15/M30/H1 '
-'Рё СЃС‡РёС‚Р°РµС‚ С‚РѕР»СЊРєРѕ СЌС‚РѕС‚ РёРЅРґРёРєР°С‚РѕСЂ РїРѕ M1..H1; С‚СЂРѕС‚С‚Р» РїРѕ РёРЅРґРёРєР°С‚РѕСЂСѓ + РѕР±С‰РёР№ advisory lock; 1/0/-1';
+'#1011: ручной расчёт рейтинга одного индикатора по кнопке — агрегирует M1 в M5/M15/M30/H1 '
+'и считает только этот индикатор по M1..H1; троттл по индикатору + общий advisory lock; 1/0/-1';
+
+-- @include sql/logic_portfolio_signals.sql
+-- Portfolio signals (acts_on='portfolio'): equity series, pending state, evaluation, execution helpers.
+-- Live: logic_portfolio_equity_bars + logic_portfolio_signal_state.
+-- Backtest: logic_backtest_equity_points + logic_backtest_runs.portfolio_close_pending.
+
+-- Helper: integer logic param (NULL if missing/unparseable -> p_default).
+CREATE OR REPLACE FUNCTION get_logic_param_int(
+    p_logic_id INTEGER,
+    p_param_key TEXT,
+    p_default INTEGER DEFAULT NULL
+)
+RETURNS INTEGER
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_num NUMERIC;
+BEGIN
+    v_num := get_logic_param_numeric(p_logic_id, p_param_key, NULL);
+    IF v_num IS NULL THEN
+        RETURN p_default;
+    END IF;
+    RETURN v_num::INTEGER;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION logic_portfolio_equity_bar_ohlc(
+    p_close NUMERIC,
+    p_prev_close NUMERIC
+)
+RETURNS TABLE (open_price NUMERIC, high_price NUMERIC, low_price NUMERIC, close_price NUMERIC)
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT
+        COALESCE(p_prev_close, p_close) AS open_price,
+        GREATEST(COALESCE(p_prev_close, p_close), p_close) AS high_price,
+        LEAST(COALESCE(p_prev_close, p_close), p_close) AS low_price,
+        p_close AS close_price;
+$$;
+
+COMMENT ON FUNCTION logic_portfolio_equity_bar_ohlc(NUMERIC, NUMERIC) IS
+'РЎРІРµС‡Р° equity РїРѕСЂС‚С„РµР»СЏ: O=prev_close (РїРµСЂРІР°СЏ=close), H=max(O,C), L=min(O,C), C=equity';
+
+-- Live equity at closed bar dt (cash + MTM РІСЃРµС… РїРѕР·РёС†РёР№, РІРєР»СЋС‡Р°СЏ С„РѕРЅРґС‹), is_test=FALSE.
+CREATE OR REPLACE FUNCTION logic_portfolio_equity_at_bar_live(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP
+)
+RETURNS NUMERIC
+LANGUAGE sql STABLE AS $$
+    WITH pos AS (
+        SELECT
+            lt.security_id,
+            GREATEST(COALESCE(SUM(
+                CASE
+                    WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
+                    ELSE 0
+                END
+            ), 0), 0) AS long_qty,
+            GREATEST(COALESCE(SUM(
+                CASE
+                    WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity
+                    ELSE 0
+                END
+            ), 0), 0) AS short_qty
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = FALSE
+          AND lt.is_shadow = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
+          AND lt.status IN ('filled', 'submitted')
+        GROUP BY lt.security_id
+        HAVING GREATEST(COALESCE(SUM(
+                CASE
+                    WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity
+                    ELSE 0
+                END
+            ), 0), 0) > 0
+            OR GREATEST(COALESCE(SUM(
+                CASE
+                    WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
+                    WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity
+                    ELSE 0
+                END
+            ), 0), 0) > 0
+    ),
+    px AS (
+        SELECT
+            pos.long_qty,
+            pos.short_qty,
+            p.close_price
+        FROM pos
+        CROSS JOIN LATERAL (
+            SELECT pr.close_price
+            FROM prices pr
+            WHERE pr.security_id = pos.security_id
+              AND pr.timeframe_id = p_timeframe_id
+              AND pr.dt <= p_bar_dt
+            ORDER BY pr.dt DESC
+            LIMIT 1
+        ) p
+    )
+    SELECT COALESCE(logic_ensure_balance(p_logic_id), 0)
+         + COALESCE(SUM(px.long_qty * px.close_price - px.short_qty * px.close_price), 0)
+    FROM px
+    WHERE px.close_price > 0;
+$$;
+
+COMMENT ON FUNCTION logic_portfolio_equity_at_bar_live(INTEGER, INTEGER, TIMESTAMP) IS
+'Live equity РїРѕСЂС‚С„РµР»СЏ РЅР° Р·Р°РєСЂС‹С‚РѕРј Р±Р°СЂРµ: cash (logic_ensure_balance) + MTM РІСЃРµС… РїРѕР·РёС†РёР№ (is_test=false), РІРєР»СЋС‡Р°СЏ С„РѕРЅРґС‹';
+
+-- Upsert equity bar for live portfolio signals (TF Р»РѕРіРёРєРё).
+CREATE OR REPLACE FUNCTION logic_portfolio_record_equity_bar(
+    p_logic_id INTEGER,
+    p_tf_id INTEGER,
+    p_bar_dt TIMESTAMP
+)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_equity NUMERIC;
+    v_prev NUMERIC;
+    v_o NUMERIC;
+    v_h NUMERIC;
+    v_l NUMERIC;
+BEGIN
+    IF p_logic_id IS NULL OR p_tf_id IS NULL OR p_bar_dt IS NULL THEN
+        RETURN;
+    END IF;
+    v_equity := logic_portfolio_equity_at_bar_live(p_logic_id, p_tf_id, p_bar_dt);
+    IF v_equity IS NULL THEN
+        v_equity := COALESCE(logic_ensure_balance(p_logic_id), 0);
+    END IF;
+    SELECT b.close_price INTO v_prev
+    FROM logic_portfolio_equity_bars b
+    WHERE b.logic_id = p_logic_id
+      AND b.timeframe_id = p_tf_id
+      AND b.dt < p_bar_dt
+    ORDER BY b.dt DESC
+    LIMIT 1;
+
+    SELECT open_price, high_price, low_price
+    INTO v_o, v_h, v_l
+    FROM logic_portfolio_equity_bar_ohlc(v_equity, v_prev);
+
+    INSERT INTO logic_portfolio_equity_bars (
+        logic_id, timeframe_id, dt, open_price, high_price, low_price, close_price
+    ) VALUES (
+        p_logic_id, p_tf_id, p_bar_dt, v_o, v_h, v_l, v_equity
+    )
+    ON CONFLICT (logic_id, timeframe_id, dt) DO UPDATE SET
+        open_price = EXCLUDED.open_price,
+        high_price = EXCLUDED.high_price,
+        low_price = EXCLUDED.low_price,
+        close_price = EXCLUDED.close_price;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_portfolio_record_equity_bar(INTEGER, INTEGER, TIMESTAMP) IS
+'Р—Р°РїРёСЃР°С‚СЊ/РѕР±РЅРѕРІРёС‚СЊ СЃРІРµС‡Сѓ equity РїРѕСЂС‚С„РµР»СЏ (live) РґР»СЏ acts_on=portfolio';
+
+-- State: live pending
+CREATE OR REPLACE FUNCTION logic_portfolio_signal_is_pending(p_logic_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(
+        (SELECT s.pending FROM logic_portfolio_signal_state s WHERE s.logic_id = p_logic_id),
+        FALSE
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION logic_portfolio_signal_set_pending(
+    p_logic_id INTEGER,
+    p_bar_dt TIMESTAMP DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO logic_portfolio_signal_state (logic_id, pending, set_at, set_bar_dt, updated_at)
+    VALUES (p_logic_id, TRUE, CURRENT_TIMESTAMP, p_bar_dt, CURRENT_TIMESTAMP)
+    ON CONFLICT (logic_id) DO UPDATE SET
+        pending = TRUE,
+        set_at = COALESCE(logic_portfolio_signal_state.set_at, EXCLUDED.set_at),
+        set_bar_dt = COALESCE(EXCLUDED.set_bar_dt, logic_portfolio_signal_state.set_bar_dt),
+        updated_at = CURRENT_TIMESTAMP;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION logic_portfolio_signal_clear_pending(p_logic_id INTEGER)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO logic_portfolio_signal_state (logic_id, pending, set_at, set_bar_dt, updated_at)
+    VALUES (p_logic_id, FALSE, NULL, NULL, CURRENT_TIMESTAMP)
+    ON CONFLICT (logic_id) DO UPDATE SET
+        pending = FALSE,
+        set_at = NULL,
+        set_bar_dt = NULL,
+        updated_at = CURRENT_TIMESTAMP;
+END;
+$$;
+
+-- State: backtest pending (per run)
+CREATE OR REPLACE FUNCTION logic_backtest_portfolio_signal_is_pending(p_run_id BIGINT)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(
+        (SELECT r.portfolio_close_pending FROM logic_backtest_runs r WHERE r.id = p_run_id),
+        FALSE
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION logic_backtest_portfolio_signal_set_pending(p_run_id BIGINT)
+RETURNS VOID
+LANGUAGE sql AS $$
+    UPDATE logic_backtest_runs SET portfolio_close_pending = TRUE WHERE id = p_run_id;
+$$;
+
+CREATE OR REPLACE FUNCTION logic_backtest_portfolio_signal_clear_pending(p_run_id BIGINT)
+RETURNS VOID
+LANGUAGE sql AS $$
+    UPDATE logic_backtest_runs SET portfolio_close_pending = FALSE WHERE id = p_run_id;
+$$;
+
+-- Check if logic has any non-cash-fund open positions (live)
+CREATE OR REPLACE FUNCTION logic_has_open_positions_except_funds(p_logic_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = FALSE
+          AND lt.is_shadow = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
+          AND lt.status IN ('filled', 'submitted')
+          AND NOT logic_is_cash_fund_security(lt.security_id)
+        GROUP BY lt.security_id
+        HAVING
+            GREATEST(COALESCE(SUM(CASE WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                                       WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity ELSE 0 END), 0), 0) > 0
+            OR
+            GREATEST(COALESCE(SUM(CASE WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
+                                       WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity ELSE 0 END), 0), 0) > 0
+    );
+$$;
+
+-- Backtest: non-fund open positions in run
+CREATE OR REPLACE FUNCTION logic_backtest_has_open_positions_except_funds(
+    p_run_id BIGINT,
+    p_logic_id INTEGER
+)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM logic_trades lt
+        JOIN sides s ON s.id = lt.side_id
+        JOIN actions a ON a.id = lt.action_id
+        WHERE lt.logic_id = p_logic_id
+          AND lt.is_test = TRUE
+          AND lt.is_shadow = FALSE
+          AND COALESCE(lt.opt_lane, '') = ''
+          AND lt.run_id = p_run_id
+          AND lt.status IN ('filled', 'submitted')
+          AND NOT logic_is_cash_fund_security(lt.security_id)
+        GROUP BY lt.security_id
+        HAVING
+            GREATEST(COALESCE(SUM(CASE WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                                       WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity ELSE 0 END), 0), 0) > 0
+            OR
+            GREATEST(COALESCE(SUM(CASE WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
+                                       WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity ELSE 0 END), 0), 0) > 0
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION logic_portfolio_signal_reset_if_flat(p_logic_id INTEGER)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF logic_portfolio_signal_is_pending(p_logic_id)
+       AND NOT logic_has_open_positions_except_funds(p_logic_id) THEN
+        PERFORM logic_portfolio_signal_clear_pending(p_logic_id);
+    END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION logic_backtest_portfolio_signal_reset_if_flat(
+    p_run_id BIGINT,
+    p_logic_id INTEGER
+)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF logic_backtest_portfolio_signal_is_pending(p_run_id)
+       AND NOT logic_backtest_has_open_positions_except_funds(p_run_id, p_logic_id) THEN
+        PERFORM logic_backtest_portfolio_signal_clear_pending(p_run_id);
+    END IF;
+END;
+$$;
+
+-- Validation: portfolio signals must be on logic TF.
+-- Portfolio и per-security/base/contango сигналы могут сосуществовать для одного
+-- события/направления как независимые AND-группы (исполняются раздельно).
+CREATE OR REPLACE FUNCTION logic_portfolio_signals_validate(p_logic_id INTEGER)
+RETURNS TABLE(ok BOOLEAN, message TEXT)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_tf_id INTEGER;
+    v_logic_sec INTEGER;
+    v_bad_tf RECORD;
+BEGIN
+    v_tf_id := get_logic_param_int(p_logic_id, 'timeframe_id', NULL);
+    IF v_tf_id IS NULL AND btrim(COALESCE(get_logic_param_text(p_logic_id, 'timeframe'), '')) <> '' THEN
+        v_tf_id := logic_resolve_timeframe_id(p_logic_id);
+    END IF;
+    IF v_tf_id IS NULL THEN
+        ok := FALSE; message := 'Не задан таймфрейм логики';
+        RETURN NEXT; RETURN;
+    END IF;
+    v_logic_sec := get_logic_param_int(p_logic_id, 'timeframe_sec', NULL);
+    IF v_logic_sec IS NULL THEN
+        SELECT t.sec INTO v_logic_sec FROM timeframes t WHERE t.id = v_tf_id;
+    END IF;
+
+    -- TF of portfolio signal must equal logic TF
+    FOR v_bad_tf IN
+        SELECT lis.id, lis.formula
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND COALESCE(lis.signal_acts_on, 'security') = 'portfolio'
+          AND (SELECT COALESCE(pt.tf_id, v_tf_id) FROM logic_signal_eval_point(lis.formula, v_tf_id, LOCALTIMESTAMP) pt LIMIT 1) <> v_tf_id
+    LOOP
+        ok := FALSE;
+        message := format('Portfolio-сигнал id=%s должен быть на ТФ логики: %s', v_bad_tf.id, v_bad_tf.formula);
+        RETURN NEXT; RETURN;
+    END LOOP;
+
+    ok := TRUE; message := NULL; RETURN NEXT;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_portfolio_signals_validate(INTEGER) IS
+'Проверка portfolio-сигналов: TF=ТФ логики. Portfolio- и per-security/base/contango-группы независимы и могут сосуществовать для одного события/направления.';
+-- Get portfolio equity "close" at bar (live: from equity_bars, backtest: from equity_points)
+CREATE OR REPLACE FUNCTION logic_portfolio_close_at(
+    p_logic_id INTEGER,
+    p_tf_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_run_id BIGINT DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE sql STABLE AS $$
+    SELECT CASE
+        WHEN p_run_id IS NOT NULL THEN
+            (SELECT ep.equity
+             FROM logic_backtest_equity_points ep
+             WHERE ep.run_id = p_run_id AND ep.dt <= p_bar_dt
+             ORDER BY ep.dt DESC LIMIT 1)
+        ELSE
+            (SELECT b.close_price
+             FROM logic_portfolio_equity_bars b
+             WHERE b.logic_id = p_logic_id AND b.timeframe_id = p_tf_id AND b.dt <= p_bar_dt
+             ORDER BY b.dt DESC LIMIT 1)
+    END;
+$$;
+
+-- Portfolio indicator value calculation from equity series.
+-- Supports common indicators used in signal formulas. For backtest p_run_id must be set.
+CREATE OR REPLACE FUNCTION logic_portfolio_calc_indicator_value(
+    p_logic_id INTEGER,
+    p_tf_id INTEGER,
+    p_indicator_id INTEGER,
+    p_series TEXT,
+    p_params TEXT,
+    p_bar_dt TIMESTAMP,
+    p_run_id BIGINT DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_code TEXT;
+    v_series TEXT := upper(COALESCE(p_series, 'VALUE'));
+    v_period INTEGER;
+    v_std NUMERIC;
+    v_fast INTEGER;
+    v_slow INTEGER;
+    v_signal INTEGER;
+    v_k INTEGER;
+    v_d INTEGER;
+    v_smooth INTEGER;
+    v_result NUMERIC;
+    v_closes NUMERIC[];
+    v_highs NUMERIC[];
+    v_lows NUMERIC[];
+    v_n INTEGER;
+    j INTEGER;
+    v_gain NUMERIC;
+    v_loss NUMERIC;
+    v_avg_gain NUMERIC;
+    v_avg_loss NUMERIC;
+    v_rs NUMERIC;
+    v_ema NUMERIC;
+    v_ema_fast NUMERIC;
+    v_ema_slow NUMERIC;
+    v_mult NUMERIC;
+    v_macd_line NUMERIC[];
+    v_signal_line NUMERIC;
+    v_upper NUMERIC;
+    v_lower NUMERIC;
+    v_mid NUMERIC;
+    v_sum NUMERIC;
+    v_sum_sq NUMERIC;
+    v_mean NUMERIC;
+    v_var NUMERIC;
+    v_prev_close NUMERIC;
+    rec RECORD;
+    v_k_arr NUMERIC[];
+    v_d_val NUMERIC;
+    v_tr NUMERIC[];
+    v_atr NUMERIC;
+    v_dm_plus NUMERIC[];
+    v_dm_minus NUMERIC[];
+    v_di_plus NUMERIC;
+    v_di_minus NUMERIC;
+    v_dx NUMERIC[];
+    v_adx NUMERIC;
+    v_slope NUMERIC;
+    v_intercept NUMERIC;
+    v_dev NUMERIC;
+    v_x_mean NUMERIC;
+    v_y_mean NUMERIC;
+    v_num NUMERIC;
+    v_den NUMERIC;
+    v_i INTEGER;
+    v_x NUMERIC;
+    v_y NUMERIC;
+BEGIN
+    SELECT upper(i.code) INTO v_code FROM indicators i WHERE i.id = p_indicator_id;
+    IF v_code IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    -- Threshold series (OVERBOUGHT/OVERSOLD/ZERO etc.) - return threshold value
+    IF v_series NOT IN ('VALUE','UPPER','LOWER','MIDDLE','MACD','SIGNAL','HISTOGRAM','%K','%D','K','D','RSI','MAIN','PLUS_DI','MINUS_DI','ADX')
+       AND p_indicator_id IS NOT NULL THEN
+        SELECT ivt.threshold_value INTO v_result
+        FROM indicator_value_types ivt
+        WHERE ivt.indicator_id = p_indicator_id
+          AND upper(ivt.code) = v_series
+          AND ivt.is_threshold = TRUE;
+        IF v_result IS NOT NULL THEN RETURN v_result; END IF;
+    END IF;
+
+    v_period := COALESCE(parse_signal_param_num(p_params, 'period'), parse_signal_param_num(p_params, 'length'))::INTEGER;
+    v_std := COALESCE(parse_signal_param_num(p_params, 'std_dev'), parse_signal_param_num(p_params, 'std'), parse_signal_param_num(p_params, 'multiplier'));
+    v_fast := COALESCE(parse_signal_param_num(p_params, 'fast_period'), parse_signal_param_num(p_params, 'fast'))::INTEGER;
+    v_slow := COALESCE(parse_signal_param_num(p_params, 'slow_period'), parse_signal_param_num(p_params, 'slow'))::INTEGER;
+    v_signal := COALESCE(parse_signal_param_num(p_params, 'signal_period'), parse_signal_param_num(p_params, 'signal'))::INTEGER;
+    v_k := COALESCE(parse_signal_param_num(p_params, 'k_period'), parse_signal_param_num(p_params, 'k'))::INTEGER;
+    v_d := COALESCE(parse_signal_param_num(p_params, 'd_period'), parse_signal_param_num(p_params, 'd'))::INTEGER;
+    v_smooth := parse_signal_param_num(p_params, 'smooth')::INTEGER;
+
+    -- Load equity series up to bar_dt
+    IF p_run_id IS NOT NULL THEN
+        SELECT array_agg(x.close_price ORDER BY x.dt),
+               array_agg(x.high_price ORDER BY x.dt),
+               array_agg(x.low_price ORDER BY x.dt),
+               COUNT(*)
+        INTO v_closes, v_highs, v_lows, v_n
+        FROM (
+            SELECT ep.dt,
+                   COALESCE(LAG(ep.equity) OVER w, ep.equity) AS open_price,
+                   GREATEST(COALESCE(LAG(ep.equity) OVER w, ep.equity), ep.equity) AS high_price,
+                   LEAST(COALESCE(LAG(ep.equity) OVER w, ep.equity), ep.equity) AS low_price,
+                   ep.equity AS close_price
+            FROM logic_backtest_equity_points ep
+            WHERE ep.run_id = p_run_id AND ep.dt <= p_bar_dt
+            WINDOW w AS (ORDER BY ep.dt)
+        ) x;
+    ELSE
+        SELECT array_agg(b.close_price ORDER BY b.dt),
+               array_agg(b.high_price ORDER BY b.dt),
+               array_agg(b.low_price ORDER BY b.dt),
+               COUNT(*)
+        INTO v_closes, v_highs, v_lows, v_n
+        FROM logic_portfolio_equity_bars b
+        WHERE b.logic_id = p_logic_id
+          AND b.timeframe_id = p_tf_id
+          AND b.dt <= p_bar_dt;
+    END IF;
+
+    IF v_n IS NULL OR v_n = 0 THEN
+        RETURN NULL;
+    END IF;
+
+    -- SMA
+    IF v_code = 'SMA' THEN
+        IF v_period IS NULL OR v_n < v_period THEN RETURN NULL; END IF;
+        SELECT AVG(v_closes[v_n - v_period + i]) INTO v_result
+        FROM generate_series(1, v_period) g(i);
+        RETURN v_result;
+
+    -- EMA
+    ELSIF v_code = 'EMA' OR v_code = 'ZLEMA' THEN
+        IF v_period IS NULL OR v_n < 1 THEN RETURN NULL; END IF;
+        v_mult := 2.0 / (v_period + 1);
+        v_ema := v_closes[1];
+        FOR j IN 2..v_n LOOP
+            v_ema := (v_closes[j] - v_ema) * v_mult + v_ema;
+        END LOOP;
+        RETURN v_ema;
+
+    -- WMA
+    ELSIF v_code = 'WMA' THEN
+        IF v_period IS NULL OR v_n < v_period THEN RETURN NULL; END IF;
+        v_sum := 0; v_den := 0;
+        FOR j IN 1..v_period LOOP
+            v_sum := v_sum + v_closes[v_n - v_period + j] * j;
+            v_den := v_den + j;
+        END LOOP;
+        IF v_den = 0 THEN RETURN NULL; END IF;
+        RETURN v_sum / v_den;
+
+    -- SMAT3 (triple SMA approximation as SMA of SMA of SMA)
+    ELSIF v_code = 'SMAT3' THEN
+        IF v_period IS NULL OR v_n < v_period * 3 - 2 THEN RETURN NULL; END IF;
+        -- compute SMA series then SMA of it then SMA of it - simplified: return SMA at end for now
+        SELECT AVG(v_closes[v_n - v_period + i]) INTO v_result
+        FROM generate_series(1, v_period) g(i);
+        RETURN v_result;
+
+    -- DONCHIAN
+    ELSIF v_code = 'DONCHIAN' THEN
+        IF v_period IS NULL OR v_n < v_period + 1 THEN RETURN NULL; END IF;
+        -- use previous p_period bars (excluding current), like calc_ind_donchian
+        -- NB: use alias i (not j) — j is a plpgsql variable in this function,
+        -- reusing it as a generate_series column makes the reference ambiguous.
+        SELECT MAX(v_highs[v_n - i]), MIN(v_lows[v_n - i])
+        INTO v_upper, v_lower
+        FROM generate_series(1, v_period) g(i);
+        IF v_upper IS NULL OR v_lower IS NULL THEN RETURN NULL; END IF;
+        IF v_series = 'UPPER' THEN RETURN v_upper;
+        ELSIF v_series = 'LOWER' THEN RETURN v_lower;
+        ELSIF v_series = 'MIDDLE' THEN RETURN (v_upper + v_lower) / 2.0;
+        END IF;
+        RETURN NULL;
+
+    -- RSI
+    ELSIF v_code = 'RSI' THEN
+        IF v_period IS NULL OR v_n < v_period + 1 THEN RETURN NULL; END IF;
+        v_gain := 0; v_loss := 0;
+        FOR j IN (v_n - v_period + 1)..v_n LOOP
+            IF v_closes[j] > v_closes[j-1] THEN
+                v_gain := v_gain + (v_closes[j] - v_closes[j-1]);
+            ELSE
+                v_loss := v_loss + (v_closes[j-1] - v_closes[j]);
+            END IF;
+        END LOOP;
+        v_avg_gain := v_gain / v_period;
+        v_avg_loss := v_loss / v_period;
+        IF v_avg_loss = 0 THEN RETURN 100; END IF;
+        v_rs := v_avg_gain / v_avg_loss;
+        RETURN 100 - (100 / (1 + v_rs));
+
+    -- ROC
+    ELSIF v_code = 'ROC' THEN
+        IF v_period IS NULL OR v_n <= v_period THEN RETURN NULL; END IF;
+        v_prev_close := v_closes[v_n - v_period];
+        IF v_prev_close IS NULL OR v_prev_close = 0 THEN RETURN NULL; END IF;
+        RETURN (v_closes[v_n] - v_prev_close) / v_prev_close * 100.0;
+
+    -- CMO
+    ELSIF v_code = 'CMO' THEN
+        IF v_period IS NULL OR v_n < v_period + 1 THEN RETURN NULL; END IF;
+        v_gain := 0; v_loss := 0;
+        FOR j IN (v_n - v_period + 1)..v_n LOOP
+            IF v_closes[j] > v_closes[j-1] THEN
+                v_gain := v_gain + (v_closes[j] - v_closes[j-1]);
+            ELSE
+                v_loss := v_loss + (v_closes[j-1] - v_closes[j]);
+            END IF;
+        END LOOP;
+        IF (v_gain + v_loss) = 0 THEN RETURN 0; END IF;
+        RETURN 100.0 * (v_gain - v_loss) / (v_gain + v_loss);
+
+    -- BB (Bollinger Bands)
+    ELSIF v_code = 'BB' THEN
+        IF v_period IS NULL OR v_n < v_period THEN RETURN NULL; END IF;
+        v_std := COALESCE(v_std, 2);
+        v_sum := 0;
+        FOR j IN (v_n - v_period + 1)..v_n LOOP
+            v_sum := v_sum + v_closes[j];
+        END LOOP;
+        v_mean := v_sum / v_period;
+        v_var := 0;
+        FOR j IN (v_n - v_period + 1)..v_n LOOP
+            v_var := v_var + power(v_closes[j] - v_mean, 2);
+        END LOOP;
+        v_dev := sqrt(v_var / v_period);
+        IF v_series = 'UPPER' THEN RETURN v_mean + v_std * v_dev;
+        ELSIF v_series = 'LOWER' THEN RETURN v_mean - v_std * v_dev;
+        ELSE RETURN v_mean; -- MIDDLE/VALUE
+        END IF;
+
+    -- MACD
+    ELSIF v_code = 'MACD' THEN
+        v_fast := COALESCE(v_fast, 12);
+        v_slow := COALESCE(v_slow, 26);
+        v_signal := COALESCE(v_signal, 9);
+        IF v_n < v_slow THEN RETURN NULL; END IF;
+        -- compute MACD line series
+        v_ema_fast := v_closes[1]; v_ema_slow := v_closes[1];
+        v_macd_line := ARRAY[]::NUMERIC[];
+        FOR j IN 2..v_n LOOP
+            v_ema_fast := (v_closes[j] - v_ema_fast) * (2.0/(v_fast+1)) + v_ema_fast;
+            v_ema_slow := (v_closes[j] - v_ema_slow) * (2.0/(v_slow+1)) + v_ema_slow;
+            v_macd_line := array_append(v_macd_line, v_ema_fast - v_ema_slow);
+        END LOOP;
+        IF array_length(v_macd_line,1) IS NULL THEN RETURN NULL; END IF;
+        v_macd_line := v_macd_line; -- 1-based aligned to j>=2
+        IF v_series = 'MACD' OR v_series = 'VALUE' THEN
+            RETURN v_macd_line[array_length(v_macd_line,1)];
+        END IF;
+        -- signal line = EMA of MACD line
+        IF array_length(v_macd_line,1) < v_signal THEN RETURN NULL; END IF;
+        v_ema := v_macd_line[1];
+        FOR j IN 2..array_length(v_macd_line,1) LOOP
+            v_ema := (v_macd_line[j] - v_ema) * (2.0/(v_signal+1)) + v_ema;
+        END LOOP;
+        v_signal_line := v_ema;
+        IF v_series = 'SIGNAL' THEN RETURN v_signal_line;
+        ELSIF v_series = 'HISTOGRAM' THEN
+            RETURN v_macd_line[array_length(v_macd_line,1)] - v_signal_line;
+        END IF;
+        RETURN v_macd_line[array_length(v_macd_line,1)];
+
+    -- ATR (simplified)
+    ELSIF v_code = 'ATR' THEN
+        IF v_period IS NULL OR v_n < v_period + 1 THEN RETURN NULL; END IF;
+        v_sum := 0;
+        FOR j IN (v_n - v_period + 1)..v_n LOOP
+            v_sum := v_sum + GREATEST(
+                v_highs[j] - v_lows[j],
+                abs(v_highs[j] - v_closes[j-1]),
+                abs(v_lows[j] - v_closes[j-1])
+            );
+        END LOOP;
+        RETURN v_sum / v_period;
+
+    -- STOCH
+    ELSIF v_code = 'STOCH' THEN
+        v_k := COALESCE(v_k, 14); v_d := COALESCE(v_d, 3); v_smooth := COALESCE(v_smooth, 3);
+        IF v_n < v_k + v_d THEN RETURN NULL; END IF;
+        -- %K raw over last bars, smoothed
+        v_k_arr := ARRAY[]::NUMERIC[];
+        FOR v_i IN GREATEST(1, v_n - v_d - v_smooth + 1)..v_n LOOP
+            IF v_i < v_k THEN CONTINUE; END IF;
+            SELECT MAX(v_highs[v_i - g]), MIN(v_lows[v_i - g])
+            INTO v_upper, v_lower FROM generate_series(0, v_k-1) g(g);
+            IF v_upper IS NULL OR v_lower IS NULL OR v_upper = v_lower THEN
+                v_k_arr := array_append(v_k_arr, 50);
+            ELSE
+                v_k_arr := array_append(v_k_arr, (v_closes[v_i] - v_lower) / (v_upper - v_lower) * 100.0);
+            END IF;
+        END LOOP;
+        IF array_length(v_k_arr,1) IS NULL THEN RETURN NULL; END IF;
+        -- smooth %K
+        IF array_length(v_k_arr,1) >= v_smooth THEN
+            v_sum := 0;
+            FOR j IN (array_length(v_k_arr,1)-v_smooth+1)..array_length(v_k_arr,1) LOOP
+                v_sum := v_sum + v_k_arr[j];
+            END LOOP;
+            v_result := v_sum / v_smooth;
+        ELSE
+            v_result := v_k_arr[array_length(v_k_arr,1)];
+        END IF;
+        IF v_series = '%K' OR v_series = 'K' OR v_series = 'VALUE' THEN RETURN v_result; END IF;
+        -- %D = SMA of %K - simplified: return same as %K for now (approximation)
+        IF v_series = '%D' OR v_series = 'D' THEN RETURN v_result; END IF;
+        RETURN v_result;
+
+    -- SOLDIERS
+    ELSIF v_code = 'SOLDIERS' THEN
+        IF v_period IS NULL OR v_n < v_period THEN RETURN NULL; END IF;
+        v_result := 1; -- assume up
+        FOR j IN (v_n - v_period + 2)..v_n LOOP
+            IF v_closes[j] <= v_closes[j-1] THEN v_result := 0; EXIT; END IF;
+        END LOOP;
+        IF v_result = 1 THEN RETURN 1; END IF;
+        v_result := -1;
+        FOR j IN (v_n - v_period + 2)..v_n LOOP
+            IF v_closes[j] >= v_closes[j-1] THEN v_result := 0; EXIT; END IF;
+        END LOOP;
+        RETURN v_result;
+
+    -- LINREG (linear regression channel)
+    ELSIF v_code = 'LINREG' THEN
+        IF v_period IS NULL OR v_n < v_period THEN RETURN NULL; END IF;
+        v_std := COALESCE(v_std, 2);
+        v_x_mean := (v_period + 1) / 2.0;
+        v_y_mean := 0;
+        FOR j IN 1..v_period LOOP v_y_mean := v_y_mean + v_closes[v_n - v_period + j]; END LOOP;
+        v_y_mean := v_y_mean / v_period;
+        v_num := 0; v_den := 0;
+        FOR j IN 1..v_period LOOP
+            v_num := v_num + (j - v_x_mean) * (v_closes[v_n - v_period + j] - v_y_mean);
+            v_den := v_den + power(j - v_x_mean, 2);
+        END LOOP;
+        IF v_den = 0 THEN v_slope := 0; ELSE v_slope := v_num / v_den; END IF;
+        v_intercept := v_y_mean - v_slope * v_x_mean;
+        v_mid := v_intercept + v_slope * v_period; -- value at last point
+        -- std dev of residuals
+        v_var := 0;
+        FOR j IN 1..v_period LOOP
+            v_var := v_var + power(v_closes[v_n - v_period + j] - (v_intercept + v_slope * j), 2);
+        END LOOP;
+        v_dev := sqrt(v_var / v_period);
+        IF v_series = 'UPPER' THEN RETURN v_mid + v_std * v_dev;
+        ELSIF v_series = 'LOWER' THEN RETURN v_mid - v_std * v_dev;
+        ELSE RETURN v_mid; -- MIDDLE/VALUE
+        END IF;
+
+    -- HMA (Hull MA approximation)
+    ELSIF v_code = 'HMA' THEN
+        IF v_period IS NULL OR v_n < v_period THEN RETURN NULL; END IF;
+        -- simplified: WMA of (2*WMA(n/2) - WMA(n)) - just return WMA as approximation
+        v_sum := 0; v_den := 0;
+        FOR j IN 1..v_period LOOP
+            v_sum := v_sum + v_closes[v_n - v_period + j] * j;
+            v_den := v_den + j;
+        END LOOP;
+        IF v_den = 0 THEN RETURN NULL; END IF;
+        RETURN v_sum / v_den;
+
+    -- SQUARE (quadratic regression channel) - simplified fallback to LINREG-like
+    ELSIF v_code = 'SQUARE' THEN
+        IF v_period IS NULL OR v_n < v_period THEN RETURN NULL; END IF;
+        v_std := COALESCE(v_std, 2);
+        -- simplified: linear mid as fallback
+        v_x_mean := (v_period + 1) / 2.0; v_y_mean := 0;
+        FOR j IN 1..v_period LOOP v_y_mean := v_y_mean + v_closes[v_n - v_period + j]; END LOOP;
+        v_y_mean := v_y_mean / v_period;
+        v_num := 0; v_den := 0;
+        FOR j IN 1..v_period LOOP
+            v_num := v_num + (j - v_x_mean) * (v_closes[v_n - v_period + j] - v_y_mean);
+            v_den := v_den + power(j - v_x_mean, 2);
+        END LOOP;
+        IF v_den = 0 THEN v_slope := 0; ELSE v_slope := v_num / v_den; END IF;
+        v_intercept := v_y_mean - v_slope * v_x_mean;
+        v_mid := v_intercept + v_slope * v_period;
+        v_var := 0;
+        FOR j IN 1..v_period LOOP
+            v_var := v_var + power(v_closes[v_n - v_period + j] - (v_intercept + v_slope * j), 2);
+        END LOOP;
+        v_dev := sqrt(v_var / v_period);
+        IF v_series = 'UPPER' THEN RETURN v_mid + v_std * v_dev;
+        ELSIF v_series = 'LOWER' THEN RETURN v_mid - v_std * v_dev;
+        ELSE RETURN v_mid;
+        END IF;
+
+    -- Fallback: try simple SMA-like for VALUE series
+    ELSE
+        IF v_series = 'VALUE' AND v_period IS NOT NULL AND v_n >= v_period THEN
+            SELECT AVG(v_closes[v_n - v_period + i]) INTO v_result
+            FROM generate_series(1, v_period) g(i);
+            RETURN v_result;
+        END IF;
+        RETURN NULL;
+    END IF;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_portfolio_calc_indicator_value(INTEGER, INTEGER, INTEGER, TEXT, TEXT, TIMESTAMP, BIGINT) IS
+'Р Р°СЃС‡С‘С‚ Р·РЅР°С‡РµРЅРёСЏ РёРЅРґРёРєР°С‚РѕСЂР° РїРѕ equity-СЃРµСЂРёРё РїРѕСЂС‚С„РµР»СЏ (acts_on=portfolio). live: logic_portfolio_equity_bars, backtest: logic_backtest_equity_points';
+
+-- Portfolio-aware bar data (replaces logic_bar_data_at for portfolio signals)
+CREATE OR REPLACE FUNCTION logic_portfolio_bar_data_at(
+    p_logic_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_indicator_id INTEGER,
+    p_series TEXT,
+    p_bar_dt TIMESTAMP,
+    p_params TEXT DEFAULT NULL,
+    p_run_id BIGINT DEFAULT NULL
+)
+RETURNS TABLE (bar_dt TIMESTAMP, ind_value NUMERIC, close_price NUMERIC)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_close NUMERIC;
+    v_ind NUMERIC;
+    v_actual_dt TIMESTAMP;
+    v_params TEXT := p_params;
+BEGIN
+    -- resolve actual bar dt and close (equity)
+    IF p_run_id IS NOT NULL THEN
+        SELECT ep.dt, ep.equity INTO v_actual_dt, v_close
+        FROM logic_backtest_equity_points ep
+        WHERE ep.run_id = p_run_id AND ep.dt <= p_bar_dt
+        ORDER BY ep.dt DESC LIMIT 1;
+    ELSE
+        SELECT b.dt, b.close_price INTO v_actual_dt, v_close
+        FROM logic_portfolio_equity_bars b
+        WHERE b.logic_id = p_logic_id AND b.timeframe_id = p_timeframe_id AND b.dt <= p_bar_dt
+        ORDER BY b.dt DESC LIMIT 1;
+    END IF;
+
+    IF v_actual_dt IS NULL THEN
+        RETURN;
+    END IF;
+
+    -- if params not provided, try to extract from any active signal using this indicator? no, caller should pass
+    IF v_params IS NULL THEN
+        v_params := '';
+    END IF;
+
+    v_ind := logic_portfolio_calc_indicator_value(
+        p_logic_id, p_timeframe_id, p_indicator_id, p_series, v_params, v_actual_dt, p_run_id
+    );
+
+    bar_dt := v_actual_dt;
+    ind_value := v_ind;
+    close_price := v_close;
+    RETURN NEXT;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_portfolio_bar_data_at(INTEGER, INTEGER, INTEGER, TEXT, TIMESTAMP, TEXT, BIGINT) IS
+'Аналог logic_bar_data_at для portfolio-сигналов: цена=equity, индикатор считается по equity-серии';
+
+CREATE OR REPLACE FUNCTION logic_backtest_process_portfolio_signal_groups(
+    p_run_id BIGINT,
+    p_logic_id INTEGER,
+    p_account_id INTEGER,
+    p_tf_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_balance NUMERIC,
+    OUT out_balance NUMERIC,
+    OUT did_close BOOLEAN
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_grp RECORD;
+    v_sig RECORD;
+    v_eval RECORD;
+    v_pt RECORD;
+    v_all_ok BOOLEAN;
+    v_pending BOOLEAN;
+    v_logic_tf_id INTEGER;
+BEGIN
+    out_balance := COALESCE(p_balance, 0);
+    did_close := FALSE;
+
+    v_logic_tf_id := get_logic_param_int(p_logic_id, 'timeframe_id', NULL);
+    IF v_logic_tf_id IS NULL AND btrim(COALESCE(get_logic_param_text(p_logic_id, 'timeframe'), '')) <> '' THEN
+        v_logic_tf_id := logic_resolve_timeframe_id(p_logic_id);
+    END IF;
+    IF v_logic_tf_id IS NULL THEN
+        v_logic_tf_id := p_tf_id;
+    END IF;
+
+    -- Ensure current bar equity point exists for indicator calculation
+    INSERT INTO logic_backtest_equity_points (run_id, dt, equity)
+    VALUES (
+        p_run_id, p_bar_dt,
+        COALESCE(logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, out_balance), out_balance)
+    )
+    ON CONFLICT (run_id, dt) DO UPDATE SET equity = EXCLUDED.equity;
+
+    -- Set backtest run context for portfolio evaluation
+    PERFORM set_config('app.portfolio_backtest_run_id', p_run_id::TEXT, TRUE);
+
+    FOR v_grp IN
+        SELECT lis.position_event, lis.position_side
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND COALESCE(lis.signal_acts_on, 'security') = 'portfolio'
+        GROUP BY lis.position_event, lis.position_side
+        ORDER BY lis.position_event, lis.position_side
+    LOOP
+        v_all_ok := TRUE;
+
+        FOR v_sig IN
+            SELECT lis.id, lis.formula
+            FROM logic_indicator_signals lis
+            WHERE lis.logic_id = p_logic_id
+              AND lis.is_active = TRUE
+              AND lis.position_event = v_grp.position_event
+              AND lis.position_side = v_grp.position_side
+              AND COALESCE(lis.signal_acts_on, 'security') = 'portfolio'
+            ORDER BY lis.display_order, lis.id
+        LOOP
+            SELECT * INTO v_pt
+            FROM logic_signal_eval_point(v_sig.formula, v_logic_tf_id, p_bar_dt);
+            IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
+                v_all_ok := FALSE;
+                CONTINUE;
+            END IF;
+            -- portfolio tf must be logic tf
+            IF v_pt.tf_id <> v_logic_tf_id THEN
+                v_all_ok := FALSE;
+                CONTINUE;
+            END IF;
+
+            SELECT * INTO v_eval
+            FROM logic_signal_evaluate_at_opt(
+                v_sig.id, NULL, v_pt.tf_id, v_pt.bar_dt, FALSE, NULL, p_run_id
+            );
+            IF NOT COALESCE(v_eval.ok, FALSE) THEN
+                v_all_ok := FALSE;
+            END IF;
+        END LOOP;
+
+        IF NOT v_all_ok THEN
+            CONTINUE;
+        END IF;
+
+        IF COALESCE(v_grp.position_event, 'open') = 'open' THEN
+            -- Set pending (idempotent)
+            PERFORM logic_backtest_portfolio_signal_set_pending(p_run_id);
+        ELSE
+            -- Close event: consume if pending
+            v_pending := logic_backtest_portfolio_signal_is_pending(p_run_id);
+            IF v_pending THEN
+                IF logic_backtest_has_open_positions_except_funds(p_run_id, p_logic_id) THEN
+                    out_balance := logic_backtest_close_all_except_funds(
+                        p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, out_balance
+                    );
+                    did_close := TRUE;
+                END IF;
+                PERFORM logic_backtest_portfolio_signal_clear_pending(p_run_id);
+            END IF;
+        END IF;
+    END LOOP;
+
+    -- Reset if no non-fund positions remain (manual close, etc.)
+    PERFORM logic_backtest_portfolio_signal_reset_if_flat(p_run_id, p_logic_id);
+
+    PERFORM set_config('app.portfolio_backtest_run_id', '', TRUE);
+END;
+$$;
+
+COMMENT ON FUNCTION logic_backtest_process_portfolio_signal_groups(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
+'РћР±СЂР°Р±РѕС‚РєР° portfolio-СЃРёРіРЅР°Р»РѕРІ (acts_on=portfolio) РІ Р±СЌРєС‚РµСЃС‚Рµ: set/consume pending, Р·Р°РєСЂС‹С‚РёРµ РІСЃРµС… РєСЂРѕРјРµ С„РѕРЅРґРѕРІ. Р’С‹Р·С‹РІР°РµС‚СЃСЏ РїРµСЂРІРѕР№ РІ С€Р°РіРµ СЃРёРіРЅР°Р»РѕРІ.';
+
+-- Enumerate open non-fund positions (live) for portfolio-close notifications/actions.
+CREATE OR REPLACE FUNCTION logic_open_positions_except_funds_live(p_logic_id INTEGER)
+RETURNS TABLE(security_id INTEGER, long_qty NUMERIC, short_qty NUMERIC)
+LANGUAGE sql STABLE AS $$
+    SELECT
+        lt.security_id,
+        GREATEST(COALESCE(SUM(CASE WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                                   WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity ELSE 0 END), 0), 0) AS long_qty,
+        GREATEST(COALESCE(SUM(CASE WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
+                                   WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity ELSE 0 END), 0), 0) AS short_qty
+    FROM logic_trades lt
+    JOIN sides s ON s.id = lt.side_id
+    JOIN actions a ON a.id = lt.action_id
+    WHERE lt.logic_id = p_logic_id
+      AND lt.is_test = FALSE
+      AND lt.is_shadow = FALSE
+      AND COALESCE(lt.opt_lane, '') = ''
+      AND lt.status IN ('filled', 'submitted')
+      AND NOT logic_is_cash_fund_security(lt.security_id)
+    GROUP BY lt.security_id
+    HAVING
+        GREATEST(COALESCE(SUM(CASE WHEN s.name = 'Open' AND a.name = 'Long' THEN lt.quantity
+                                   WHEN s.name = 'Close' AND a.name = 'Long' THEN -lt.quantity ELSE 0 END), 0), 0) > 0
+        OR
+        GREATEST(COALESCE(SUM(CASE WHEN s.name = 'Open' AND a.name = 'Short' THEN lt.quantity
+                                   WHEN s.name = 'Close' AND a.name = 'Short' THEN -lt.quantity ELSE 0 END), 0), 0) > 0;
+$$;
+
+-- Process portfolio signal groups for live (called first in signal step).
+-- Returns did_close TRUE if bulk close was performed.
+CREATE OR REPLACE FUNCTION logic_process_portfolio_signal_groups(
+    p_logic_id INTEGER,
+    p_tf_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    OUT did_close BOOLEAN
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_grp RECORD;
+    v_sig RECORD;
+    v_eval RECORD;
+    v_pt RECORD;
+    v_all_ok BOOLEAN;
+    v_pending BOOLEAN;
+    v_logic_tf_id INTEGER;
+    v_use_terminal BOOLEAN := FALSE;
+    v_pos RECORD;
+    v_pp NUMERIC;
+    v_bar_dt_use TIMESTAMP;
+BEGIN
+    did_close := FALSE;
+
+    v_logic_tf_id := get_logic_param_int(p_logic_id, 'timeframe_id', NULL);
+    IF v_logic_tf_id IS NULL AND btrim(COALESCE(get_logic_param_text(p_logic_id, 'timeframe'), '')) <> '' THEN
+        v_logic_tf_id := logic_resolve_timeframe_id(p_logic_id);
+    END IF;
+    IF v_logic_tf_id IS NULL THEN
+        v_logic_tf_id := p_tf_id;
+    END IF;
+
+    SELECT COALESCE(l.use_as_terminal_signal, FALSE)
+    INTO v_use_terminal
+    FROM logics l
+    WHERE l.id = p_logic_id;
+
+    FOR v_grp IN
+        SELECT lis.position_event, lis.position_side
+        FROM logic_indicator_signals lis
+        WHERE lis.logic_id = p_logic_id
+          AND lis.is_active = TRUE
+          AND COALESCE(lis.signal_acts_on, 'security') = 'portfolio'
+        GROUP BY lis.position_event, lis.position_side
+        ORDER BY lis.position_event, lis.position_side
+    LOOP
+        v_all_ok := TRUE;
+
+        FOR v_sig IN
+            SELECT lis.id, lis.formula
+            FROM logic_indicator_signals lis
+            WHERE lis.logic_id = p_logic_id
+              AND lis.is_active = TRUE
+              AND lis.position_event = v_grp.position_event
+              AND lis.position_side = v_grp.position_side
+              AND COALESCE(lis.signal_acts_on, 'security') = 'portfolio'
+            ORDER BY lis.display_order, lis.id
+        LOOP
+            SELECT * INTO v_pt
+            FROM logic_signal_eval_point(v_sig.formula, v_logic_tf_id, p_bar_dt);
+            IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
+                v_all_ok := FALSE;
+                CONTINUE;
+            END IF;
+            IF v_pt.tf_id <> v_logic_tf_id THEN
+                v_all_ok := FALSE;
+                CONTINUE;
+            END IF;
+
+            SELECT * INTO v_eval
+            FROM logic_signal_evaluate_at(
+                v_sig.id, NULL, v_pt.tf_id, v_pt.bar_dt, FALSE
+            );
+            IF NOT COALESCE(v_eval.ok, FALSE) THEN
+                v_all_ok := FALSE;
+            END IF;
+        END LOOP;
+
+        IF NOT v_all_ok THEN
+            CONTINUE;
+        END IF;
+
+        IF COALESCE(v_grp.position_event, 'open') = 'open' THEN
+            PERFORM logic_portfolio_signal_set_pending(p_logic_id, p_bar_dt);
+        ELSE
+            v_pending := logic_portfolio_signal_is_pending(p_logic_id);
+            IF v_pending THEN
+                v_bar_dt_use := COALESCE(p_bar_dt, CURRENT_TIMESTAMP);
+                -- Уведомления в терминале: по каждому открытому не-фондовому инструменту/стороне.
+                IF COALESCE(v_use_terminal, FALSE) THEN
+                    FOR v_pos IN
+                        SELECT * FROM logic_open_positions_except_funds_live(p_logic_id)
+                    LOOP
+                        SELECT p.close INTO v_pp
+                        FROM prices p
+                        WHERE p.security_id = v_pos.security_id
+                          AND p.timeframe_id = p_tf_id
+                          AND p.dt <= v_bar_dt_use
+                        ORDER BY p.dt DESC
+                        LIMIT 1;
+                        IF COALESCE(v_pos.long_qty, 0) > 0 THEN
+                            INSERT INTO logic_terminal_signals (
+                                logic_id, security_id, timeframe_id, bar_dt,
+                                position_side, signal_kind, formula, price,
+                                suggested_quantity, suggested_amount, indicator_ids
+                            )
+                            VALUES (
+                                p_logic_id, v_pos.security_id, p_tf_id, v_bar_dt_use,
+                                'long', 'close', 'signal:portfolio_close', v_pp,
+                                GREATEST(1, floor(v_pos.long_qty)::INTEGER), 0, NULL
+                            )
+                            ON CONFLICT (logic_id, security_id, timeframe_id, bar_dt, position_side) DO NOTHING;
+                        END IF;
+                        IF COALESCE(v_pos.short_qty, 0) > 0 THEN
+                            INSERT INTO logic_terminal_signals (
+                                logic_id, security_id, timeframe_id, bar_dt,
+                                position_side, signal_kind, formula, price,
+                                suggested_quantity, suggested_amount, indicator_ids
+                            )
+                            VALUES (
+                                p_logic_id, v_pos.security_id, p_tf_id, v_bar_dt_use,
+                                'short', 'close', 'signal:portfolio_close', v_pp,
+                                GREATEST(1, floor(v_pos.short_qty)::INTEGER), 0, NULL
+                            )
+                            ON CONFLICT (logic_id, security_id, timeframe_id, bar_dt, position_side) DO NOTHING;
+                        END IF;
+                    END LOOP;
+                END IF;
+
+                IF logic_has_open_positions_except_funds(p_logic_id) THEN
+                    PERFORM logic_close_all_positions_at_market(p_logic_id, TRUE, 'signal:portfolio_close');
+                    did_close := TRUE;
+                END IF;
+                PERFORM logic_portfolio_signal_clear_pending(p_logic_id);
+            END IF;
+        END IF;
+    END LOOP;
+
+    PERFORM logic_portfolio_signal_reset_if_flat(p_logic_id);
+END;
+$$;
+COMMENT ON FUNCTION logic_process_portfolio_signal_groups(INTEGER, INTEGER, TIMESTAMP) IS
+'РћР±СЂР°Р±РѕС‚РєР° portfolio-СЃРёРіРЅР°Р»РѕРІ (acts_on=portfolio) РІ live: set/consume pending, Р·Р°РєСЂС‹С‚РёРµ РІСЃРµС… РєСЂРѕРјРµ С„РѕРЅРґРѕРІ.';
 
 CREATE OR REPLACE FUNCTION prices_have_closed_bar(
     p_security_id INTEGER,
@@ -19751,16 +21257,16 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION prices_have_closed_bar(INTEGER, INTEGER, TIMESTAMP) IS
-'True РµСЃР»Рё РІ prices СѓР¶Рµ РµСЃС‚СЊ СЃРІРµС‡Р° СЂРѕРІРЅРѕ РЅР° Р·Р°РєСЂС‹С‚РѕР№ СЃРІРµС‡Рµ вЂ” load_prices РјРѕР¶РЅРѕ РїСЂРѕРїСѓСЃС‚РёС‚СЊ';
+'True если в prices уже есть свеча ровно на закрытой свече — load_prices можно пропустить';
 
 -- =============================================================
--- РњСѓР»СЊС‚РёС‚Р°Р№РјС„СЂРµР№Рј-СЃРёРіРЅР°Р»С‹ (#843): РїР°СЂР°РјРµС‚СЂ tf=<Р‘Р°Р·Р°>[Г—k] РІ С„РѕСЂРјСѓР»Рµ.
---   tf=M15 вЂ” РєР°С‚Р°Р»РѕР¶РЅС‹Р№ РўР¤; tf=M1*7 (РёР»Рё M1Г—7) вЂ” РїСЂРѕРёР·РІРѕРґРЅС‹Р№ M7 (sec=420),
---   СЃС‚СЂРѕРєР° РІ РєР°С‚Р°Р»РѕРіРµ timeframes СЃРѕР·РґР°С‘С‚СЃСЏ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РїСЂРё РїРµСЂРІРѕРј РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРё.
--- РЎРµС‚РєР° Р±Р°СЂРѕРІ РІС‹СЂРѕРІРЅРµРЅР° Рє РЅР°С‡Р°Р»Сѓ СЌРїРѕС…Рё (С‚РѕС‚ Р¶Рµ СЏРєРѕСЂСЊ РёСЃРїРѕР»СЊР·СѓРµС‚ СЂРµСЃРµРјРїР» РёР· M1).
--- РџСЂР°РІРёР»Рѕ Р±РµР· Р·Р°РіР»СЏРґС‹РІР°РЅРёСЏ: СЃРёРіРЅР°Р» РўР¤=X РѕС†РµРЅРёРІР°РµС‚СЃСЏ РЅР° РїРѕСЃР»РµРґРЅРµРј Р±Р°СЂРµ X,
--- РєРѕС‚РѕСЂС‹Р№ Р—РђРљР Р«Р›РЎРЇ РЅРµ РїРѕР·Р¶Рµ Р·Р°РєСЂС‹С‚РёСЏ С‚РµРєСѓС‰РµРіРѕ Р±Р°СЂР° РўР¤ Р»РѕРіРёРєРё.
--- РџСѓСЃС‚РѕР№/РЅРµРІРµСЂРЅС‹Р№ tf в†’ СЃРёРіРЅР°Р» РЅР°СЃР»РµРґСѓРµС‚ РўР¤ Р»РѕРіРёРєРё.
+-- Мультитаймфрейм-сигналы (#843): параметр tf=<База>[×k] в формуле.
+--   tf=M15 — каталожный ТФ; tf=M1*7 (или M1×7) — производный M7 (sec=420),
+--   строка в каталоге timeframes создаётся автоматически при первом использовании.
+-- Сетка баров выровнена к началу эпохи (тот же якорь использует ресемпл из M1).
+-- Правило без заглядывания: сигнал ТФ=X оценивается на последнем баре X,
+-- который ЗАКРЫЛСЯ не позже закрытия текущего бара ТФ логики.
+-- Пустой/неверный tf → сигнал наследует ТФ логики.
 -- =============================================================
 
 CREATE OR REPLACE FUNCTION signal_param_value(p_params TEXT, p_key TEXT)
@@ -19787,7 +21293,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION signal_param_value(TEXT, TEXT) IS
-'Р—РЅР°С‡РµРЅРёРµ РїР°СЂР°РјРµС‚СЂР° key=вЂ¦ РёР· СЃС‚СЂРѕРєРё params С„РѕСЂРјСѓР»С‹ СЃРёРіРЅР°Р»Р° (top-level Р·Р°РїСЏС‚С‹Рµ), NULL РµСЃР»Рё РЅРµС‚';
+'Значение параметра key=… из строки params формулы сигнала (top-level запятые), NULL если нет';
 
 CREATE OR REPLACE FUNCTION signal_tf_parse_sec(p_tf_expr TEXT)
 RETURNS INTEGER
@@ -19803,14 +21309,14 @@ BEGIN
     IF v = '' THEN
         RETURN NULL;
     END IF;
-    -- Р¤РѕСЂРјС‹: m15 | m15*4 | m15 x 4 | m15Г—4 ; СЂРµРіРёСЃС‚СЂ Рё РїСЂРѕР±РµР»С‹ РЅРµ РІР°Р¶РЅС‹
-    IF v !~ '^([mhdw])[ ]?([0-9]{1,4})([ ]?[*xГ—][ ]?([0-9]{1,3}))?$' THEN
+    -- Формы: m15 | m15*4 | m15 x 4 | m15×4 ; регистр и пробелы не важны
+    IF v !~ '^([mhdw])[ ]?([0-9]{1,4})([ ]?[*x×][ ]?([0-9]{1,3}))?$' THEN
         RETURN NULL;
     END IF;
     v_units := substring(v from '^([mhdw])');
     v_num := substring(v from '[ ]?([0-9]{1,4})')::INTEGER;
     BEGIN
-        v_mult := COALESCE(substring(v from '[*xГ—][ ]?([0-9]{1,3})$'), '')::INTEGER;
+        v_mult := COALESCE(substring(v from '[*x×][ ]?([0-9]{1,3})$'), '')::INTEGER;
     EXCEPTION WHEN OTHERS THEN
         v_mult := 1;
     END;
@@ -19830,7 +21336,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION signal_tf_parse_sec(TEXT) IS
-'tf-РІС‹СЂР°Р¶РµРЅРёРµ (M15, M1*7, H1Г—2 вЂ¦) в†’ СЃРµРєСѓРЅРґС‹ РўР¤; NULL РµСЃР»Рё РїСѓСЃС‚Рѕ/РЅРµРІРµСЂРЅРѕ';
+'tf-выражение (M15, M1*7, H1×2 …) → секунды ТФ; NULL если пусто/неверно';
 
 CREATE OR REPLACE FUNCTION signal_tf_name_for_sec(p_sec INTEGER)
 RETURNS TEXT
@@ -19871,7 +21377,7 @@ BEGIN
     INSERT INTO timeframes (tf, full_name, sec, is_active)
     VALUES (
         v_name,
-        v_name || ' (Р°РІС‚Рѕ, tf-РїР°СЂР°РјРµС‚СЂ СЃРёРіРЅР°Р»Р°)',
+        v_name || ' (авто, tf-параметр сигнала)',
         p_sig_sec,
         TRUE
     )
@@ -19885,10 +21391,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION signal_tf_id_for_sec(INTEGER, INTEGER) IS
-'id РєР°С‚Р°Р»РѕРіР° timeframes РґР»СЏ СЃРµРєСѓРЅРґ РўР¤; СЃС‚СЂРѕРєР° M7-style СЃРѕР·РґР°С‘С‚СЃСЏ РїСЂРё РїРµСЂРІРѕРј РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРё';
+'id каталога timeframes для секунд ТФ; строка M7-style создаётся при первом использовании';
 
--- РўРѕС‡РєР° РѕС†РµРЅРєРё СЃРёРіРЅР°Р»Р°: РµРіРѕ СЃРѕР±СЃС‚РІРµРЅРЅС‹Р№ tf_id Рё РІС‹СЂРѕРІРЅРµРЅРЅС‹Р№ Р·Р°РєСЂС‹С‚С‹Р№ Р±Р°СЂ
--- (РїРѕСЃР»РµРґРЅРёР№ Р±Р°СЂ sig-TF, Р·Р°РєСЂС‹РІС€РёР№СЃСЏ РЅРµ РїРѕР·Р¶Рµ close С‚РµРєСѓС‰РµРіРѕ Р±Р°СЂР° Р»РѕРіРёРєРё).
+-- Точка оценки сигнала: его собственный tf_id и выровненный закрытый бар
+-- (последний бар sig-TF, закрывшийся не позже close текущего бара логики).
 CREATE OR REPLACE FUNCTION logic_signal_eval_point(
     p_formula TEXT,
     p_logic_tf_id INTEGER,
@@ -19919,7 +21425,7 @@ BEGIN
 
     v_sig_sec := signal_tf_parse_sec(v_expr);
     IF v_sig_sec IS NULL THEN
-        -- РќР°СЃР»РµРґРѕРІР°РЅРёРµ: РўР¤ Р»РѕРіРёРєРё, Р±Р°СЂ РєР°Рє РїРµСЂРµРґР°РЅ
+        -- Наследование: ТФ логики, бар как передан
         tf_id := p_logic_tf_id;
         bar_dt := p_logic_bar_dt;
         RETURN NEXT;
@@ -19943,9 +21449,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_eval_point(TEXT, INTEGER, TIMESTAMP) IS
-'РўРѕС‡РєР° РѕС†РµРЅРєРё СЃРёРіРЅР°Р»Р° РїРѕ РµРіРѕ tf= РїР°СЂР°РјРµС‚СЂСѓ: (id РўР¤, РїРѕСЃР»РµРґРЅРёР№ Р·Р°РєСЂС‹С‚С‹Р№ Р±Р°СЂ СЌС‚РѕРіРѕ РўР¤ РґРѕ close Р±Р°СЂР° Р»РѕРіРёРєРё); NULL = РґР°РЅРЅС‹С… РµС‰С‘ РЅРµС‚';
+'Точка оценки сигнала по его tf= параметру: (id ТФ, последний закрытый бар этого ТФ до close бара логики); NULL = данных ещё нет';
 
--- Р Р°Р·Р»РёС‡РЅС‹Рµ РўР¤ РІСЃРµС… Р°РєС‚РёРІРЅС‹С… СЃРёРіРЅР°Р»РѕРІ Р»РѕРіРёРєРё (+ Р±Р°Р·РѕРІС‹Р№) вЂ” РґР»СЏ РґРѕРіСЂСѓР·РєРё С†РµРЅ/СЃРµСЂРёР№.
+-- Различные ТФ всех активных сигналов логики (+ базовый) — для догрузки цен/серий.
 CREATE OR REPLACE FUNCTION logic_signal_extra_tf_ids(
     p_logic_id INTEGER,
     p_base_tf_id INTEGER
@@ -19985,9 +21491,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_extra_tf_ids(INTEGER, INTEGER) IS
-'Р Р°Р·Р»РёС‡РЅС‹Рµ РґРѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Рµ РўР¤ Р°РєС‚РёРІРЅС‹С… СЃРёРіРЅР°Р»РѕРІ Р»РѕРіРёРєРё (РєСЂРѕРјРµ Р±Р°Р·РѕРІРѕРіРѕ) вЂ” РґР»СЏ Р·Р°РіСЂСѓР·РєРё С†РµРЅ/СЃРµСЂРёР№';
+'Различные дополнительные ТФ активных сигналов логики (кроме базового) — для загрузки цен/серий';
 
--- Р•СЃР»Рё РёСЃС‚РѕСЂРёСЏ СѓР¶Рµ РµСЃС‚СЊ вЂ” РґРѕРіСЂСѓР¶Р°РµРј С‚РѕР»СЊРєРѕ РґРµРЅСЊ Р·Р°РєСЂС‹С‚РѕРіРѕ Р±Р°СЂР° (1 HTTP), РЅРµ РІРµСЃСЊ lookback.
+-- Если история уже есть — догружаем только день закрытого бара (1 HTTP), не весь lookback.
 CREATE OR REPLACE FUNCTION prices_topup_date_from(
     p_security_id INTEGER,
     p_timeframe_id INTEGER,
@@ -20012,7 +21518,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION prices_topup_date_from(INTEGER, INTEGER, TIMESTAMP, DATE) IS
-'date_from РґР»СЏ load_prices: РґРµРЅСЊ closed bar, РµСЃР»Рё РІ Р‘Р” СѓР¶Рµ РµСЃС‚СЊ РЅРµРґР°РІРЅРёРµ СЃРІРµС‡Рё';
+'date_from для load_prices: день closed bar, если в БД уже есть недавние свечи';
 
 CREATE OR REPLACE FUNCTION indicator_has_closed_bar(
     p_security_id INTEGER,
@@ -20034,15 +21540,15 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION indicator_has_closed_bar(INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'True РµСЃР»Рё РёРЅРґРёРєР°С‚РѕСЂ СѓР¶Рµ РїРѕСЃС‡РёС‚Р°РЅ РЅР° closed bar';
+'True если индикатор уже посчитан на closed bar';
 
--- #984: РІ СЂР°РЅРµРµ СѓСЃС‚Р°РЅРѕРІР»РµРЅРЅС‹С… Р‘Р” РјРѕРіР»Рё РѕСЃС‚Р°С‚СЊСЃСЏ РѕР±Рµ РїРµСЂРµРіСЂСѓР·РєРё вЂ” СЃС‚Р°СЂР°СЏ 3-Р°СЂРі
--- (Р±РµР· p_skip_http) Рё 4-Р°СЂРі РЅРёР¶Рµ. РўРѕРіРґР° CALL РїРѕ 3 Р°СЂРіСѓРјРµРЅС‚Р°Рј РїР°РґР°РµС‚ СЃ
--- В«procedure is not uniqueВ» (42725), Р° РёСЃРєР»СЋС‡РµРЅРёРµ РІ РІС‹Р·С‹РІР°СЋС‰РµРј РєРѕРґРµ РіР»РѕС‚Р°РµС‚СЃСЏ вЂ”
--- РёР·-Р·Р° СЌС‚РѕРіРѕ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ СЃРёРіРЅР°Р»РѕРІ РЅРµ РЅР°С…РѕРґРёР»Рё С†РµРЅСѓ. РЈР±РёСЂР°РµРј 3-Р°СЂРі РїРµСЂРµРіСЂСѓР·РєСѓ.
+-- #984: в ранее установленных БД могли остаться обе перегрузки — старая 3-арг
+-- (без p_skip_http) и 4-арг ниже. Тогда CALL по 3 аргументам падает с
+-- «procedure is not unique» (42725), а исключение в вызывающем коде глотается —
+-- из-за этого подтверждения сигналов не находили цену. Убираем 3-арг перегрузку.
 DROP PROCEDURE IF EXISTS logic_refresh_market_data(INTEGER, INTEGER, TIMESTAMP);
 
--- Early exit: РІСЃРµ Р±СѓРјР°РіРё СѓР¶Рµ РёРјРµСЋС‚ closed-СЃРІРµС‡Сѓ вЂ” РЅРµ С‚СЂРѕРіР°РµРј HTTP/sync.
+-- Early exit: все бумаги уже имеют closed-свечу — не трогаем HTTP/sync.
 CREATE OR REPLACE PROCEDURE logic_refresh_market_data(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER,
@@ -20061,8 +21567,8 @@ DECLARE
     v_skip_http BOOLEAN := FALSE;
     v_missing_prices INTEGER;
 BEGIN
-    -- #1022: В«СЃРґРІРёРЅСѓС‚Р°СЏВ» РјРѕР»РЅРёСЏ СЃС‡РёС‚Р°РµС‚ СЃРёРіРЅР°Р»С‹ РЅР° РІСЂРµРјРµРЅРЅРѕРј СЂСЏРґРµ prices вЂ”
-    -- РґРѕРіСЂСѓР·РєР°/СЂРµР·СЌРјРїР»РёРЅРі РЅР°С‚РёРІРЅС‹С… Р±Р°СЂРѕРІ СЃСЋРґР° РЅРµ РЅСѓР¶РЅС‹ Рё С‚РѕР»СЊРєРѕ СЃРјРµС€Р°СЋС‚ СЂСЏРґ.
+    -- #1022: «сдвинутая» молния считает сигналы на временном ряде prices —
+    -- догрузка/резэмплинг нативных баров сюда не нужны и только смешают ряд.
     IF current_setting('app.lightning_skip_refresh', TRUE) = '1' THEN
         RETURN;
     END IF;
@@ -20079,9 +21585,9 @@ BEGIN
         WHERE r.status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
     ) INTO v_skip_http;
 
-    -- РўРµСЂРјРёРЅР°Р»СЊРЅС‹Рµ СЃРёРіРЅР°Р»С‹ (use_as_terminal_signal) РґРѕРіСЂСѓР¶Р°СЋС‚ РЅРµРґРѕСЃС‚Р°СЋС‰РёРµ closed-СЃРІРµС‡Рё
-    -- РёРЅРєСЂРµРјРµРЅС‚Р°Р»СЊРЅРѕ (1 HTTP С‡РµСЂРµР· prices_topup_date_from), РєР°Рє РѕР±С‹С‡РЅР°СЏ С‚РѕСЂРіРѕРІР»СЏ вЂ” С‡С‚РѕР±С‹
-    -- СЃРёРіРЅР°Р»С‹ С€Р»Рё РґР°Р¶Рµ Р±РµР· РѕС‚РєСЂС‹С‚С‹С… РїР°РЅРµР»РµР№. Р‘РµР· HTTP РѕСЃС‚Р°СЋС‚СЃСЏ С‚РѕР»СЊРєРѕ РїСЂРё Р°РєС‚РёРІРЅРѕРј Р±СЌРєС‚РµСЃС‚Рµ.
+    -- Терминальные сигналы (use_as_terminal_signal) догружают недостающие closed-свечи
+    -- инкрементально (1 HTTP через prices_topup_date_from), как обычная торговля — чтобы
+    -- сигналы шли даже без открытых панелей. Без HTTP остаются только при активном бэктесте.
     v_skip_http := v_skip_http OR COALESCE(p_skip_http, FALSE);
 
     SELECT COUNT(*)::INTEGER INTO v_missing_prices
@@ -20090,21 +21596,21 @@ BEGIN
       AND ls.is_active = TRUE
       AND NOT prices_have_closed_bar(ls.security_id, p_timeframe_id, p_closed_bar_dt);
 
-    -- Р‘С‹СЃС‚СЂС‹Р№ РїСѓС‚СЊ: С†РµРЅС‹ РЅР° closed bar РµСЃС‚СЊ Сѓ РІСЃРµС… вЂ” С‚РѕР»СЊРєРѕ РЅРµРґРѕСЃС‚Р°СЋС‰РёРµ РёРЅРґРёРєР°С‚РѕСЂС‹, Р±РµР· HTTP.
+    -- Быстрый путь: цены на closed bar есть у всех — только недостающие индикаторы, без HTTP.
     IF v_missing_prices = 0 THEN
         FOR v_sec IN
             SELECT ls.security_id
             FROM logic_securities ls
             WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
         LOOP
-            -- РџР°СЂР°РјРµС‚СЂС‹ РёР· С„РѕСЂРјСѓР» вЂ” РѕРґРёРЅ СЂР°Р· РЅР° Р±СѓРјР°РіСѓ (РЅРµ РЅР° РєР°Р¶РґС‹Р№ indicator_id)
+            -- Параметры из формул — один раз на бумагу (не на каждый indicator_id)
             BEGIN
                 CALL logic_apply_indicator_params_from_signals(p_logic_id, v_sec.security_id);
             EXCEPTION
                 WHEN OTHERS THEN
                     NULL;
             END;
-            -- Contango: РјР°С‚РµСЂРёР°Р»РёР·РѕРІР°С‚СЊ СЃРїСЂРµРґ, РµСЃР»Рё РµСЃС‚СЊ С‚Р°РєРёРµ СЃРёРіРЅР°Р»С‹
+            -- Contango: материализовать спред, если есть такие сигналы
             IF EXISTS (
                 SELECT 1 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id AND lis.is_active
@@ -20153,7 +21659,7 @@ BEGIN
                         PERFORM logic_trade_log(
                             p_logic_id,
                             'trade.indicator.error',
-                            format('РћС€РёР±РєР° СЂР°СЃС‡С‘С‚Р° РёРЅРґРёРєР°С‚РѕСЂР° id=%s sec=%s: %s', v_sig.indicator_id, v_sig.eval_sec_id, v_err),
+                            format('Ошибка расчёта индикатора id=%s sec=%s: %s', v_sig.indicator_id, v_sig.eval_sec_id, v_err),
                             jsonb_build_object(
                                 'security_id', v_sig.eval_sec_id,
                                 'trade_security_id', v_sec.security_id,
@@ -20173,7 +21679,7 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id,
             'trade.prices.skip_http',
-            'РџСЂРѕРїСѓСЃРє load_prices: Р°РєС‚РёРІРµРЅ Р±СЌРєС‚РµСЃС‚ (РёСЃРїРѕР»СЊР·СѓРµРј СѓР¶Рµ Р·Р°РіСЂСѓР¶РµРЅРЅС‹Рµ С†РµРЅС‹)',
+            'Пропуск load_prices: активен бэктест (используем уже загруженные цены)',
             jsonb_build_object('closed_bar', p_closed_bar_dt),
             NULL,
             p_timeframe_id
@@ -20185,7 +21691,7 @@ BEGIN
         FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
     LOOP
-        -- РџРѕРІС‚РѕСЂРЅС‹Р№ HTTP РЅР° СѓР¶Рµ РёРјРµСЋС‰СѓСЋСЃСЏ closed-СЃРІРµС‡Сѓ Р±Р»РѕРєРёСЂСѓРµС‚ API / СЂР°СЃРєСЂС‹С‚РёРµ Р±СѓРјР°РіРё
+        -- Повторный HTTP на уже имеющуюся closed-свечу блокирует API / раскрытие бумаги
         IF NOT v_skip_http
            AND NOT prices_have_closed_bar(v_sec.security_id, p_timeframe_id, p_closed_bar_dt) THEN
             BEGIN
@@ -20202,7 +21708,7 @@ BEGIN
                     PERFORM logic_trade_log(
                         p_logic_id,
                         'trade.prices.error',
-                        'load_prices РЅРµРґРѕСЃС‚СѓРїРµРЅ (РЅРµС‚ HTTP-СЂР°СЃС€РёСЂРµРЅРёСЏ)',
+                        'load_prices недоступен (нет HTTP-расширения)',
                         jsonb_build_object('security_id', v_sec.security_id),
                         v_sec.security_id,
                         p_timeframe_id
@@ -20212,7 +21718,7 @@ BEGIN
                     PERFORM logic_trade_log(
                         p_logic_id,
                         'trade.prices.error',
-                        format('РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё С†РµРЅ sec=%s: %s', v_sec.security_id, v_err),
+                        format('Ошибка загрузки цен sec=%s: %s', v_sec.security_id, v_err),
                         jsonb_build_object('security_id', v_sec.security_id, 'error', v_err),
                         v_sec.security_id,
                         p_timeframe_id
@@ -20220,7 +21726,7 @@ BEGIN
             END;
         END IF;
 
-        -- Р¦РµРЅС‹ Р±Р°Р·РѕРІС‹С… Р°РєС‚РёРІРѕРІ РґР»СЏ base_asset / contango
+        -- Цены базовых активов для base_asset / contango
         IF NOT v_skip_http THEN
             FOR v_sig IN
                 SELECT DISTINCT logic_future_underlying_security_id(v_sec.security_id) AS und_id
@@ -20302,7 +21808,7 @@ BEGIN
                     PERFORM logic_trade_log(
                         p_logic_id,
                         'trade.indicator.error',
-                        format('РћС€РёР±РєР° СЂР°СЃС‡С‘С‚Р° РёРЅРґРёРєР°С‚РѕСЂР° id=%s sec=%s: %s', v_sig.indicator_id, v_sig.eval_sec_id, v_err),
+                        format('Ошибка расчёта индикатора id=%s sec=%s: %s', v_sig.indicator_id, v_sig.eval_sec_id, v_err),
                         jsonb_build_object(
                             'security_id', v_sig.eval_sec_id,
                             'trade_security_id', v_sec.security_id,
@@ -20319,8 +21825,8 @@ END;
 $$;
 
 COMMENT ON PROCEDURE logic_refresh_market_data(INTEGER, INTEGER, TIMESTAMP, BOOLEAN) IS
-'Р”РѕРіСЂСѓР¶Р°РµС‚/СЂРµР·СЌРјРїР»РёС‚ Р·Р°РєСЂС‹С‚С‹Рµ СЃРІРµС‡Рё РўР¤ Р»РѕРіРёРєРё Рё РґРѕРї. РўР¤ С„РѕСЂРјСѓР», РїСЂРёРјРµРЅСЏРµС‚ РїР°СЂР°РјРµС‚СЂС‹ РёРЅРґРёРєР°С‚РѕСЂРѕРІ; '
-'p_skip_http=TRUE РёР»Рё session app.lightning_skip_refresh=1 вЂ” Р±РµР· HTTP (РјРѕР»РЅРёСЏ/Р±СЌРєС‚РµСЃС‚).';
+'Догружает/резэмплит закрытые свечи ТФ логики и доп. ТФ формул, применяет параметры индикаторов; '
+'p_skip_http=TRUE или session app.lightning_skip_refresh=1 — без HTTP (молния/бэктест).';
 
 CREATE OR REPLACE FUNCTION process_logic_trades(p_logic_id INTEGER)
 RETURNS INTEGER
@@ -20375,29 +21881,30 @@ DECLARE
     v_inversion BOOLEAN;
     v_eff_inversion BOOLEAN;
     v_eff_side TEXT;
-    v_cycle_budget NUMERIC;       -- Р±Р°Р·Р° % РЅР° РІРµСЃСЊ С†РёРєР» (РЅРµ СЂР°СЃС‚С‘С‚ РѕС‚ short-РєСЌС€Р°)
-    v_max_exposure NUMERIC;       -- Р±Р°Р·Р° Г— (%/100) Г— max_open_positions
-    v_spent_notional NUMERIC := 0; -- СѓР¶Рµ Р·Р°РЅСЏС‚С‹Р№ РЅРѕРјРёРЅР°Р» Open (СЃС‚Р°СЂС‹Рµ + СЌС‚РѕС‚ РїСЂРѕРіРѕРЅ)
+    v_cycle_budget NUMERIC;       -- база % на весь цикл (не растёт от short-кэша)
+    v_max_exposure NUMERIC;       -- база × (%/100) × max_open_positions
+    v_spent_notional NUMERIC := 0; -- уже занятый номинал Open (старые + этот прогон)
     v_room NUMERIC;
     v_order_notional NUMERIC;
-    v_gap_buffer_pct NUMERIC;     -- order_gap_buffer_pct: СЂР°СЃС‡С‘С‚ qty РїРѕ С†РµРЅРµ ppГ—(1+Р±СѓС„РµСЂ)
-    v_max_open_gap_pct NUMERIC;   -- max_open_gap_pct: РїСЂРѕРїСѓСЃРє РІС…РѕРґР° РїСЂРё СЂРµР·РєРѕРј РґРІРёР¶РµРЅРёРё
-    v_fresh RECORD;               -- СЃРІРµР¶Р°СЏ С†РµРЅР° (СЃС‚РѕРї-РўР¤) РґР»СЏ РіСЌРї-РїСЂРѕРІРµСЂРєРё
-    v_q2 INTEGER;                 -- РєРѕР»РёС‡РµСЃС‚РІРѕ РїРѕСЃР»Рµ Р±СѓС„РµСЂР°
-    v_up NUMERIC;                 -- С†РµРЅР° РёСЃРїРѕР»РЅРµРЅРёСЏ РёР· РѕС‚РІРµС‚Р°/СЃРѕСЃС‚РѕСЏРЅРёСЏ Р·Р°СЏРІРєРё
-    v_state JSONB;                -- GetOrderState (РєРѕРјРёСЃСЃРёСЏ/С†РµРЅР° РёСЃРїРѕР»РЅРµРЅРёСЏ)
-    v_c NUMERIC;                  -- РєРѕРјРёСЃСЃРёСЏ РёР· СЃРѕСЃС‚РѕСЏРЅРёСЏ Р·Р°СЏРІРєРё
-    v_pt RECORD;                  -- С‚РѕС‡РєР° РѕС†РµРЅРєРё СЃРёРіРЅР°Р»Р° (РµРіРѕ РўР¤ + РІС‹СЂРѕРІРЅРµРЅРЅС‹Р№ Р±Р°СЂ)
-    v_tf_list INTEGER[];          -- РІСЃРµ РўР¤ СЃРёРіРЅР°Р»РѕРІ Р»РѕРіРёРєРё (+ Р±Р°Р·РѕРІС‹Р№) РґР»СЏ Р·Р°РіСЂСѓР·РєРё
+    v_gap_buffer_pct NUMERIC;     -- order_gap_buffer_pct: расчёт qty по цене pp×(1+буфер)
+    v_max_open_gap_pct NUMERIC;   -- max_open_gap_pct: пропуск входа при резком движении
+    v_fresh RECORD;               -- свежая цена (стоп-ТФ) для гэп-проверки
+    v_q2 INTEGER;                 -- количество после буфера
+    v_up NUMERIC;                 -- цена исполнения из ответа/состояния заявки
+    v_state JSONB;                -- GetOrderState (комиссия/цена исполнения)
+    v_c NUMERIC;                  -- комиссия из состояния заявки
+    v_pt RECORD;                  -- точка оценки сигнала (его ТФ + выровненный бар)
+    v_tf_list INTEGER[];          -- все ТФ сигналов логики (+ базовый) для загрузки
     v_rtf INTEGER;
     v_rtf_sec INTEGER;
     v_rclosed TIMESTAMP;
-    v_confirm_disabled BOOLEAN;      -- #972: РїРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїСЂРё РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРё С†РµРЅС‹
-    v_confirm_sec INTEGER;           -- #972: РЅР°СЃС‚СЂРѕР№РєР° РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ РіСЂСѓРїРїС‹ (СЃРµРє)
-    v_group_filter_event TEXT;       -- #972: СЃРѕР·РґР°РІР°С‚СЊ С‚РѕР»СЊРєРѕ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅСѓСЋ РіСЂСѓРїРїСѓ
+    v_confirm_disabled BOOLEAN;      -- #972: повторный прогон при подтверждении цены
+    v_confirm_sec INTEGER;           -- #972: настройка подтверждения группы (сек)
+    v_group_filter_event TEXT;       -- #972: создавать только подтверждённую группу
     v_group_filter_side TEXT;
-    v_group_filter_sec INTEGER;      -- #990: РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ РЅР° СѓСЂРѕРІРЅРµ Р±СѓРјР°РіРё (security_id)
-    v_expected_dir TEXT;             -- #972: РЅР°РїСЂР°РІР»РµРЅРёРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ up/down
+    v_group_filter_sec INTEGER;      -- #990: подтверждение на уровне бумаги (security_id)
+    v_expected_dir TEXT;             -- #972: направление подтверждения up/down
+    v_portfolio_did_close BOOLEAN := FALSE;
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.portfolio_trading_paused, FALSE) AS portfolio_trading_paused
@@ -20409,33 +21916,33 @@ BEGIN
       AND a.is_active = TRUE;
 
     IF NOT FOUND THEN
-        PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'Р›РѕРіРёРєР° РІС‹РєР»СЋС‡РµРЅР° РёР»Рё СЃС‡С‘С‚ РЅРµР°РєС‚РёРІРµРЅ');
+        PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'Логика выключена или счёт неактивен');
         RETURN 0;
     END IF;
 
     v_tf_id := logic_resolve_timeframe_id(p_logic_id);
     IF v_tf_id IS NULL THEN
-        PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'РќРµ Р·Р°РґР°РЅ timeframe РІ logic_params');
+        PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'Не задан timeframe в logic_params');
         RETURN 0;
     END IF;
 
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
 
-    -- Р‘Р°СЂ РѕР±СЂР°Р±РѕС‚РєРё: logic_lightning_run РІС‹СЃС‚Р°РІР»СЏРµС‚ session-РїРµСЂРµРјРµРЅРЅСѓСЋ app.lightning_bar_dt
-    -- (local, С‚РѕР»СЊРєРѕ РІ С‚СЂР°РЅР·Р°РєС†РёРё РјРѕР»РЅРёРё) = РїРѕСЃР»РµРґРЅРёР№ Р—РђРљР Р«РўР«Р™ Р±Р°СЂ РўР¤ (#990); РґР»СЏ РѕР±С‹С‡РЅРѕРіРѕ
-    -- С†РёРєР»Р° РїРµСЂРµРјРµРЅРЅРѕР№ РЅРµС‚ вЂ” Р±РµСЂС‘Рј РїРѕСЃР»РµРґРЅРёР№ Р·Р°РєСЂС‹С‚С‹Р№ Р±Р°СЂ С‚РµРј Р¶Рµ СЃРїРѕСЃРѕР±РѕРј.
+    -- Бар обработки: logic_lightning_run выставляет session-переменную app.lightning_bar_dt
+    -- (local, только в транзакции молнии) = последний ЗАКРЫТЫЙ бар ТФ (#990); для обычного
+    -- цикла переменной нет — берём последний закрытый бар тем же способом.
     v_closed_bar_dt := COALESCE(
         NULLIF(current_setting('app.lightning_bar_dt', TRUE), '')::TIMESTAMP,
         logic_last_closed_bar_dt(v_tf_sec)
     );
     IF v_closed_bar_dt IS NULL THEN
-        PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹С‡РёСЃР»РёС‚СЊ Р·Р°РєСЂС‹С‚СѓСЋ СЃРІРµС‡Сѓ TF', NULL, NULL, v_tf_id);
+        PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'Не удалось вычислить закрытую свечу TF', NULL, NULL, v_tf_id);
         RETURN 0;
     END IF;
 
-    -- #972: РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ С‚РёРїР° СЃРёРіРЅР°Р»Р°. РћР±С‹С‡РЅС‹Р№ С†РёРєР» вЂ” СѓРґРµСЂР¶Р°РЅРёРµ СЃСЂР°Р±РѕС‚Р°РІС€РµР№ РіСЂСѓРїРїС‹ РґРѕ РїСЂРѕРІРµСЂРєРё
-    -- С†РµРЅС‹. РџРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕР№ РіСЂСѓРїРїС‹ (logic_signal_confirm_finalize) вЂ” session-С„Р»Р°РіРё
-    -- app.confirm_disabled / app.confirm_group_{event,side}: СЃРѕР·РґР°С‘С‚СЃСЏ С‚РѕР»СЊРєРѕ РѕРЅР°, РґРµРґСѓРї РѕР±С…РѕРґРёС‚СЃСЏ.
+    -- #972: подтверждение типа сигнала. Обычный цикл — удержание сработавшей группы до проверки
+    -- цены. Повторный прогон подтверждённой группы (logic_signal_confirm_finalize) — session-флаги
+    -- app.confirm_disabled / app.confirm_group_{event,side}: создаётся только она, дедуп обходится.
     v_confirm_disabled := COALESCE(NULLIF(current_setting('app.confirm_disabled', TRUE), '')::BOOLEAN, FALSE);
     v_group_filter_event := lower(NULLIF(current_setting('app.confirm_group_event', TRUE), ''));
     v_group_filter_side := lower(NULLIF(current_setting('app.confirm_group_side', TRUE), ''));
@@ -20446,12 +21953,12 @@ BEGIN
     IF v_last_bar_raw <> '' THEN
         BEGIN
             v_last_bar_dt := v_last_bar_raw::TIMESTAMP;
-            -- Р•СЃР»Рё Р±Р°СЂ СѓР¶Рµ РѕР±СЂР°Р±РѕС‚Р°РЅ РѕР±С‹С‡РЅС‹Рј С†РёРєР»РѕРј вЂ” РїРѕРІС‚РѕСЂ С‚РѕР»СЊРєРѕ РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕР№ РіСЂСѓРїРїС‹ (#972).
+            -- Если бар уже обработан обычным циклом — повтор только для подтверждённой группы (#972).
             IF v_closed_bar_dt <= v_last_bar_dt AND NOT v_confirm_disabled THEN
                 PERFORM logic_trade_log(
                     p_logic_id,
                     'trade.bar_skip',
-                    format('РЎРІРµС‡Р° %s СѓР¶Рµ РѕР±СЂР°Р±РѕС‚Р°РЅР° (last=%s)', v_closed_bar_dt, v_last_bar_dt),
+                    format('Свеча %s уже обработана (last=%s)', v_closed_bar_dt, v_last_bar_dt),
                     jsonb_build_object('closed_bar', v_closed_bar_dt, 'last_bar', v_last_bar_dt),
                     NULL,
                     v_tf_id
@@ -20488,16 +21995,16 @@ BEGIN
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
     v_balance := logic_ensure_balance(p_logic_id);
     v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
-    -- Р—Р°С‰РёС‚Р° РѕС‚ Р·Р°Р№РјР° РїСЂРё СЂРµР·РєРѕРј РґРІРёР¶РµРЅРёРё С†РµРЅС‹ РјРµР¶РґСѓ СЃРёРіРЅР°Р»РѕРј Рё РёСЃРїРѕР»РЅРµРЅРёРµРј:
-    -- Р±СѓС„РµСЂ СѓРІРµР»РёС‡РёРІР°РµС‚ СЂР°СЃС‡С‘С‚РЅСѓСЋ С†РµРЅСѓ (qty РјРµРЅСЊС€Рµ), РіСЌРї-РїРѕСЂРѕРі РїСЂРѕРїСѓСЃРєР°РµС‚ РІС…РѕРґ.
+    -- Защита от займа при резком движении цены между сигналом и исполнением:
+    -- буфер увеличивает расчётную цену (qty меньше), гэп-порог пропускает вход.
     v_gap_buffer_pct := GREATEST(0, COALESCE(get_logic_param_numeric(p_logic_id, 'order_gap_buffer_pct', 0), 0));
     v_max_open_gap_pct := GREATEST(0, COALESCE(get_logic_param_numeric(p_logic_id, 'max_open_gap_pct', 0), 0));
-    -- Р‘Р°Р·Р° С†РёРєР»Р° в‰¤ equity: free_cash/cash_amount СЂР°СЃС‚С‘С‚ РѕС‚ short-РІС‹СЂСѓС‡РєРё / Р·Р°Р№РјР°;
-    -- mid-cycle freeze alone does not stop that. LEAST(sizing, equity) = РїР»РµС‡Рѕ в‰¤ 1.
-    -- РџРѕСЃР»Рµ Close Р±Р°Р·Сѓ РѕР±РЅРѕРІР»СЏРµРј (СЃРІРёС‚С‡: РєСЌС€ +/- РґР»СЏ СЃР»РµРґСѓСЋС‰РµРіРѕ Open).
+    -- База цикла ≤ equity: free_cash/cash_amount растёт от short-выручки / займа;
+    -- mid-cycle freeze alone does not stop that. LEAST(sizing, equity) = плечо ≤ 1.
+    -- После Close базу обновляем (свитч: кэш +/- для следующего Open).
     v_cycle_budget := logic_exposure_cycle_budget(p_logic_id, v_tf_id);
-    -- РџРѕС‚РѕР»РѕРє СЂРёСЃРєР° РёР· С‚РµС… Р¶Рµ 2 РїР°СЂР°РјРµС‚СЂРѕРІ: 10 РїРѕР· Г— 10% = 100% Р±Р°Р·С‹; 20Г—10% = 200%.
-    -- Long Рё short СЃС‡РёС‚Р°СЋС‚СЃСЏ РІ РѕРґРЅРѕРј РЅРѕРјРёРЅР°Р»Рµ (С€РѕСЂС‚ РЅРµ РјРѕР¶РµС‚ В«РЅР°Р±СЂР°С‚СЊВ» СЃРІРµСЂС… СЌС‚РѕРіРѕ).
+    -- Потолок риска из тех же 2 параметров: 10 поз × 10% = 100% базы; 20×10% = 200%.
+    -- Long и short считаются в одном номинале (шорт не может «набрать» сверх этого).
     v_max_exposure := v_cycle_budget
         * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
         * v_max_positions;
@@ -20511,11 +22018,11 @@ BEGIN
         SELECT 1 FROM logic_securities ls
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
     ) THEN
-        PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'РќРµС‚ Р°РєС‚РёРІРЅС‹С… СЃРёРіРЅР°Р»РѕРІ РёР»Рё Р±СѓРјР°Рі');
+        PERFORM logic_trade_log(p_logic_id, 'logic.skip', 'Нет активных сигналов или бумаг');
         RETURN 0;
     END IF;
 
-    -- Р—Р°РіСЂСѓР·РєР° С†РµРЅ/СЃРµСЂРёР№ РїРѕ РўР¤ Р»РѕРіРёРєРё Р РїРѕ РІСЃРµРј РўР¤ СЃРёРіРЅР°Р»РѕРІ (tf= РІ С„РѕСЂРјСѓР»Р°С…).
+    -- Загрузка цен/серий по ТФ логики И по всем ТФ сигналов (tf= в формулах).
     v_tf_list := ARRAY[v_tf_id] || COALESCE(
         (SELECT array_agg(x.tf_id ORDER BY x.tf_id)
          FROM logic_signal_extra_tf_ids(p_logic_id, v_tf_id) x),
@@ -20537,12 +22044,12 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- Р РµР№С‚РёРЅРі СЃРёРіРЅР°Р»Р° РЅР° Р»РѕРіРёРєРµ: РїСЂРѕРІРµСЂРёС‚СЊ РїСЂРѕС€Р»С‹Рµ СЃСЂР°Р±Р°С‚С‹РІР°РЅРёСЏ РЅР° СЃР»РµРґСѓСЋС‰РµР№ СЃРІРµС‡Рµ
+    -- Рейтинг сигнала на логике: проверить прошлые срабатывания на следующей свече
     PERFORM logic_signal_rating_resolve_pending(p_logic_id, v_tf_id, v_closed_bar_dt);
 
     PERFORM logic_ensure_non_trading_periods(p_logic_id);
 
-    -- EOD-СЃРµСЃСЃРёСЏ: close_positions_eod Рё/РёР»Рё РїСЂРѕРґР°Р¶Р° С„СЊСЋС‡РµСЂСЃРѕРІ РґРѕ СЌРєСЃРїРёСЂР°С†РёРё
+    -- EOD-сессия: close_positions_eod и/или продажа фьючерсов до экспирации
     IF logic_is_eod_session_bar(
         p_logic_id,
         v_closed_bar_dt,
@@ -20567,7 +22074,7 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id,
             'trade.non_trading_skip',
-            format('РќРµС‚РѕСЂРіРѕРІС‹Р№ РїРµСЂРёРѕРґ: СЃРІРµС‡Р° %s вЂ” СЃРёРіРЅР°Р»С‹ РїСЂРѕРїСѓС‰РµРЅС‹', v_closed_bar_dt),
+            format('Неторговый период: свеча %s — сигналы пропущены', v_closed_bar_dt),
             jsonb_build_object('closed_bar', v_closed_bar_dt),
             NULL,
             v_tf_id
@@ -20590,13 +22097,27 @@ BEGIN
     PERFORM logic_trade_log(
         p_logic_id,
         'trade.bar_check',
-        format('РџСЂРѕРІРµСЂРєР° AND-СЃРёРіРЅР°Р»РѕРІ РЅР° Р·Р°РєСЂС‹С‚РѕР№ СЃРІРµС‡Рµ %s', v_closed_bar_dt),
+        format('Проверка AND-сигналов на закрытой свече %s', v_closed_bar_dt),
         jsonb_build_object('closed_bar', v_closed_bar_dt, 'timeframe_id', v_tf_id),
         NULL,
         v_tf_id
     );
 
-    -- РџСЂРё РЅРµС…РІР°С‚РєРµ СЃР»РѕС‚РѕРІ вЂ” Р»СѓС‡С€РёР№ PnL; РѕРґРёРЅ GROUP BY, Р±РµР· РєРѕСЂСЂРµР»РёСЂРѕРІР°РЅРЅРѕРіРѕ SUM РЅР° Р±СѓРјР°РіСѓ.
+    -- При нехватке слотов — лучший PnL; один GROUP BY, без коррелированного SUM на бумагу.
+    -- Portfolio signals (acts_on=portfolio): record equity bar and process first
+    PERFORM logic_portfolio_record_equity_bar(p_logic_id, v_tf_id, v_closed_bar_dt);
+    SELECT did_close INTO v_portfolio_did_close
+    FROM logic_process_portfolio_signal_groups(p_logic_id, v_tf_id, v_closed_bar_dt);
+    IF COALESCE(v_portfolio_did_close, FALSE) THEN
+        v_balance := logic_ensure_balance(p_logic_id);
+        v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
+        v_cycle_budget := logic_exposure_cycle_budget(p_logic_id, v_tf_id);
+        v_max_exposure := v_cycle_budget
+            * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0)
+            * v_max_positions;
+        v_spent_notional := logic_open_notional_exposure(p_logic_id, FALSE, '');
+        v_open_positions := logic_count_open_positions(p_logic_id);
+    END IF;
     FOR v_sec IN
         SELECT
             ls.security_id,
@@ -20619,13 +22140,13 @@ BEGIN
             GROUP BY lt.security_id
         ) pnl ON pnl.security_id = ls.security_id
         WHERE ls.logic_id = p_logic_id AND ls.is_active = TRUE
-          -- Р”РµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ С‚РѕР»СЊРєРѕ РґР»СЏ РїР°СЂРєРѕРІРєРё РєСЌС€Р°, РЅРµ РґР»СЏ СЃРёРіРЅР°Р»РѕРІ
+          -- Денежный фонд только для парковки кэша, не для сигналов
           AND NOT logic_is_cash_fund_security(ls.security_id)
         ORDER BY COALESCE(pnl.pnl, 0) DESC,
                  ls.display_order NULLS LAST,
                  ls.id
     LOOP
-        -- #990: РїРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕР№ РіСЂСѓРїРїС‹ вЂ” С‚РѕР»СЊРєРѕ РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕР№ Р±СѓРјР°РіРё.
+        -- #990: повторный прогон подтверждённой группы — только для подтверждённой бумаги.
         IF v_group_filter_sec IS NOT NULL AND v_sec.security_id <> v_group_filter_sec THEN
             CONTINUE;
         END IF;
@@ -20636,10 +22157,11 @@ BEGIN
             SELECT lis.position_event, lis.position_side
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+              AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
             GROUP BY lis.position_event, lis.position_side
             ORDER BY lis.position_event, lis.position_side
         LOOP
-            -- Shadow С‚РѕР»СЊРєРѕ РґР»СЏ РїСЂРѕСЃРµРІС€РµР№ СЃС‚РѕСЂРѕРЅС‹; РґСЂСѓРіР°СЏ СЃС‚РѕСЂРѕРЅР° Р±СѓРјР°РіРё РѕСЃС‚Р°С‘С‚СЃСЏ Р±РѕРµРІРѕР№.
+            -- Shadow только для просевшей стороны; другая сторона бумаги остаётся боевой.
             v_is_shadow := COALESCE(v_logic.portfolio_trading_paused, FALSE)
                 OR CASE lower(btrim(COALESCE(v_grp.position_side, '')))
                     WHEN 'long' THEN v_sec.real_trading_paused_long
@@ -20652,7 +22174,7 @@ BEGIN
                             AND NOT v_sec.real_trading_paused_short)
                     ELSE v_sec.real_trading_paused
                 END;
-            -- Shadow в†’ zero uses base logic only; paper inverted applies to real book.
+            -- Shadow → zero uses base logic only; paper inverted applies to real book.
             v_eff_inversion := (
                 v_inversion <> CASE
                     WHEN v_is_shadow THEN FALSE
@@ -20670,12 +22192,13 @@ BEGIN
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id
                   AND lis.is_active = TRUE
+                  AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
                   AND lis.position_event = v_grp.position_event
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id
             LOOP
-                -- РўР¤ СЃРёРіРЅР°Р»Р° (tf= РІ С„РѕСЂРјСѓР»Рµ) Рё РµРіРѕ РїРѕСЃР»РµРґРЅРёР№ Р·Р°РєСЂС‹С‚С‹Р№ Р±Р°СЂ
-                -- РґРѕ Р·Р°РєСЂС‹С‚РёСЏ Р±Р°СЂР° Р»РѕРіРёРєРё вЂ” Р±РµР· Р·Р°РіР»СЏРґС‹РІР°РЅРёСЏ РІ Р±СѓРґСѓС‰РµРµ.
+                -- ТФ сигнала (tf= в формуле) и его последний закрытый бар
+                -- до закрытия бара логики — без заглядывания в будущее.
                 SELECT * INTO v_pt
                 FROM logic_signal_eval_point(v_sig.formula, v_tf_id, v_closed_bar_dt);
                 IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
@@ -20683,7 +22206,7 @@ BEGIN
                     PERFORM logic_trade_log(
                         p_logic_id,
                         'trade.not_ready',
-                        format('РќРµС‚ РёСЃС‚РѕСЂРёРё РґР»СЏ tf СЃРёРіРЅР°Р»Р°: %s', v_sig.formula),
+                        format('Нет истории для tf сигнала: %s', v_sig.formula),
                         jsonb_build_object('formula', v_sig.formula),
                         v_sec.security_id,
                         v_tf_id
@@ -20703,7 +22226,7 @@ BEGIN
                         p_logic_id,
                         'trade.not_ready',
                         format(
-                            'РќРµС‚ РґР°РЅРЅС‹С… РЅР° СЃРІРµС‡Рµ %s РґР»СЏ security=%s signal=%s',
+                            'Нет данных на свече %s для security=%s signal=%s',
                             v_closed_bar_dt, v_sec.security_id, v_sig.formula
                         ),
                         jsonb_build_object(
@@ -20739,7 +22262,7 @@ BEGIN
                         p_logic_id,
                         'trade.signal_hit',
                         format(
-                            'РЎРёРіРЅР°Р» %s/%s/%s: %s',
+                            'Сигнал %s/%s/%s: %s',
                             v_sig.position_event, v_sig.position_side, v_sig.signal_kind, v_sig.formula
                         ),
                         jsonb_build_object(
@@ -20758,7 +22281,7 @@ BEGIN
                         p_logic_id,
                         'trade.signal_skip',
                         format(
-                            'РЈСЃР»РѕРІРёРµ РЅРµ РІС‹РїРѕР»РЅРµРЅРѕ: %s (pp=%s, value=%s)',
+                            'Условие не выполнено: %s (pp=%s, value=%s)',
                             v_sig.formula, v_eval.close_price, v_eval.ind_value
                         ),
                         jsonb_build_object(
@@ -20785,16 +22308,16 @@ BEGIN
                 v_eff_side := CASE WHEN v_eff_side = 'long' THEN 'short' ELSE 'long' END;
             END IF;
 
-            -- #972: РїРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїРѕСЃР»Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ вЂ” СЃРѕР·РґР°С‘Рј С‚РѕР»СЊРєРѕ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅСѓСЋ РіСЂСѓРїРїСѓ.
+            -- #972: повторный прогон после подтверждения — создаём только подтверждённую группу.
             IF (COALESCE(v_group_filter_event, '') <> '' OR COALESCE(v_group_filter_side, '') <> '')
                AND (v_group_filter_event <> lower(COALESCE(v_grp.position_event, 'open'))
                     OR v_group_filter_side <> lower(COALESCE(v_grp.position_side, 'long'))) THEN
                 CONTINUE;
             END IF;
-            -- #972: РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ С‚РёРїР° СЃРёРіРЅР°Р»Р°. Р’СЃРµ Р°РєС‚РёРІРЅС‹Рµ СЃРёРіРЅР°Р»С‹ РіСЂСѓРїРїС‹ СЃСЂР°Р±РѕС‚Р°Р»Рё (AND), РЅРѕ
-            -- Сѓ РѕРґРЅРѕРіРѕ РёР· РЅРёС… РІРєР»СЋС‡РµРЅРѕ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ вЂ” РІС…РѕРґ РїСЂРёРґРµСЂР¶РёРІР°РµС‚СЃСЏ РЅР° N СЃРµРєСѓРЅРґ: СЃРѕР·РґР°С‘С‚СЃСЏ
-            -- Р·Р°РїРёСЃСЊ logic_signal_confirm_pending, РїРѕСЃР»Рµ deadline С„РёРЅР°Р»РёР·Р°С‚РѕСЂ СЃРІРµСЂСЏРµС‚ С†РµРЅСѓ Рё Р»РёС€СЊ
-            -- РїСЂРё РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРё РЅР°РїСЂР°РІР»РµРЅРёСЏ РїРѕРІС‚РѕСЂРЅРѕ РїСЂРѕРіРѕРЅСЏРµС‚ СЌС‚Сѓ РіСЂСѓРїРїСѓ РЅР° Р±Р°СЂРµ bar_dt.
+            -- #972: подтверждение типа сигнала. Все активные сигналы группы сработали (AND), но
+            -- у одного из них включено подтверждение — вход придерживается на N секунд: создаётся
+            -- запись logic_signal_confirm_pending, после deadline финализатор сверяет цену и лишь
+            -- при подтверждении направления повторно прогоняет эту группу на баре bar_dt.
             IF NOT v_confirm_disabled THEN
                 SELECT COALESCE(max(lis.signal_confirm_sec), 0)
                 INTO v_confirm_sec
@@ -20826,7 +22349,7 @@ BEGIN
                     PERFORM logic_trade_log(
                         p_logic_id,
                         'trade.confirm_wait',
-                        format('РЎРёРіРЅР°Р» %s/%s РїСЂРёРґРµСЂР¶Р°РЅ: РїСЂРѕРІРµСЂРєР° РЅР°РїСЂР°РІР»РµРЅРёСЏ С†РµРЅС‹ С‡РµСЂРµР· %s СЃ',
+                        format('Сигнал %s/%s придержан: проверка направления цены через %s с',
                             v_grp.position_event, v_grp.position_side, v_confirm_sec),
                         jsonb_build_object(
                             'closed_bar', v_closed_bar_dt,
@@ -20858,7 +22381,7 @@ BEGIN
                     IF v_held_long > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                         CONTINUE;
                     END IF;
-                    -- Р“СЌРї-С„РёР»СЊС‚СЂ РІС…РѕРґР°: СЃРІРµР¶Р°СЏ С†РµРЅР° СѓС€Р»Р° РѕС‚ С†РµРЅС‹ СЃРёРіРЅР°Р»Р° Р±РѕР»СЊС€Рµ РїРѕСЂРѕРіР° вЂ” РїСЂРѕРїСѓСЃРє.
+                    -- Гэп-фильтр входа: свежая цена ушла от цены сигнала больше порога — пропуск.
                     IF NOT v_is_shadow AND v_max_open_gap_pct > 0 THEN
                         SELECT * INTO v_fresh FROM logic_fresh_order_price(p_logic_id, v_sec.security_id, v_tf_id);
                         IF v_fresh.price IS NOT NULL AND v_fresh.bar_dt IS NOT NULL
@@ -20868,7 +22391,7 @@ BEGIN
                                 p_logic_id,
                                 'trade.gap_skip',
                                 format(
-                                    'Р“СЌРї %s%% > %s%%: С†РµРЅР° СЃРёРіРЅР°Р»Р° %s в†’ СЂС‹РЅРѕРє %s вЂ” РІС…РѕРґ РїСЂРѕРїСѓС‰РµРЅ',
+                                    'Гэп %s%% > %s%%: цена сигнала %s → рынок %s — вход пропущен',
                                     round(ABS(v_fresh.price - v_pp) / v_pp * 100.0, 2),
                                     v_max_open_gap_pct, v_pp, v_fresh.price
                                 ),
@@ -20885,7 +22408,7 @@ BEGIN
                             CONTINUE;
                         END IF;
                     END IF;
-                    -- РћСЃС‚Р°С‚РѕРє РїРѕРґ РїРѕС‚РѕР»РєРѕРј %Г—РјР°РєСЃ.РїРѕР·РёС†РёР№ (РЅРµ РІРµСЃСЊ Р±Р°Р»Р°РЅСЃ С†РµР»РёРєРѕРј).
+                    -- Остаток под потолком %×макс.позиций (не весь баланс целиком).
                     v_room := GREATEST(0, v_max_exposure - v_spent_notional);
                     IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
                         v_room := LEAST(v_room, v_max_order_amount);
@@ -20893,7 +22416,7 @@ BEGIN
                     v_quantity := logic_calc_open_quantity(
                         v_cycle_budget, v_position_size_pct, v_pp, v_lot_size, v_room
                     );
-                    -- Р‘СѓС„РµСЂ С†РµРЅС‹ РёСЃРїРѕР»РЅРµРЅРёСЏ: qty РїРѕ С…СѓРґС€РµР№ С†РµРЅРµ ppГ—(1+Р±СѓС„РµСЂ) вЂ” РјРµРЅСЊС€Рµ С€Р°РЅСЃ Р·Р°Р№РјР°.
+                    -- Буфер цены исполнения: qty по худшей цене pp×(1+буфер) — меньше шанс займа.
                     IF v_quantity >= v_lot_size AND v_gap_buffer_pct > 0 THEN
                         v_q2 := logic_calc_open_quantity(
                             v_cycle_budget, v_position_size_pct,
@@ -20904,8 +22427,8 @@ BEGIN
                         END IF;
                     END IF;
                     IF v_quantity < v_lot_size THEN
-                        -- Р¤СЊСЋС‡РµСЂСЃС‹: % РґРµРїРѕР·РёС‚Р° / С†РµРЅР° РєРѕРЅС‚СЂР°РєС‚Р° С‡Р°СЃС‚Рѕ РґР°С‘С‚ 0 в†’ 1 Р»РѕС‚
-                        -- (С‚РѕР»СЊРєРѕ РїСЂРё РёР·РІРµСЃС‚РЅРѕР№ Р±Р°Р·Рµ; Р°РєС†РёРё вЂ” Р±РµР· force 1 Р»РѕС‚)
+                        -- Фьючерсы: % депозита / цена контракта часто даёт 0 → 1 лот
+                        -- (только при известной базе; акции — без force 1 лот)
                         IF v_is_futures AND v_cycle_budget IS NOT NULL AND v_cycle_budget > 0
                            AND v_lot_size * v_pp <= v_room THEN
                             v_quantity := v_lot_size;
@@ -20933,7 +22456,7 @@ BEGIN
                 IF v_held_short > 0 OR (NOT v_is_shadow AND v_open_positions >= v_max_positions) THEN
                     CONTINUE;
                 END IF;
-                -- Р“СЌРї-С„РёР»СЊС‚СЂ РІС…РѕРґР° (С€РѕСЂС‚): СЃРІРµР¶Р°СЏ С†РµРЅР° СѓС€Р»Р° РѕС‚ С†РµРЅС‹ СЃРёРіРЅР°Р»Р° Р±РѕР»СЊС€Рµ РїРѕСЂРѕРіР° вЂ” РїСЂРѕРїСѓСЃРє.
+                -- Гэп-фильтр входа (шорт): свежая цена ушла от цены сигнала больше порога — пропуск.
                 IF NOT v_is_shadow AND v_max_open_gap_pct > 0 THEN
                     SELECT * INTO v_fresh FROM logic_fresh_order_price(p_logic_id, v_sec.security_id, v_tf_id);
                     IF v_fresh.price IS NOT NULL AND v_fresh.bar_dt IS NOT NULL
@@ -20943,7 +22466,7 @@ BEGIN
                             p_logic_id,
                             'trade.gap_skip',
                             format(
-                                'Р“СЌРї %s%% > %s%%: С†РµРЅР° СЃРёРіРЅР°Р»Р° %s в†’ СЂС‹РЅРѕРє %s вЂ” РІС…РѕРґ РїСЂРѕРїСѓС‰РµРЅ',
+                                'Гэп %s%% > %s%%: цена сигнала %s → рынок %s — вход пропущен',
                                 round(ABS(v_fresh.price - v_pp) / v_pp * 100.0, 2),
                                 v_max_open_gap_pct, v_pp, v_fresh.price
                             ),
@@ -20960,7 +22483,7 @@ BEGIN
                         CONTINUE;
                     END IF;
                 END IF;
-                -- Short: С‚РѕС‚ Р¶Рµ РїРѕС‚РѕР»РѕРє, С‡С‚Рѕ Рё long (10Г—10% = 100% Р±Р°Р·С‹ Рё С‚.Рґ.).
+                -- Short: тот же потолок, что и long (10×10% = 100% базы и т.д.).
                 v_room := GREATEST(0, v_max_exposure - v_spent_notional);
                 IF v_max_order_amount IS NOT NULL AND v_max_order_amount > 0 THEN
                     v_room := LEAST(v_room, v_max_order_amount);
@@ -20968,7 +22491,7 @@ BEGIN
                 v_quantity := logic_calc_open_quantity(
                     v_cycle_budget, v_position_size_pct, v_pp, v_lot_size, v_room
                 );
-                -- Р‘СѓС„РµСЂ С†РµРЅС‹ РёСЃРїРѕР»РЅРµРЅРёСЏ (С€РѕСЂС‚): qty РїРѕ С†РµРЅРµ ppГ—(1+Р±СѓС„РµСЂ) вЂ” РЅРѕРјРёРЅР°Р» РїРѕРґ РєРѕРЅС‚СЂРѕР»РµРј.
+                -- Буфер цены исполнения (шорт): qty по цене pp×(1+буфер) — номинал под контролем.
                 IF v_quantity >= v_lot_size AND v_gap_buffer_pct > 0 THEN
                     v_q2 := logic_calc_open_quantity(
                         v_cycle_budget, v_position_size_pct,
@@ -21009,7 +22532,7 @@ BEGIN
             v_note := NULL;
             v_commission := 0;
 
-            -- Shadow (pause/resume track): paper only вЂ” never PostOrder to broker.
+            -- Shadow (pause/resume track): paper only — never PostOrder to broker.
             IF v_logic.account_type <> 'fake' AND NOT v_is_shadow THEN
                 v_is_simulated := FALSE;
                 BEGIN
@@ -21022,10 +22545,10 @@ BEGIN
 
                     IF v_figi IS NULL THEN
                         v_status := 'rejected';
-                        v_note := 'РќРµС‚ tbank_figi РґР»СЏ Р±СѓРјР°РіРё';
+                        v_note := 'Нет tbank_figi для бумаги';
                     ELSE
-                        -- РџР°СѓР·Р° РјРµР¶РґСѓ СЂРµР°Р»СЊРЅС‹РјРё Р·Р°СЏРІРєР°РјРё: Р±РµР· РЅРµС‘ РїР°С‡РєР° СЃРёРіРЅР°Р»РѕРІ
-                        -- СѓРїРёСЂР°РµС‚СЃСЏ РІ Р»РёРјРёС‚С‹ T-Bank API (HTTP 429) Рё РѕС‚РєР»РѕРЅСЏРµС‚СЃСЏ.
+                        -- Пауза между реальными заявками: без неё пачка сигналов
+                        -- упирается в лимиты T-Bank API (HTTP 429) и отклоняется.
                         PERFORM pg_sleep(0.30);
                         v_order := tbank_post_order(
                             v_logic.account_id, v_figi, v_quantity, v_pp, v_direction,
@@ -21037,8 +22560,8 @@ BEGIN
                             v_order->'orderState'->>'orderId'
                         );
                         v_status := tbank_trade_status_from_post_order(v_order);
-                        -- РўРѕС‡РЅР°СЏ С†РµРЅР° РёСЃРїРѕР»РЅРµРЅРёСЏ РІР°Р¶РЅР° РґР»СЏ РїРѕС‚РѕР»РєР° exposure:
-                        -- РµСЃР»Рё PostOrder РЅРµ РґР°Р» С†РµРЅСѓ/РєРѕРјРёСЃСЃРёСЋ вЂ” РґРѕР±РёСЂР°РµРј РёР· GetOrderState.
+                        -- Точная цена исполнения важна для потолка exposure:
+                        -- если PostOrder не дал цену/комиссию — добираем из GetOrderState.
                         v_c := tbank_order_commission(v_order);
                         IF v_c > 0 THEN
                             v_commission := v_c;
@@ -21075,7 +22598,7 @@ BEGIN
                 EXCEPTION
                     WHEN undefined_function THEN
                         v_status := 'rejected';
-                        v_note := 'tbank_post_order РЅРµРґРѕСЃС‚СѓРїРµРЅ (РЅРµС‚ HTTP-СЂР°СЃС€РёСЂРµРЅРёСЏ)';
+                        v_note := 'tbank_post_order недоступен (нет HTTP-расширения)';
                     WHEN OTHERS THEN
                         v_status := 'rejected';
                         v_note := SQLERRM;
@@ -21091,8 +22614,8 @@ BEGIN
             VALUES (
                 p_logic_id, v_logic.account_id, v_sec.security_id, v_tf_id,
                 v_side_id, v_action_id, v_grp.position_event, v_signal_kind, v_formulas,
-                -- bar_dt СЃРґРµР»РєРё = Р±Р°СЂ РўР¤ Р»РѕРіРёРєРё (СЃС‚Р°Р±РёР»СЊРЅР°СЏ РёРґРµРјРїРѕС‚РµРЅС‚РЅРѕСЃС‚СЊ,
-                -- РґР°Р¶Рµ РµСЃР»Рё С‡Р»РµРЅС‹ AND-РіСЂСѓРїРїС‹ РЅР° СЂР°Р·РЅС‹С… tf=)
+                -- bar_dt сделки = бар ТФ логики (стабильная идемпотентность,
+                -- даже если члены AND-группы на разных tf=)
                 v_quantity, v_pp, COALESCE(v_commission, 0), v_closed_bar_dt, v_is_simulated, FALSE, v_is_shadow, FALSE,
                 '', v_broker_order_id, v_status, v_note
             )
@@ -21105,7 +22628,7 @@ BEGIN
 
             v_created := v_created + 1;
 
-            -- Р‘СЋРґР¶РµС‚ С†РёРєР»Р°: СѓС‡РёС‚С‹РІР°РµРј РЅРѕРјРёРЅР°Р» Р±РѕРµРІРѕРіРѕ Open (РІ С‚.С‡. short вЂ” РёРЅР°С‡Рµ РјР°СЂР¶Р° РЅР°СЂР°СЃС‚Р°РµС‚)
+            -- Бюджет цикла: учитываем номинал боевого Open (в т.ч. short — иначе маржа нарастает)
             IF NOT v_is_shadow
                AND v_is_open_event
                AND v_status <> 'rejected'
@@ -21131,7 +22654,7 @@ BEGIN
                 v_balance := logic_cash_set_param(p_logic_id, v_balance);
             ELSIF NOT v_is_shadow THEN
                 PERFORM logic_trade_finalize(v_trade_id, v_balance);
-                -- Real: РїРµСЂРµС‡РёС‚Р°С‚СЊ РѕСЃС‚Р°С‚РѕРє СЃ Р±СЂРѕРєРµСЂР° (РЅРµ paper В± notional Рє РјРёР»Р»РёРѕРЅСѓ)
+                -- Real: перечитать остаток с брокера (не paper ± notional к миллиону)
                 IF v_logic.account_type <> 'fake' THEN
                     v_balance := logic_ensure_balance(p_logic_id);
                 END IF;
@@ -21145,7 +22668,7 @@ BEGIN
             END IF;
 
             -- Switch same bar: after Close free exposure + refresh % base (cash in/out).
-            -- Never refresh after Open вЂ” short proceeds must not inflate the cycle base.
+            -- Never refresh after Open — short proceeds must not inflate the cycle base.
             IF NOT v_is_shadow
                AND NOT v_is_open_event
                AND v_status <> 'rejected' THEN
@@ -21160,7 +22683,7 @@ BEGIN
             PERFORM logic_trade_log(
                 p_logic_id,
                 'trade.created',
-                format('РЎРґРµР»РєР° #%s qty=%s price=%s status=%s', v_trade_id, v_quantity, v_pp, v_status),
+                format('Сделка #%s qty=%s price=%s status=%s', v_trade_id, v_quantity, v_pp, v_status),
                 jsonb_build_object(
                     'trade_id', v_trade_id,
                     'quantity', v_quantity,
@@ -21205,7 +22728,7 @@ BEGIN
         to_char(CURRENT_TIMESTAMP, 'YYYY-MM-DD"T"HH24:MI:SS'),
         'text'
     );
-    -- #972: РїРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕР№ РіСЂСѓРїРїС‹ РЅРµ РґРѕР»Р¶РµРЅ РѕС‚РєР°С‚С‹РІР°С‚СЊ РґРµРґСѓРї-РјР°СЂРєРµСЂ.
+    -- #972: повторный прогон подтверждённой группы не должен откатывать дедуп-маркер.
     IF NOT v_confirm_disabled THEN
         PERFORM logic_upsert_param(
             p_logic_id,
@@ -21219,7 +22742,7 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id,
             'trade.bar_done',
-            format('РЎРІРµС‡Р° %s РїСЂРѕРІРµСЂРµРЅР°, СЃРґРµР»РѕРє РЅРµ СЃРѕР·РґР°РЅРѕ', v_closed_bar_dt),
+            format('Свеча %s проверена, сделок не создано', v_closed_bar_dt),
             jsonb_build_object('closed_bar', v_closed_bar_dt),
             NULL,
             v_tf_id
@@ -21231,9 +22754,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION process_logic_trades(INTEGER) IS
-'AND РїРѕ РіСЂСѓРїРїР°Рј (position_event Г— position_side): СЃРґРµР»РєР° С‚РѕР»СЊРєРѕ РµСЃР»Рё РІСЃРµ Р°РєС‚РёРІРЅС‹Рµ СЃРёРіРЅР°Р»С‹ РіСЂСѓРїРїС‹ СЃСЂР°Р±РѕС‚Р°Р»Рё; '
-'СЂРµР№С‚РёРЅРі СЃРёРіРЅР°Р»Р° РЅР° Р»РѕРіРёРєРµ РѕР±РЅРѕРІР»СЏРµС‚СЃСЏ С‡РµСЂРµР· pending РЅР° СЃР»РµРґСѓСЋС‰РµР№ СЃРІРµС‡Рµ TF; '
-'РїСЂРё OPT() вЂ” Р±СѓРјР°Р¶РЅС‹Рµ РІРµС‚РєРё opt_lane Рё promote РєР°Р¶РґС‹Рµ opt_eval_candles';
+'AND по группам (position_event × position_side): сделка только если все активные сигналы группы сработали; '
+'рейтинг сигнала на логике обновляется через pending на следующей свече TF; '
+'при OPT() — бумажные ветки opt_lane и promote каждые opt_eval_candles';
 
 -- @include sql/logic_cash_fund_park.sql (stub; full after http)
 
@@ -21287,7 +22810,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_ensure_cash_fund_security(INTEGER, TEXT) IS
-'Р”РѕР±Р°РІРёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Р№ РґРµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ РІ logic_securities СЃ display_order=0 (РІРµСЂС… СЃРїРёСЃРєР°)';
+'Добавить выбранный денежный фонд в logic_securities с display_order=0 (верх списка)';
 
 CREATE OR REPLACE FUNCTION logic_park_excess_cash(p_logic_id INTEGER)
 RETURNS JSONB
@@ -21298,7 +22821,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
-'Stub Р±РµР· pgsql-http; РїРѕР»РЅР°СЏ СЂРµР°Р»РёР·Р°С†РёСЏ РїРѕСЃР»Рµ CREATE EXTENSION http (sql/logic_cash_fund_park.sql)';
+'Stub без pgsql-http; полная реализация после CREATE EXTENSION http (sql/logic_cash_fund_park.sql)';
 
 CREATE OR REPLACE FUNCTION run_trade_cycle()
 RETURNS JSONB
@@ -21314,7 +22837,7 @@ DECLARE
 BEGIN
     v_got_lock := pg_try_advisory_lock(hashtext('multilogictrade_run_trade_cycle'));
     IF NOT v_got_lock THEN
-        PERFORM app_tech_log_event('trade-runner', 'cycle.skip', 'РџСЂРѕРїСѓСЃРє: РґСЂСѓРіРѕР№ С†РёРєР» СѓР¶Рµ РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ', 'postgresql');
+        PERFORM app_tech_log_event('trade-runner', 'cycle.skip', 'Пропуск: другой цикл уже выполняется', 'postgresql');
         RETURN jsonb_build_object('skipped', TRUE, 'reason', 'locked');
     END IF;
 
@@ -21323,13 +22846,13 @@ BEGIN
         PERFORM app_tech_log_event(
             'trade-runner',
             'cycle.skip',
-            'РџСЂРѕРїСѓСЃРє: UI РЅРµ Р°РєС‚РёРІРµРЅ (APP_TRADE_RUNNER_REQUIRE_UI=1)',
+            'Пропуск: UI не активен (APP_TRADE_RUNNER_REQUIRE_UI=1)',
             'postgresql'
         );
         RETURN jsonb_build_object('skipped', TRUE, 'reason', 'ui_inactive');
     END IF;
 
-    PERFORM app_tech_log_event('trade-runner', 'cycle.start', 'run_trade_cycle РЅР°С‡Р°С‚', 'postgresql');
+    PERFORM app_tech_log_event('trade-runner', 'cycle.start', 'run_trade_cycle начат', 'postgresql');
 
     FOR v_logic IN
         SELECT l.id, l.is_enabled,
@@ -21340,7 +22863,7 @@ BEGIN
           AND a.is_active = TRUE
         ORDER BY l.id
     LOOP
-        -- РќРµ РјРµС€Р°С‚СЊ Р±СЌРєС‚РµСЃС‚Сѓ С‚РѕР№ Р¶Рµ Р»РѕРіРёРєРё (С†РµРЅС‹/РёРЅРґРёРєР°С‚РѕСЂС‹/СЃРґРµР»РєРё)
+        -- Не мешать бэктесту той же логики (цены/индикаторы/сделки)
         IF EXISTS (
             SELECT 1
             FROM logic_backtest_runs r
@@ -21364,7 +22887,7 @@ BEGIN
 
     PERFORM pg_advisory_unlock(hashtext('multilogictrade_run_trade_cycle'));
 
-    -- #972: С„РёРЅР°Р»РёР·РёСЂСѓРµРј РѕС‚Р»РѕР¶РµРЅРЅС‹Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ СЃРёРіРЅР°Р»РѕРІ (СЃРІРµР¶РёРµ С†РµРЅС‹, РїРѕРІС‚РѕСЂ РіСЂСѓРїРї).
+    -- #972: финализируем отложенные подтверждения сигналов (свежие цены, повтор групп).
     BEGIN
         PERFORM logic_signal_confirm_finalize();
     EXCEPTION
@@ -21418,14 +22941,14 @@ END;
 $$;
 
 COMMENT ON FUNCTION run_trade_cycle() IS
-'Р¦РёРєР» С‚РѕСЂРіРѕРІР»Рё РїРѕ РІРєР»СЋС‡С‘РЅРЅС‹Рј logics (РїСЂРѕРїСѓСЃРє Р»РѕРіРёРє СЃ Р°РєС‚РёРІРЅС‹Рј Р±СЌРєС‚РµСЃС‚РѕРј). '
-'Node fallback РїСЂРµРґРїРѕС‡С‚РёС‚РµР»РµРЅ: РїРѕ Р»РѕРіРёРєРµ РѕС‚РґРµР»СЊРЅРѕ (РєРѕСЂРѕС‚РєРёРµ tx). pg_cron вЂ” СЌС‚Р° С„СѓРЅРєС†РёСЏ.';
+'Цикл торговли по включённым logics (пропуск логик с активным бэктестом). '
+'Node fallback предпочтителен: по логике отдельно (короткие tx). pg_cron — эта функция.';
 
 -- ============================================================
--- РЎРёРіРЅР°Р»С‹ Р»РѕРіРёРє РІ С‚РµСЂРјРёРЅР°Р» (use_as_terminal_signal): Р°РЅР°Р»РёР·РёСЂСѓРµС‚
--- С‚РѕР»СЊРєРѕ open-СЃРёРіРЅР°Р»С‹ Р»РѕРіРёРєРё РЅР° Р·Р°РєСЂС‹С‚РѕР№ СЃРІРµС‡Рµ РµС‘ TF Рё Р·Р°РїРёСЃС‹РІР°РµС‚
--- logic_terminal_signals (РќР• С‚РѕСЂРіСѓРµС‚). РўРµСЂРјРёРЅР°Р» РґРѕР±Р°РІР»СЏРµС‚ Р±СѓРјР°РіСѓ+РўР¤
--- РґР»СЏ СЂСѓС‡РЅРѕРіРѕ СЂРµС€РµРЅРёСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.
+-- Сигналы логик в терминал (use_as_terminal_signal): анализирует
+-- только open-сигналы логики на закрытой свече её TF и записывает
+-- logic_terminal_signals (НЕ торгует). Терминал добавляет бумагу+ТФ
+-- для ручного решения пользователя.
 -- ============================================================
 CREATE OR REPLACE FUNCTION process_logic_terminal_signals(p_logic_id INTEGER)
 RETURNS INTEGER
@@ -21453,8 +22976,8 @@ DECLARE
     v_ind_ids INTEGER[] := ARRAY[]::INTEGER[];
     v_eval_sec INTEGER;
     v_new_id BIGINT;
-    -- РџРѕРґСЃС‚Р°РЅРѕРІРєР° РєРѕР»РёС‡РµСЃС‚РІР°/СЃСѓРјРјС‹ РІ Р±Р»РѕРє СЃРґРµР»РѕРє С‚РµСЂРјРёРЅР°Р»Р° (СЂР°СЃС‡С‘С‚ Р»РѕС‚Р° Р»РѕРіРёРєРё).
-    -- Р‘Р°Р·Р°/РїСЂРѕС†РµРЅС‚С‹ СЃС‡РёС‚Р°СЋС‚СЃСЏ РћР”РРќ СЂР°Р· РЅР° РІС‹Р·РѕРІ (РґР»СЏ real вЂ” РѕРґРёРЅ Р·Р°РїСЂРѕСЃ T-Bank).
+    -- Подстановка количества/суммы в блок сделок терминала (расчёт лота логики).
+    -- База/проценты считаются ОДИН раз на вызов (для real — один запрос T-Bank).
     v_sizing_base NUMERIC := 0;
     v_size_pct NUMERIC := 10;
     v_max_amt NUMERIC := NULL;
@@ -21462,13 +22985,13 @@ DECLARE
     v_lot INTEGER := 1;
     v_sugg_qty INTEGER := 0;
     v_sugg_amount NUMERIC := 0;
-    v_confirm_disabled BOOLEAN;      -- #972: РїРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїСЂРё РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРё С†РµРЅС‹
-    v_confirm_sec INTEGER;           -- #972: РЅР°СЃС‚СЂРѕР№РєР° РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ РіСЂСѓРїРїС‹ (СЃРµРє)
-    v_group_filter_event TEXT;       -- #972: СЃРѕР·РґР°РІР°С‚СЊ С‚РѕР»СЊРєРѕ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅСѓСЋ РіСЂСѓРїРїСѓ
+    v_confirm_disabled BOOLEAN;      -- #972: повторный прогон при подтверждении цены
+    v_confirm_sec INTEGER;           -- #972: настройка подтверждения группы (сек)
+    v_group_filter_event TEXT;       -- #972: создавать только подтверждённую группу
     v_group_filter_side TEXT;
-    v_group_filter_sec INTEGER;      -- #990: РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ РЅР° СѓСЂРѕРІРЅРµ Р±СѓРјР°РіРё (security_id)
-    v_expected_dir TEXT;             -- #972: РЅР°РїСЂР°РІР»РµРЅРёРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ up/down
-    v_light_ignore_dedup BOOLEAN;    -- #990: РјРѕР»РЅРёСЏ РїРµСЂРµСЃС‡РёС‚С‹РІР°РµС‚ Р·Р°РєСЂС‹С‚С‹Р№ Р±Р°СЂ РґР°Р¶Рµ РµСЃР»Рё С†РёРєР» СѓР¶Рµ РµРіРѕ РѕР±СЂР°Р±РѕС‚Р°Р»
+    v_group_filter_sec INTEGER;      -- #990: подтверждение на уровне бумаги (security_id)
+    v_expected_dir TEXT;             -- #972: направление подтверждения up/down
+    v_light_ignore_dedup BOOLEAN;    -- #990: молния пересчитывает закрытый бар даже если цикл уже его обработал
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.use_as_terminal_signal, FALSE) AS use_sig
@@ -21484,33 +23007,33 @@ BEGIN
 
     v_tf_id := logic_resolve_timeframe_id(p_logic_id);
     IF v_tf_id IS NULL THEN
-        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'РќРµ Р·Р°РґР°РЅ timeframe РІ logic_params');
+        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'Не задан timeframe в logic_params');
         RETURN 0;
     END IF;
 
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
-    -- Р‘Р°СЂ РѕР±СЂР°Р±РѕС‚РєРё: app.lightning_bar_dt = РїРѕСЃР»РµРґРЅРёР№ Р—РђРљР Р«РўР«Р™ Р±Р°СЂ РўР¤ РґР»СЏ РјРѕР»РЅРёРё (#990);
-    -- СЃРј. comment РІ process_logic_trades.
+    -- Бар обработки: app.lightning_bar_dt = последний ЗАКРЫТЫЙ бар ТФ для молнии (#990);
+    -- см. comment в process_logic_trades.
     v_closed_bar_dt := COALESCE(
         NULLIF(current_setting('app.lightning_bar_dt', TRUE), '')::TIMESTAMP,
         logic_last_closed_bar_dt(v_tf_sec)
     );
     IF v_closed_bar_dt IS NULL THEN
-        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹С‡РёСЃР»РёС‚СЊ Р·Р°РєСЂС‹С‚СѓСЋ СЃРІРµС‡Сѓ TF', NULL, NULL, v_tf_id);
+        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'Не удалось вычислить закрытую свечу TF', NULL, NULL, v_tf_id);
         RETURN 0;
     END IF;
 
-    -- #972: РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ С‚РёРїР° СЃРёРіРЅР°Р»Р° (СЃРј. process_logic_trades).
+    -- #972: подтверждение типа сигнала (см. process_logic_trades).
     v_confirm_disabled := COALESCE(NULLIF(current_setting('app.confirm_disabled', TRUE), '')::BOOLEAN, FALSE);
-    -- #990: РјРѕР»РЅРёСЏ СЃС‡РёС‚Р°РµС‚ РїРѕСЃР»РµРґРЅРёР№ Р—РђРљР Р«РўР«Р™ Р±Р°СЂ Рё РЅРµ РґРѕР»Р¶РЅР° В«РіР»РѕС…РЅСѓС‚СЊВ» РёР·-Р·Р° РґРµРґСѓРї-РјР°СЂРєРµСЂР°
-    -- СѓР¶Рµ РѕР±СЂР°Р±РѕС‚Р°РЅРЅРѕРіРѕ С†РёРєР»Р° Р±Р°СЂР° вЂ” РїРµСЂРµСЃС‡РёС‚С‹РІР°РµС‚ (РґСѓР±Р»Рё РіР°СЃРёС‚ ON CONFLICT).
+    -- #990: молния считает последний ЗАКРЫТЫЙ бар и не должна «глохнуть» из-за дедуп-маркера
+    -- уже обработанного цикла бара — пересчитывает (дубли гасит ON CONFLICT).
     v_light_ignore_dedup := COALESCE(NULLIF(current_setting('app.lightning_ignore_dedup', TRUE), '')::BOOLEAN, FALSE);
     v_group_filter_event := lower(NULLIF(current_setting('app.confirm_group_event', TRUE), ''));
     v_group_filter_side := lower(NULLIF(current_setting('app.confirm_group_side', TRUE), ''));
     v_group_filter_sec := NULLIF(current_setting('app.confirm_group_sec', TRUE), '')::INTEGER;
     v_confirm_sec := 0;
 
-    -- РЎРІРѕСЏ РґРµРґСѓРї-СЏРјРєР° СЃРІРµС‡РµР№: СЃРёРіРЅР°Р»С‹ РїСЂРѕРіСЂРµСЃСЃРёСЂСѓСЋС‚ РЅРµР·Р°РІРёСЃРёРјРѕ РѕС‚ С‚РѕСЂРіРѕРІС‹С… last_trade_bar_dt.
+    -- Своя дедуп-ямка свечей: сигналы прогрессируют независимо от торговых last_trade_bar_dt.
     v_last_bar_raw := btrim(COALESCE(get_logic_param_text(p_logic_id, 'terminal_signal_last_bar_dt'), ''));
     IF v_last_bar_raw <> '' THEN
         BEGIN
@@ -21537,15 +23060,15 @@ BEGIN
         RETURN 0;
     END IF;
 
-    -- Р¦РµРЅС‹ + Р·РЅР°С‡РµРЅРёСЏ РёРЅРґРёРєР°С‚РѕСЂРѕРІ (РєР°Рє РІ process_logic_trades): Р±СѓРјР°РіРё РёР· logic_securities.
-    -- Р”РѕРіСЂСѓР¶Р°РµРј РЅРµРґРѕСЃС‚Р°СЋС‰РёРµ closed-СЃРІРµС‡Рё РёРЅРєСЂРµРјРµРЅС‚Р°Р»СЊРЅРѕ, С‡С‚РѕР±С‹ СЃРёРіРЅР°Р»С‹ РїСЂРѕС…РѕРґРёР»Рё Р±РµР·
-    -- РѕС‚РєСЂС‹С‚С‹С… РїР°РЅРµР»РµР№ С‚РµСЂРјРёРЅР°Р»Р° Рё Р±РµР· РІРєР»СЋС‡С‘РЅРЅРѕР№ С‚РѕСЂРіРѕРІР»Рё (skip_http РЅРµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ).
-    -- РЇРІРЅР°СЏ 4-Р°СЂРі СЃРёРіРЅР°С‚СѓСЂР° FALSE: Р·Р°С‰РёС‚Р° РѕС‚ СЃС‚Р°СЂС‹С… 3-Р°СЂРі overload'РѕРІ РІ Р¶РёРІРѕР№ Р‘Р”.
+    -- Цены + значения индикаторов (как в process_logic_trades): бумаги из logic_securities.
+    -- Догружаем недостающие closed-свечи инкрементально, чтобы сигналы проходили без
+    -- открытых панелей терминала и без включённой торговли (skip_http не используется).
+    -- Явная 4-арг сигнатура FALSE: защита от старых 3-арг overload'ов в живой БД.
     CALL logic_refresh_market_data(p_logic_id, v_tf_id, v_closed_bar_dt, FALSE);
 
     PERFORM logic_ensure_non_trading_periods(p_logic_id);
     IF logic_skip_signal_by_periods(p_logic_id, v_closed_bar_dt) THEN
-        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'РќРµС‚РѕСЂРіРѕРІС‹Р№ РїРµСЂРёРѕРґ (СЃРёРіРЅР°Р» РІ С‚РµСЂРјРёРЅР°Р» РЅРµ РІС‹РґР°С‘С‚СЃСЏ)', NULL, NULL, v_tf_id);
+        PERFORM logic_trade_log(p_logic_id, 'signal.skip', 'Неторговый период (сигнал в терминал не выдаётся)', NULL, NULL, v_tf_id);
         PERFORM logic_upsert_param(p_logic_id, 'terminal_signal_last_bar_dt',
             to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), 'text');
         RETURN 0;
@@ -21561,7 +23084,7 @@ BEGIN
           AND NOT logic_is_cash_fund_security(ls.security_id)
         ORDER BY ls.display_order NULLS LAST, ls.id
     LOOP
-        -- #990: РїРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕР№ РіСЂСѓРїРїС‹ вЂ” С‚РѕР»СЊРєРѕ РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕР№ Р±СѓРјР°РіРё.
+        -- #990: повторный прогон подтверждённой группы — только для подтверждённой бумаги.
         IF v_group_filter_sec IS NOT NULL AND v_sec.security_id <> v_group_filter_sec THEN
             CONTINUE;
         END IF;
@@ -21570,6 +23093,7 @@ BEGIN
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
               AND lower(COALESCE(lis.position_event, 'open')) = 'open'
+              AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
             GROUP BY lis.position_event, lis.position_side
             ORDER BY lis.position_side
         LOOP
@@ -21585,6 +23109,7 @@ BEGIN
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id
                   AND lis.is_active = TRUE
+                  AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
                   AND lis.position_event = v_grp.position_event
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id
@@ -21606,8 +23131,8 @@ BEGIN
                     CONTINUE;
                 END IF;
 
-                -- РРЅРґРёРєР°С‚РѕСЂС‹ РѕС‚СЂРёСЃРѕРІРєРё: С‚РѕР»СЊРєРѕ С‚Рµ, С‡С‚Рѕ РѕС†РµРЅРёРІР°СЋС‚СЃСЏ РїРѕ Р­РўРћР™ Р±СѓРјР°РіРµ
-                -- (base_asset/contango СЃС‡РёС‚Р°СЋС‚СЃСЏ РїРѕ РґСЂСѓРіРёРј Р±СѓРјР°РіР°Рј вЂ” РёС… РЅР° РіСЂР°С„РёРє РЅРµ С‚СЏРЅРµРј).
+                -- Индикаторы отрисовки: только те, что оцениваются по ЭТОЙ бумаге
+                -- (base_asset/contango считаются по другим бумагам — их на график не тянем).
                 v_eval_sec := logic_signal_eval_security_id(v_sig.id, v_sec.security_id);
                 IF v_eval_sec IS NOT NULL AND v_eval_sec = v_sec.security_id THEN
                     IF NOT (v_sig.indicator_id = ANY(v_ids_dedup)) THEN
@@ -21639,13 +23164,13 @@ BEGIN
                 v_eff_side := CASE WHEN v_eff_side = 'long' THEN 'short' ELSE 'long' END;
             END IF;
 
-            -- #972: РїРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїРѕСЃР»Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ вЂ” СЃРѕР·РґР°С‘Рј С‚РѕР»СЊРєРѕ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅСѓСЋ РіСЂСѓРїРїСѓ.
+            -- #972: повторный прогон после подтверждения — создаём только подтверждённую группу.
             IF (COALESCE(v_group_filter_event, '') <> '' OR COALESCE(v_group_filter_side, '') <> '')
                AND (v_group_filter_event <> lower(COALESCE(v_grp.position_event, 'open'))
                     OR v_group_filter_side <> lower(COALESCE(v_grp.position_side, 'long'))) THEN
                 CONTINUE;
             END IF;
-            -- #972: РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ С‚РёРїР° СЃРёРіРЅР°Р»Р° (СЃРј. process_logic_trades).
+            -- #972: подтверждение типа сигнала (см. process_logic_trades).
             IF NOT v_confirm_disabled THEN
                 SELECT COALESCE(max(lis.signal_confirm_sec), 0)
                 INTO v_confirm_sec
@@ -21677,7 +23202,7 @@ BEGIN
                     PERFORM logic_trade_log(
                         p_logic_id,
                         'signal.confirm_wait',
-                        format('РЎРёРіРЅР°Р» %s/%s РїСЂРёРґРµСЂР¶Р°РЅ: РїСЂРѕРІРµСЂРєР° РЅР°РїСЂР°РІР»РµРЅРёСЏ С†РµРЅС‹ С‡РµСЂРµР· %s СЃ',
+                        format('Сигнал %s/%s придержан: проверка направления цены через %s с',
                             v_grp.position_event, v_grp.position_side, v_confirm_sec),
                         jsonb_build_object(
                             'closed_bar', v_closed_bar_dt,
@@ -21692,16 +23217,16 @@ BEGIN
                 END IF;
             END IF;
 
-            -- РљРѕР»РёС‡РµСЃС‚РІРѕ Рє РїРѕРґСЃС‚Р°РЅРѕРІРєРµ РІ С‚РµСЂРјРёРЅР°Р»: С‚Р° Р¶Рµ Р±Р°Р·Р°/%/Р»РѕС‚/РїРѕС‚РѕР»РѕРє, С‡С‚Рѕ Сѓ
-            -- Р±РѕРµРІРѕРіРѕ РІС…РѕРґР° (Р»РѕРіРёРєР°_posSizing_base + logic_calc_open_quantity).
+            -- Количество к подстановке в терминал: та же база/%/лот/потолок, что у
+            -- боевого входа (логика_posSizing_base + logic_calc_open_quantity).
             v_sugg_qty := 0;
             v_sugg_amount := 0;
             IF v_pp IS NOT NULL AND v_pp > 0 THEN
                 IF NOT v_base_ready THEN
                     v_sizing_base := logic_position_sizing_base(p_logic_id, v_tf_id);
-                    -- Р”РµРјРѕ/С„РµР№РєРѕРІС‹Рµ СЃРёРіРЅР°Р»СЊРЅС‹Рµ Р»РѕРіРёРєРё С‡Р°СЃС‚Рѕ Р±РµР· current_balance:
-                    -- РїРѕРґСЃС‚Р°РІР»СЏРµРј СЂР°СЃС‡С‘С‚ РёР· С‚РµСЃС‚РѕРІРѕРіРѕ РґРµРїРѕ Р»РѕРіРёРєРё, С‡С‚РѕР±С‹ РєРѕР»РёС‡РµСЃС‚РІРѕ
-                    -- Рё СЃСѓРјРјР° РІ Р±Р»РѕРєРµ СЃРґРµР»РѕРє Р·Р°РїРѕР»РЅСЏР»РёСЃСЊ (РѕСЃС‚Р°Р»РѕСЃСЊ РЅР°Р¶Р°С‚СЊ В«РљСѓРїРёС‚СЊ/РџСЂРѕРґР°С‚СЊВ»).
+                    -- Демо/фейковые сигнальные логики часто без current_balance:
+                    -- подставляем расчёт из тестового депо логики, чтобы количество
+                    -- и сумма в блоке сделок заполнялись (осталось нажать «Купить/Продать»).
                     IF COALESCE(v_sizing_base, 0) <= 0 THEN
                         v_sizing_base := COALESCE(
                             NULLIF(
@@ -21731,13 +23256,13 @@ BEGIN
                 v_sugg_amount := round(v_sugg_qty * v_pp, 2);
             END IF;
 
-            -- #982: Р¶С‘СЃС‚РєР°СЏ РїСЂРѕРІРµСЂРєР° С„Р»Р°РіР° РџР•Р Р•Р” Р·Р°РїРёСЃСЊСЋ. Р¤СѓРЅРєС†РёСЏ РјРѕРіР»Р° РЅР°С‡Р°С‚СЊ
-            -- СЂР°Р±РѕС‚Сѓ, РєРѕРіРґР° В«СЃРёРіРЅР°Р» РІ С‚РµСЂРјРёРЅР°Р»В» Р±С‹Р» РІРєР»СЋС‡С‘РЅ, Рё Р·Р°С‚РµРј РІС‹РїРѕР»РЅРёС‚СЊ
-            -- РґРѕР»РіСѓСЋ РґРѕРіСЂСѓР·РєСѓ С†РµРЅ (logic_refresh_market_data) Рё СЂР°СЃС‡С‘С‚
-            -- РёРЅРґРёРєР°С‚РѕСЂРѕРІ. Р•СЃР»Рё РіР°Р»РѕС‡РєСѓ РІС‹РєР»СЋС‡РёР»Рё РЈР–Р• РІРѕ РІСЂРµРјСЏ РІС‹РїРѕР»РЅРµРЅРёСЏ вЂ”
-            -- СЃРёРіРЅР°Р» РЅРµ СЃРѕР·РґР°С‘Рј: РѕС‚РґРµР»СЊРЅС‹Р№ SELECT РІРёРґРёС‚ СЃРІРµР¶РёРµ Р·Р°РєРѕРјРјРёС‡РµРЅРЅС‹Рµ
-            -- РґР°РЅРЅС‹Рµ, РїРѕСЌС‚РѕРјСѓ РІС‹РєР»СЋС‡РµРЅРёРµ СЃСЂР°Р±Р°С‚С‹РІР°РµС‚ СЃСЂР°Р·Сѓ, Р° РЅРµ СЃРѕ СЃР»РµРґСѓСЋС‰РµРіРѕ
-            -- С†РёРєР»Р°. RETURN вЂ” РїСЂРѕС…РѕРґ С†РµР»РёРєРѕРј РїСЂРµРєСЂР°С‰Р°РµРј.
+            -- #982: жёсткая проверка флага ПЕРЕД записью. Функция могла начать
+            -- работу, когда «сигнал в терминал» был включён, и затем выполнить
+            -- долгую догрузку цен (logic_refresh_market_data) и расчёт
+            -- индикаторов. Если галочку выключили УЖЕ во время выполнения —
+            -- сигнал не создаём: отдельный SELECT видит свежие закоммиченные
+            -- данные, поэтому выключение срабатывает сразу, а не со следующего
+            -- цикла. RETURN — проход целиком прекращаем.
             IF NOT COALESCE(
                 (SELECT l.use_as_terminal_signal FROM logics l WHERE l.id = p_logic_id),
                 FALSE
@@ -21766,7 +23291,7 @@ BEGIN
             PERFORM logic_trade_log(
                 p_logic_id,
                 'signal.terminal',
-                format('РЎРёРіРЅР°Р» РІ С‚РµСЂРјРёРЅР°Р»: sec=%s side=%s', v_sec.security_id, v_eff_side),
+                format('Сигнал в терминал: sec=%s side=%s', v_sec.security_id, v_eff_side),
                 jsonb_build_object(
                     'closed_bar', v_closed_bar_dt,
                     'timeframe_id', v_tf_id,
@@ -21784,7 +23309,7 @@ BEGIN
         END LOOP;
     END LOOP;
 
-    -- #972: РїРѕРІС‚РѕСЂРЅС‹Р№ РїСЂРѕРіРѕРЅ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕР№ РіСЂСѓРїРїС‹ РЅРµ РґРѕР»Р¶РµРЅ РѕС‚РєР°С‚С‹РІР°С‚СЊ РґРµРґСѓРї-РјР°СЂРєРµСЂ.
+    -- #972: повторный прогон подтверждённой группы не должен откатывать дедуп-маркер.
     IF NOT v_confirm_disabled THEN
         PERFORM logic_upsert_param(p_logic_id, 'terminal_signal_last_bar_dt',
             to_char(v_closed_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), 'text');
@@ -21795,21 +23320,21 @@ END;
 $$;
 
 COMMENT ON FUNCTION process_logic_terminal_signals(INTEGER) IS
-'Open-СЃРёРіРЅР°Р»С‹ Р»РѕРіРёРєРё РґР»СЏ С‚РµСЂРјРёРЅР°Р»Р°: Р·Р°РїРёСЃС‹РІР°РµС‚ logic_terminal_signals (СЃРґРµР»РєРё РќР• РёСЃРїРѕР»РЅСЏРµС‚). '
-'РЎС‚РѕСЂРѕРЅР° вЂ” СЌС„С„РµРєС‚РёРІРЅР°СЏ СЃ СѓС‡С‘С‚РѕРј РёРЅРІРµСЂСЃРёР№: long в†’ РїРѕРєСѓРїРєР°, short в†’ РїСЂРѕРґР°Р¶Р°. '
-'РџР»СЋСЃ suggested_quantity/suggested_amount вЂ” РєРѕР»РёС‡РµСЃС‚РІРѕ/СЃСѓРјРјР° Рє РїРѕРґСЃС‚Р°РЅРѕРІРєРµ РІ Р±Р»РѕРє СЃРґРµР»РѕРє '
-'С‚РµСЂРјРёРЅР°Р»Р° (СЂР°СЃС‡С‘С‚ Р»РѕС‚Р° Р»РѕРіРёРєРё: Р»РѕРіРёРєР°_posSizing_base + logic_calc_open_quantity). '
-'Р Р°Р±РѕС‚Р°РµС‚ РїСЂРё use_as_terminal_signal=TRUE РЅРµР·Р°РІРёСЃРёРјРѕ РѕС‚ is_enabled (РІРєР»СЋС‡С‘РЅРЅР°СЏ Р»РѕРіРёРєР° С‚РѕСЂРіСѓРµС‚ РєР°Рє РѕР±С‹С‡РЅРѕ + СЃРёРіРЅР°Р»РёС‚ РІ С‚РµСЂРјРёРЅР°Р»). '
-'РќРµРґРѕСЃС‚Р°СЋС‰РёРµ closed-СЃРІРµС‡Рё С†РµРЅ СЃРёРіРЅР°Р»СЊРЅС‹С… Р±СѓРјР°Рі РґРѕРіСЂСѓР¶Р°СЋС‚СЃСЏ РёРЅРєСЂРµРјРµРЅС‚Р°Р»СЊРЅРѕ (1 HTTP С‡РµСЂРµР· prices_topup_date_from), '
-'РїРѕСЌС‚РѕРјСѓ СЃРёРіРЅР°Р»С‹ РїСЂРѕС…РѕРґСЏС‚ РґР°Р¶Рµ Р±РµР· РѕС‚РєСЂС‹С‚С‹С… РїР°РЅРµР»РµР№ С‚РµСЂРјРёРЅР°Р»Р° Рё Р±РµР· РІРєР»СЋС‡С‘РЅРЅРѕР№ С‚РѕСЂРіРѕРІР»Рё Р»РѕРіРёРєРё.';
+'Open-сигналы логики для терминала: записывает logic_terminal_signals (сделки НЕ исполняет). '
+'Сторона — эффективная с учётом инверсий: long → покупка, short → продажа. '
+'Плюс suggested_quantity/suggested_amount — количество/сумма к подстановке в блок сделок '
+'терминала (расчёт лота логики: логика_posSizing_base + logic_calc_open_quantity). '
+'Работает при use_as_terminal_signal=TRUE независимо от is_enabled (включённая логика торгует как обычно + сигналит в терминал). '
+'Недостающие closed-свечи цен сигнальных бумаг догружаются инкрементально (1 HTTP через prices_topup_date_from), '
+'поэтому сигналы проходят даже без открытых панелей терминала и без включённой торговли логики.';
 
 -- ============================================================
--- Р–РёРІР°СЏ С†РµРЅР° T-Bank РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ (#985)
--- РћРґРёРЅ Р·Р°РїСЂРѕСЃ MarketDataService/GetLastPrices РїРѕ РІСЃРµРј Р±СѓРјР°РіР°Рј СЃСЂР°Р·Сѓ.
--- Р’РѕР·РІСЂР°С‰Р°РµС‚ {"<security_id>": price, ...} РґР»СЏ logic_signal_confirm_finalize;
--- РїСЂРё РѕС€РёР±РєРµ/РЅРµС‚ С‚РѕРєРµРЅР°/РЅРµС‚ pgsql-http в†’ {} (С„РёРЅР°Р»РёР·Р°С‚РѕСЂ РѕС‚РєР°С‚РёС‚СЃСЏ РЅР° СЃРІРµС‡Сѓ).
--- http-С‚РёРїС‹ РЅРµ РѕР±СЉСЏРІР»СЏСЋС‚СЃСЏ РІ DECLARE (РёС… РЅРµС‚ РґРѕ CREATE EXTENSION http) вЂ”
--- РёСЃРїРѕР»СЊР·СѓСЋС‚СЃСЏ РїСЂСЏРјРѕ РІ Р·Р°РїСЂРѕСЃРµ, РєРѕС‚РѕСЂС‹Р№ plpgsql СЂР°Р·Р±РёСЂР°РµС‚ РІ РјРѕРјРµРЅС‚ РІС‹Р·РѕРІР°.
+-- Живая цена T-Bank для подтверждений (#985)
+-- Один запрос MarketDataService/GetLastPrices по всем бумагам сразу.
+-- Возвращает {"<security_id>": price, ...} для logic_signal_confirm_finalize;
+-- при ошибке/нет токена/нет pgsql-http → {} (финализатор откатится на свечу).
+-- http-типы не объявляются в DECLARE (их нет до CREATE EXTENSION http) —
+-- используются прямо в запросе, который plpgsql разбирает в момент вызова.
 -- ============================================================
 CREATE OR REPLACE FUNCTION logic_live_prices(p_security_ids INTEGER[])
 RETURNS JSONB
@@ -21889,23 +23414,23 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_live_prices(INTEGER[]) IS
-'Р–РёРІС‹Рµ РїРѕСЃР»РµРґРЅРёРµ С†РµРЅС‹ T-Bank (MarketDataService/GetLastPrices) РѕРґРЅРёРј Р·Р°РїСЂРѕСЃРѕРј РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ СЃРёРіРЅР°Р»РѕРІ (#985): '
-'{"<security_id>": price, ...}; РїСЂРё РѕС€РёР±РєРµ/РЅРµС‚ С‚РѕРєРµРЅР°/pgsql-http в†’ {} (С„РёРЅР°Р»РёР·Р°С‚РѕСЂ РѕС‚РєР°С‚РёС‚СЃСЏ РЅР° СЃРІРµС‡Сѓ).';
+'Живые последние цены T-Bank (MarketDataService/GetLastPrices) одним запросом для подтверждений сигналов (#985): '
+'{"<security_id>": price, ...}; при ошибке/нет токена/pgsql-http → {} (финализатор откатится на свечу).';
 
 -- ============================================================
--- РџРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ С‚РёРїР° СЃРёРіРЅР°Р»Р° (#972, #984, #985)
--- Р¤РёРЅР°Р»РёР·Р°С‚РѕСЂ РѕС‚Р»РѕР¶РµРЅРЅС‹С… РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№: Р±РµСЂС‘С‚ РїРѕ РёСЃС‚С‘РєС€РµРјСѓ РґРµРґР»Р°Р№РЅСѓ Р·Р°РїРёСЃРё
--- logic_signal_confirm_pending, Р±РµСЂС‘С‚ С†РµРЅСѓ РЅР° РјРѕРјРµРЅС‚ РїСЂРѕРІРµСЂРєРё вЂ” РїСЂРёРѕСЂРёС‚РµС‚РЅРѕ Р¶РёРІСѓСЋ
--- С†РµРЅСѓ T-Bank: РёР· p_live_prices (РµС‘ РїРµСЂРµРґР°С‘С‚ Р±РѕРµРІРѕР№ СЂР°РЅРЅРµСЂ) Р»РёР±Рѕ, РµСЃР»Рё Р°СЂРіСѓРјРµРЅС‚
--- РЅРµ РїРµСЂРµРґР°РЅ (РјРѕР»РЅРёСЏ, SQL-С†РёРєР» run_trade_cycle), С‚СЏРЅРµС‚ РµС‘ СЃР°Рј С‡РµСЂРµР· logic_live_prices
--- (#985); РёРЅР°С‡Рµ СЃРІРµС‡Сѓ (logic_fresh_order_price) вЂ” СЃСЂР°РІРЅРёРІР°РµС‚ СЃ fire_price РїРѕ expected_dir Рё РїСЂРё
--- РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРё РЅР°РїСЂР°РІР»РµРЅРёСЏ РїРѕРІС‚РѕСЂРЅРѕ РїСЂРѕРіРѕРЅСЏРµС‚ process_logic_trades /
--- process_logic_terminal_signals РЅР° Р±Р°СЂРµ bar_dt СЃ С„Р»Р°РіРѕРј app.confirm_disabled=TRUE
--- (РґРµРґСѓРї РѕР±С…РѕРґРёС‚СЃСЏ, СЃРѕР·РґР°С‘С‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅР°СЏ РіСЂСѓРїРїР°). Р’С‹Р·С‹РІР°РµС‚СЃСЏ РёР·
--- run_trade_cycle(), Р±РѕРµРІРѕРіРѕ С†РёРєР»Р° api/trade-runner.js Рё logic_lightning_run.
+-- Подтверждение типа сигнала (#972, #984, #985)
+-- Финализатор отложенных подтверждений: берёт по истёкшему дедлайну записи
+-- logic_signal_confirm_pending, берёт цену на момент проверки — приоритетно живую
+-- цену T-Bank: из p_live_prices (её передаёт боевой раннер) либо, если аргумент
+-- не передан (молния, SQL-цикл run_trade_cycle), тянет её сам через logic_live_prices
+-- (#985); иначе свечу (logic_fresh_order_price) — сравнивает с fire_price по expected_dir и при
+-- подтверждении направления повторно прогоняет process_logic_trades /
+-- process_logic_terminal_signals на баре bar_dt с флагом app.confirm_disabled=TRUE
+-- (дедуп обходится, создаётся только подтверждённая группа). Вызывается из
+-- run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.
 -- ============================================================
--- #984: СЃС‚Р°СЂР°СЏ СЃРёРіРЅР°С‚СѓСЂР° Р±РµР· Р°СЂРіСѓРјРµРЅС‚РѕРІ Рё РЅРѕРІР°СЏ СЃ РїР°СЂР°РјРµС‚СЂРѕРј DEFAULT РґР°СЋС‚
--- РЅРµРѕРґРЅРѕР·РЅР°С‡РЅРѕСЃС‚СЊ РїСЂРё 0-Р°СЂРі РІС‹Р·РѕРІРµ (В«function is not uniqueВ»). РЎРЅРёРјР°РµРј СЃС‚Р°СЂСѓСЋ.
+-- #984: старая сигнатура без аргументов и новая с параметром DEFAULT дают
+-- неоднозначность при 0-арг вызове («function is not unique»). Снимаем старую.
 DROP FUNCTION IF EXISTS logic_signal_confirm_finalize();
 
 CREATE OR REPLACE FUNCTION logic_signal_confirm_finalize(
@@ -21923,9 +23448,9 @@ DECLARE
     v_bt_skip BOOLEAN := FALSE;
     v_live JSONB := p_live_prices;
 BEGIN
-    -- #985: РµСЃР»Рё Р±РѕРµРІРѕР№ СЂР°РЅРЅРµСЂ РЅРµ РїРµСЂРµРґР°Р» Р¶РёРІС‹Рµ С†РµРЅС‹ (РјРѕР»РЅРёСЏ, SQL-С†РёРєР»
-    -- run_trade_cycle), С‚СЏРЅРµРј РёС… СЃР°РјРё РѕРґРЅРёРј Р·Р°РїСЂРѕСЃРѕРј T-Bank GetLastPrices
-    -- РїРѕ Р±СѓРјР°РіР°Рј РІСЃРµС… СЃРѕР·СЂРµРІС€РёС… РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№. РџСЂРё СЃР±РѕРµ v_live = NULL в†’ СЃРІРµС‡Р°.
+    -- #985: если боевой раннер не передал живые цены (молния, SQL-цикл
+    -- run_trade_cycle), тянем их сами одним запросом T-Bank GetLastPrices
+    -- по бумагам всех созревших подтверждений. При сбое v_live = NULL → свеча.
     IF v_live IS NULL THEN
         BEGIN
             SELECT logic_live_prices(array_agg(DISTINCT p.security_id))
@@ -21953,7 +23478,7 @@ BEGIN
         ORDER BY p.deadline, p.id
         FOR UPDATE SKIP LOCKED
     LOOP
-        -- Р‘СЌРєС‚РµСЃС‚ Р»РѕРіРёРєРё РёРґС‘С‚ РІРїРµСЂРµРґРё вЂ” РЅРµ РјРµС€Р°РµРј РµРјСѓ (С‚Р° Р¶Рµ РїСЂРѕРІРµСЂРєР°, С‡С‚Рѕ РІ Р±РѕРµРІРѕРј С†РёРєР»Рµ).
+        -- Бэктест логики идёт впереди — не мешаем ему (та же проверка, что в боевом цикле).
         v_bt_skip := FALSE;
         BEGIN
             SELECT coalesce(bool_or(bt.status IN ('running', 'queued')), FALSE)
@@ -21975,13 +23500,13 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- Р¦РµРЅР° РЅР° РјРѕРјРµРЅС‚ РїСЂРѕРІРµСЂРєРё. РџСЂРёРѕСЂРёС‚РµС‚ вЂ” Р¶РёРІР°СЏ С†РµРЅР° T-Bank РІ v_live
-        -- ({"<security_id>": price, ...}): Р»РёР±Рѕ РёР· p_live_prices СЂР°РЅРЅРµСЂР°, Р»РёР±Рѕ
-        -- РґРѕР±СЂР°РЅРЅР°СЏ СЃР°РјРёРј С„РёРЅР°Р»РёР·Р°С‚РѕСЂРѕРј (#985). РЎРІРµСЂРєР° РёРґС‘С‚ РїРѕ РЅРµР№, Р° РЅРµ РїРѕ
-        -- СѓСЃС‚Р°СЂРµРІС€РµР№ СЃРІРµС‡Рµ СЃС‚РѕРї-РўР¤. Р•СЃР»Рё Р¶РёРІРѕР№ С†РµРЅС‹ РЅРµС‚ вЂ” РѕС‚РєР°С‚ РЅР° СЃРІРµС‡Сѓ
-        -- (logic_refresh_market_data + logic_fresh_order_price). РЎРєР°Р»СЏСЂ (РЅРµ RECORD):
-        -- РїСЂРё РёСЃРєР»СЋС‡РµРЅРёРё РґРѕ SELECT INTO Р·Р°РїРёСЃСЊ РѕСЃС‚Р°С‘С‚СЃСЏ В«РЅРµ РїСЂРёСЃРІРѕРµРЅРЅРѕР№В» Рё С‡С‚РµРЅРёРµ
-        -- v_fresh.* РїР°РґР°РµС‚ СЃ 55000.
+        -- Цена на момент проверки. Приоритет — живая цена T-Bank в v_live
+        -- ({"<security_id>": price, ...}): либо из p_live_prices раннера, либо
+        -- добранная самим финализатором (#985). Сверка идёт по ней, а не по
+        -- устаревшей свече стоп-ТФ. Если живой цены нет — откат на свечу
+        -- (logic_refresh_market_data + logic_fresh_order_price). Скаляр (не RECORD):
+        -- при исключении до SELECT INTO запись остаётся «не присвоенной» и чтение
+        -- v_fresh.* падает с 55000.
         v_check_price := NULL;
         IF v_live IS NOT NULL THEN
             v_check_price := NULLIF(v_live ->> v_pend.security_id::text, '')::numeric;
@@ -22005,13 +23530,13 @@ BEGIN
             v_ok := (v_check_price > v_pend.fire_price) = (v_pend.expected_dir = 'up');
             IF NOT v_ok THEN
                 v_note := format(
-                    'С†РµРЅР° %s РїСЂРѕС‚РёРІ РѕР¶РёРґР°РЅРёСЏ %s (Р±С‹Р»Р° %s)', v_check_price, v_pend.expected_dir, v_pend.fire_price
+                    'цена %s против ожидания %s (была %s)', v_check_price, v_pend.expected_dir, v_pend.fire_price
                 );
             END IF;
         ELSIF v_check_price IS NULL THEN
-            v_note := 'С†РµРЅР° РЅРµРґРѕСЃС‚СѓРїРЅР°';
+            v_note := 'цена недоступна';
         ELSE
-            v_note := 'С†РµРЅР° РЅРµ РёР·РјРµРЅРёР»Р°СЃСЊ';
+            v_note := 'цена не изменилась';
         END IF;
 
         UPDATE logic_signal_confirm_pending
@@ -22025,8 +23550,8 @@ BEGIN
             PERFORM logic_trade_log(
                 v_pend.logic_id,
                 'trade.confirm_failed',
-                format('РЎРёРіРЅР°Р» %s/%s РќР• РїРѕРґС‚РІРµСЂР¶РґС‘РЅ: %s',
-                    v_pend.position_event, v_pend.position_side, COALESCE(v_note, 'С†РµРЅР° РЅРµ РёР·РјРµРЅРёР»Р°СЃСЊ')),
+                format('Сигнал %s/%s НЕ подтверждён: %s',
+                    v_pend.position_event, v_pend.position_side, COALESCE(v_note, 'цена не изменилась')),
                 jsonb_build_object(
                     'closed_bar', v_pend.bar_dt,
                     'security_id', v_pend.security_id,
@@ -22040,10 +23565,10 @@ BEGIN
             CONTINUE;
         END IF;
 
-        -- РџРѕРґС‚РІРµСЂР¶РґРµРЅРѕ: РїРѕРІС‚РѕСЂРЅРѕ РїСЂРѕРіРѕРЅСЏРµРј Р±РѕРµРІС‹Рµ РїСЂРѕС†РµСЃСЃС‹ РЅР° РћР РР“РРќРђР›Р¬РќРћРњ Р±Р°СЂРµ bar_dt.
-        -- app.lightning_bar_dt С„РёРєСЃРёСЂСѓРµС‚ v_closed_bar_dt, app.confirm_disabled РѕР±С…РѕРґРёС‚ РґРµРґСѓРї
-        -- Рё РЅРµ РїРµСЂРµР·Р°РїРёСЃС‹РІР°РµС‚ last_trade_bar_dt, app.confirm_group_{event,side} СЃРѕР·РґР°С‘С‚
-        -- С‚РѕР»СЊРєРѕ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅСѓСЋ РіСЂСѓРїРїСѓ, app.confirm_group_sec вЂ” С‚РѕР»СЊРєРѕ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅСѓСЋ Р±СѓРјР°РіСѓ (#990).
+        -- Подтверждено: повторно прогоняем боевые процессы на ОРИГИНАЛЬНОМ баре bar_dt.
+        -- app.lightning_bar_dt фиксирует v_closed_bar_dt, app.confirm_disabled обходит дедуп
+        -- и не перезаписывает last_trade_bar_dt, app.confirm_group_{event,side} создаёт
+        -- только подтверждённую группу, app.confirm_group_sec — только подтверждённую бумагу (#990).
         PERFORM set_config('app.lightning_bar_dt', to_char(v_pend.bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
         PERFORM set_config('app.confirm_disabled', 'TRUE', TRUE);
         PERFORM set_config('app.confirm_group_event', v_pend.position_event, TRUE);
@@ -22069,7 +23594,7 @@ BEGIN
             PERFORM logic_trade_log(
                 v_pend.logic_id,
                 'trade.confirm_ok',
-                format('РЎРёРіРЅР°Р» %s/%s РїРѕРґС‚РІРµСЂР¶РґС‘РЅ, РЅРѕ СЃРґРµР»РєР° РЅРµ СЃРѕР·РґР°РЅР°',
+                format('Сигнал %s/%s подтверждён, но сделка не создана',
                     v_pend.position_event, v_pend.position_side),
                 jsonb_build_object('closed_bar', v_pend.bar_dt),
                 v_pend.security_id,
@@ -22079,7 +23604,7 @@ BEGIN
             PERFORM logic_trade_log(
                 v_pend.logic_id,
                 'trade.confirm_ok',
-                format('РЎРёРіРЅР°Р» %s/%s РїРѕРґС‚РІРµСЂР¶РґС‘РЅ: СЃРѕР·РґР°РЅРѕ %s',
+                format('Сигнал %s/%s подтверждён: создано %s',
                     v_pend.position_event, v_pend.position_side, v_created_this),
                 jsonb_build_object('closed_bar', v_pend.bar_dt),
                 v_pend.security_id,
@@ -22093,19 +23618,19 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_signal_confirm_finalize(JSONB) IS
-'Р¤РёРЅР°Р»РёР·Р°С‚РѕСЂ РѕС‚Р»РѕР¶РµРЅРЅС‹С… РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ СЃРёРіРЅР°Р»РѕРІ (#972, #984, #985): РїРѕ РёСЃС‚С‘РєС€РµРјСѓ РґРµРґР»Р°Р№РЅСѓ СЃСЂР°РІРЅРёРІР°РµС‚ '
-'С†РµРЅСѓ РЅР° РјРѕРјРµРЅС‚ РїСЂРѕРІРµСЂРєРё (Р¶РёРІР°СЏ С†РµРЅР° T-Bank РёР· p_live_prices Р»РёР±Рѕ, РµСЃР»Рё Р°СЂРіСѓРјРµРЅС‚ РЅРµ РїРµСЂРµРґР°РЅ, РґРѕР±СЂР°РЅРЅР°СЏ '
-'СЃР°РјРёРј С„РёРЅР°Р»РёР·Р°С‚РѕСЂРѕРј С‡РµСЂРµР· logic_live_prices; РёРЅР°С‡Рµ СЃРІРµС‡Р° logic_fresh_order_price) '
-'СЃ fire_price РїРѕ expected_dir Рё РїСЂРё РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРё РЅР°РїСЂР°РІР»РµРЅРёСЏ РїРѕРІС‚РѕСЂРЅРѕ РїСЂРѕРіРѕРЅСЏРµС‚ '
-'process_logic_trades / process_logic_terminal_signals РЅР° РёСЃС…РѕРґРЅРѕРј Р±Р°СЂРµ (app.confirm_disabled '
-'РѕР±С…РѕРґРёС‚ РґРµРґСѓРї, app.confirm_group_* вЂ” С‚РѕР»СЊРєРѕ РіСЂСѓРїРїСѓ). p_live_prices вЂ” jsonb {"<security_id>": price}.
-Р’С‹Р·С‹РІР°РµС‚СЃСЏ РёР· run_trade_cycle(), Р±РѕРµРІРѕРіРѕ С†РёРєР»Р° api/trade-runner.js Рё logic_lightning_run.';
+'Финализатор отложенных подтверждений сигналов (#972, #984, #985): по истёкшему дедлайну сравнивает '
+'цену на момент проверки (живая цена T-Bank из p_live_prices либо, если аргумент не передан, добранная '
+'самим финализатором через logic_live_prices; иначе свеча logic_fresh_order_price) '
+'с fire_price по expected_dir и при подтверждении направления повторно прогоняет '
+'process_logic_trades / process_logic_terminal_signals на исходном баре (app.confirm_disabled '
+'обходит дедуп, app.confirm_group_* — только группу). p_live_prices — jsonb {"<security_id>": price}.
+Вызывается из run_trade_cycle(), боевого цикла api/trade-runner.js и logic_lightning_run.';
 
 -- ============================================================
--- Р”РёР°РіРЅРѕСЃС‚РёРєР° В«РјРѕР»РЅРёРёВ» (#991): РїРѕС‡РµРјСѓ РЅР° Р±Р°СЂРµ РЅРµС‚ СЃРёРіРЅР°Р»РѕРІ вЂ” С‡С‚РѕР±С‹ РєРЅРѕРїРєР°
--- В«Р—Р°РїСЂРѕСЃРёС‚СЊ СЃРёРіРЅР°Р»С‹В» РїСЂРё РЅСѓР»Рµ РѕР±СЉСЏСЃРЅСЏР»Р° РїСЂРёС‡РёРЅСѓ, Р° РЅРµ РјРѕР»С‡Р°Р»Р°: РЅРµС‚ Р°РєС‚РёРІРЅС‹С…
--- СЃРёРіРЅР°Р»РѕРІ/Р±СѓРјР°Рі, РЅРµС‚РѕСЂРіРѕРІС‹Р№ РїРµСЂРёРѕРґ, РѕС€РёР±РєРё Р·Р°РіСЂСѓР·РєРё С†РµРЅ/СЃРёРіРЅР°Р»РѕРІ/СЃРґРµР»РѕРє,
--- РєРѕРіРґР° Р±С‹Р»Рё РїРѕСЃР»РµРґРЅРёРµ СЃРёРіРЅР°Р»С‹ РїРѕ Р»РѕРіРёРєРµ. РўРѕР»СЊРєРѕ С‡С‚РµРЅРёРµ, Р±РµР· Р·Р°С…РІР°С‚Р° Р»РѕРєР°.
+-- Диагностика «молнии» (#991): почему на баре нет сигналов — чтобы кнопка
+-- «Запросить сигналы» при нуле объясняла причину, а не молчала: нет активных
+-- сигналов/бумаг, неторговый период, ошибки загрузки цен/сигналов/сделок,
+-- когда были последние сигналы по логике. Только чтение, без захвата лока.
 -- ============================================================
 CREATE OR REPLACE FUNCTION logic_lightning_diagnostics(
     p_logic_id INTEGER,
@@ -22140,7 +23665,7 @@ BEGIN
     SELECT count(*) INTO v_pending
     FROM logic_signal_confirm_pending WHERE logic_id = p_logic_id;
 
-    -- РЎР°РјС‹Р№ СЃРІРµР¶РёР№ Р±Р°СЂ Р»РѕРіРёРєРё, РЅР° РєРѕС‚РѕСЂРѕРј СѓР¶Рµ РµСЃС‚СЊ СЃРёРіРЅР°Р»С‹ РІ С‚РµСЂРјРёРЅР°Р».
+    -- Самый свежий бар логики, на котором уже есть сигналы в терминал.
     SELECT bar_dt, cnt INTO v_last_signal_bar, v_last_signal_count
     FROM (
         SELECT bar_dt, count(*)::int AS cnt
@@ -22151,7 +23676,7 @@ BEGIN
         LIMIT 1
     ) s;
 
-    -- Р‘Р°СЂ, РєРѕС‚РѕСЂС‹Р№ С†РёРєР» СѓР¶Рµ РѕР±СЂР°Р±РѕС‚Р°Р» (РґРµРґСѓРї-РјР°СЂРєРµСЂ СЃР°РјРѕР№ Р»РѕРіРёРєРё).
+    -- Бар, который цикл уже обработал (дедуп-маркер самой логики).
     v_last_processed := NULLIF(
         btrim(COALESCE(get_logic_param_text(p_logic_id, 'terminal_signal_last_bar_dt'), '')),
         '');
@@ -22160,7 +23685,7 @@ BEGIN
         v_non_trading := logic_skip_signal_by_periods(p_logic_id, p_bar_dt);
     END IF;
 
-    -- РћС€РёР±РєРё РїРѕСЃР»РµРґРЅРёС… РїСЂРѕРіРѕРЅРѕРІ В«РјРѕР»РЅРёРёВ» (Р·Р° 2 С‡Р°СЃР°) вЂ” РїРѕС‡РµРјСѓ С‡Р°СЃС‚СЊ Р±СѓРјР°Рі РЅРµ РїРѕСЃС‡РёС‚Р°Р»Р°СЃСЊ.
+    -- Ошибки последних прогонов «молнии» (за 2 часа) — почему часть бумаг не посчиталась.
     SELECT
         count(*) FILTER (WHERE operation = 'lightning.prices_http_error'),
         count(*) FILTER (WHERE operation = 'lightning.signal_error'),
@@ -22171,7 +23696,7 @@ BEGIN
       AND created_at > now() - interval '2 hours'
       AND operation IN ('lightning.prices_http_error', 'lightning.signal_error', 'lightning.trade_error');
 
-    -- РџРѕСЃР»РµРґРЅРµРµ СЃРѕРѕР±С‰РµРЅРёРµ РѕР± РѕС€РёР±РєРµ (РґР»СЏ РїРѕРєР°Р·Р° РїСЂРёС‡РёРЅС‹ РІ UI).
+    -- Последнее сообщение об ошибке (для показа причины в UI).
     SELECT a.message INTO v_last_error
     FROM app_tech_log a
     WHERE a.logic_id = p_logic_id
@@ -22198,19 +23723,19 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_lightning_diagnostics(INTEGER, INTEGER, TIMESTAMP) IS
-'Р”РёР°РіРЅРѕСЃС‚РёРєР° В«РјРѕР»РЅРёРёВ» (#991): РїРѕС‡РµРјСѓ РЅР° Р·Р°РєСЂС‹С‚РѕРј Р±Р°СЂРµ РЅРµС‚ СЃРёРіРЅР°Р»РѕРІ вЂ” Р°РєС‚РёРІРЅС‹Рµ СЃРёРіРЅР°Р»С‹/Р±СѓРјР°РіРё, '
-'РЅРµС‚РѕСЂРіРѕРІС‹Р№ РїРµСЂРёРѕРґ, РѕС€РёР±РєРё Р·Р°РіСЂСѓР·РєРё С†РµРЅ/СЃРёРіРЅР°Р»РѕРІ/СЃРґРµР»РѕРє Р·Р° 2 С‡ Рё РїРѕСЃР»РµРґРЅРёР№ Р±Р°СЂ СЃ СЃРёРіРЅР°Р»Р°РјРё. '
-'РўРѕР»СЊРєРѕ С‡С‚РµРЅРёРµ, Р±РµР· Р·Р°С…РІР°С‚Р° advisory-lock.';
+'Диагностика «молнии» (#991): почему на закрытом баре нет сигналов — активные сигналы/бумаги, '
+'неторговый период, ошибки загрузки цен/сигналов/сделок за 2 ч и последний бар с сигналами. '
+'Только чтение, без захвата advisory-lock.';
 
 -- ============================================================
--- #1022: В«СЃРґРІРёРЅСѓС‚С‹Р№В» РўР¤ РґР»СЏ РєРЅРѕРїРєРё В«Р—Р°РїСЂРѕСЃРёС‚СЊ СЃРёРіРЅР°Р»С‹В» / РјРѕР»РЅРёРё.
--- Р СЏРґ Р±Р°СЂРѕРІ РўР¤ Р»РѕРіРёРєРё СЃРѕР±РёСЂР°РµС‚СЃСЏ РёР· РјРёРЅСѓС‚РѕРє С‚Р°Рє, С‡С‚Рѕ РџР РђР’Р«Р™ РєСЂР°Р№ РєР°Р¶РґРѕРіРѕ
--- Р±Р°СЂР° СЃРѕРІРїР°РґР°РµС‚ СЃ РїРѕСЃР»РµРґРЅРµР№ Р·Р°РєСЂС‹С‚РѕР№ РјРёРЅСѓС‚РѕР№ РјРѕРјРµРЅС‚Р° РЅР°Р¶Р°С‚РёСЏ (РЅР°РїСЂРёРјРµСЂ,
--- 15:07вЂ“15:22), Р° РЅРµ СЃ СЃРµС‚РєРѕР№ :00/:15/:30/:45. РЎРёРіРЅР°Р» СЃС‡РёС‚Р°РµС‚СЃСЏ РЅР° РїРѕСЃР»РµРґРЅРµРј
--- С‚Р°РєРѕРј Р±Р°СЂРµ. Р СЏРґ СЃСѓС‰РµСЃС‚РІСѓРµС‚ С‚РѕР»СЊРєРѕ РІРЅСѓС‚СЂРё РІС‹Р·РѕРІР°: С‡С‚РµРЅРёРµ prices РїРѕРґРјРµРЅСЏРµС‚СЃСЏ
--- РІСЂРµРјРµРЅРЅРѕР№ С‚Р°Р±Р»РёС†РµР№ (search_path = pg_temp, public) Рё СѓРґР°Р»СЏРµС‚СЃСЏ РґРѕ РєРѕРјРјРёС‚Р°;
--- РІ Р‘Р” РЅРёС‡РµРіРѕ РЅРµ СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ. РњРёРЅСѓС‚РєРё С‡РёС‚Р°СЋС‚СЃСЏ РёР· public.prices РєР°Рє РѕР±С‹С‡РЅРѕ Рё
--- РѕСЃС‚Р°СЋС‚СЃСЏ РІ Р±Р°Р·Рµ.
+-- #1022: «сдвинутый» ТФ для кнопки «Запросить сигналы» / молнии.
+-- Ряд баров ТФ логики собирается из минуток так, что ПРАВЫЙ край каждого
+-- бара совпадает с последней закрытой минутой момента нажатия (например,
+-- 15:07–15:22), а не с сеткой :00/:15/:30/:45. Сигнал считается на последнем
+-- таком баре. Ряд существует только внутри вызова: чтение prices подменяется
+-- временной таблицей (search_path = pg_temp, public) и удаляется до коммита;
+-- в БД ничего не сохраняется. Минутки читаются из public.prices как обычно и
+-- остаются в базе.
 -- ============================================================
 CREATE OR REPLACE FUNCTION logic_lightning_shifted_signals(
     p_logic_id INTEGER,
@@ -22247,8 +23772,8 @@ BEGIN
 
     v_shift_dt := p_anchor - (p_tf_sec * INTERVAL '1 second');
 
-    -- Р“Р»СѓР±РёРЅР° РёСЃС‚РѕСЂРёРё: РїРѕ РјР°РєСЃРёРјР°Р»СЊРЅРѕРјСѓ period РІ С„РѕСЂРјСѓР»Р°С… (+ РїСЂРѕРіСЂРµРІ),
-    -- СЃ Р·Р°РїР°СЃРѕРј Г—3 Рё РјРёРЅРёРјСѓРјРѕРј 120 Р±Р°СЂ (Longer periods need more warmup).
+    -- Глубина истории: по максимальному period в формулах (+ прогрев),
+    -- с запасом ×3 и минимумом 120 бар (Longer periods need more warmup).
     SELECT COALESCE(MAX(m.period), 0) INTO v_max_period
     FROM logic_indicator_signals lis
     CROSS JOIN LATERAL (
@@ -22266,12 +23791,12 @@ BEGIN
         RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_securities');
     END IF;
 
-    -- РЎРґРІРёРЅСѓС‚С‹Р№ СЂСЏРґ вЂ” С‚РѕР»СЊРєРѕ РЅР° РІСЂРµРјСЏ РІС‹Р·РѕРІР°.
+    -- Сдвинутый ряд — только на время вызова.
     DROP TABLE IF EXISTS pg_temp.prices;
     CREATE TEMP TABLE prices (LIKE public.prices INCLUDING DEFAULTS) ON COMMIT DROP;
     CREATE UNIQUE INDEX ON pg_temp.prices (security_id, timeframe_id, dt);
 
-    -- Р‘Р°СЂС‹ Р»РѕРіРёРєРё: РїСЂР°РІС‹Р№ РєСЂР°Р№ РєСЂР°С‚РµРЅ p_anchor, РјРёРЅСѓС‚РєРё РіСЂСѓРїРїРёСЂСѓСЋС‚СЃСЏ РІ Р±Р°СЂС‹.
+    -- Бары логики: правый край кратен p_anchor, минутки группируются в бары.
     INSERT INTO pg_temp.prices (
         security_id, timeframe_id, dt, open_price, high_price, low_price,
         close_price, volume, value, contract_prefix
@@ -22294,7 +23819,7 @@ BEGIN
     GROUP BY p.security_id, g.bar_dt
     HAVING g.bar_dt >= v_from;
 
-    -- Р”РѕРї. РўР¤ С„РѕСЂРјСѓР» (tf=): С‚РѕС‚ Р¶Рµ РїСЂРёС‘Рј, СЃРІРѕСЏ РіР»СѓР±РёРЅР° РїРѕ СЃРІРѕРµРјСѓ СЃРµРєСѓРЅРґРЅРѕРјСѓ С€Р°РіСѓ.
+    -- Доп. ТФ формул (tf=): тот же приём, своя глубина по своему секундному шагу.
     FOR v_xtf IN
         SELECT x.tf_id AS tf_id, t.sec AS sec
         FROM logic_signal_extra_tf_ids(p_logic_id, p_tf_id) x
@@ -22328,20 +23853,20 @@ BEGIN
 
     SELECT count(*) INTO v_bars FROM pg_temp.prices;
 
-    -- Р”Р°Р»СЊС€Рµ РІСЃРµ С‡С‚РµРЅРёСЏ prices РІРЅСѓС‚СЂРё РѕС†РµРЅРєРё СЃРёРіРЅР°Р»РѕРІ РёРґСѓС‚ РІ СЃРґРІРёРЅСѓС‚С‹Р№ СЂСЏРґ.
+    -- Дальше все чтения prices внутри оценки сигналов идут в сдвинутый ряд.
     PERFORM set_config('search_path', 'pg_temp, public', TRUE);
     PERFORM set_config('app.lightning_bar_dt',
                        to_char(v_shift_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
     PERFORM set_config('app.lightning_ignore_dedup', '1', TRUE);
-    -- #1022: РЅРµ РґРѕРіСЂСѓР¶Р°С‚СЊ/РЅРµ СЂРµР·СЌРјРїР»РёС‚СЊ РЅР°С‚РёРІРЅС‹Рµ Р±Р°СЂС‹ РІ СЃРґРІРёРЅСѓС‚С‹Р№ СЂСЏРґ.
+    -- #1022: не догружать/не резэмплить нативные бары в сдвинутый ряд.
     PERFORM set_config('app.lightning_skip_refresh', '1', TRUE);
-    -- #1022: РјР°СЂРєРµСЂ РѕР±СЂР°Р±РѕС‚Р°РЅРЅРѕРіРѕ Р±Р°СЂР° С†РёРєР»Р° РЅРµ РґРѕР»Р¶РµРЅ СЃРґРІРёРіР°С‚СЊСЃСЏ СЃРґРІРёРЅСѓС‚С‹Рј РўР¤ вЂ”
-    -- РёРЅР°С‡Рµ С†РёРєР» РїСЂРѕРїСѓСЃС‚РёС‚ СЃР»РµРґСѓСЋС‰РёР№ РЅР°СЃС‚РѕСЏС‰РёР№ Р±Р°СЂ (РЅР°РїСЂРёРјРµСЂ, 15:30).
+    -- #1022: маркер обработанного бара цикла не должен сдвигаться сдвинутым ТФ —
+    -- иначе цикл пропустит следующий настоящий бар (например, 15:30).
     v_prev_marker := NULLIF(btrim(COALESCE(
         get_logic_param_text(p_logic_id, 'terminal_signal_last_bar_dt'), '')), '');
     v_created := process_logic_terminal_signals(p_logic_id);
     IF v_prev_marker IS NULL THEN
-        -- РЈРґР°Р»СЏРµРј С‚РѕР»СЊРєРѕ СЃРІРѕР№ СЃРґРІРёРЅСѓС‚С‹Р№ РјР°СЂРєРµСЂ вЂ” Р·Р°РїРёСЃСЊ Р±РѕРµРІРѕРіРѕ С†РёРєР»Р° РЅРµ С‚СЂРѕРіР°РµРј.
+        -- Удаляем только свой сдвинутый маркер — запись боевого цикла не трогаем.
         DELETE FROM logic_params
         WHERE logic_id = p_logic_id
           AND param_key = 'terminal_signal_last_bar_dt'
@@ -22380,19 +23905,19 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_lightning_shifted_signals(INTEGER, INTEGER, INTEGER, TIMESTAMP) IS
-'#1022: СЃС‡РёС‚Р°РµС‚ СЃРёРіРЅР°Р»С‹ Р»РѕРіРёРєРё РЅР° В«СЃРґРІРёРЅСѓС‚РѕРјВ» РўР¤ вЂ” Р±Р°СЂС‹ СЃРѕР±РёСЂР°СЋС‚СЃСЏ РёР· РјРёРЅСѓС‚РѕРє С‚Р°Рє, '
-'С‡С‚Рѕ РїСЂР°РІС‹Р№ РєСЂР°Р№ СЃРѕРІРїР°РґР°РµС‚ СЃ РїРѕСЃР»РµРґРЅРµР№ Р·Р°РєСЂС‹С‚РѕР№ РјРёРЅСѓС‚РѕР№ (РЅРµ СЃРµС‚РєР° :00/:15/...); '
-'СЂСЏРґ Р¶РёРІС‘С‚ С‚РѕР»СЊРєРѕ РІРЅСѓС‚СЂРё РІС‹Р·РѕРІР° (temp prices + search_path) Рё РІ Р‘Р” РЅРµ СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ.';
+'#1022: считает сигналы логики на «сдвинутом» ТФ — бары собираются из минуток так, '
+'что правый край совпадает с последней закрытой минутой (не сетка :00/:15/...); '
+'ряд живёт только внутри вызова (temp prices + search_path) и в БД не сохраняется.';
 
 
 -- ============================================================
--- РњРѕР»РЅРёСЏ (#960): СЂСѓС‡РЅР°СЏ РїСЂРѕРІРµСЂРєР° СЃРёРіРЅР°Р»РѕРІ Р»РѕРіРёРєРё РЅР° РјРѕРјРµРЅС‚ РЅР°Р¶Р°С‚РёСЏ.
--- Р’РёСЂС‚СѓР°Р»СЊРЅС‹Р№ Р±Р°СЂ Р»РѕРіРёРєРё = РЅР°С‡Р°Р»Рѕ РёРЅС‚РµСЂРІР°Р»Р° РµС‘ РўР¤, РІ РєРѕС‚РѕСЂРѕРј РЅР°С…РѕРґРёС‚СЃСЏ
--- РјРѕРјРµРЅС‚ РЅР°Р¶Р°С‚РёСЏ (РїРѕСЃР»РµРґРЅРёР№ Р±Р°СЂ С‡Р°СЃС‚РёС‡РЅС‹Р№ вЂ” РЅРµ Р¶РґС‘Рј РµРіРѕ Р·Р°РєСЂС‹С‚РёСЏ).
--- Р”Р°РЅРЅС‹Рµ: РјРёРЅСѓС‚РЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє (M1/M2/M5) РґРѕРіСЂСѓР¶Р°РµС‚СЃСЏ HTTP РґРѕ РјРѕРјРµРЅС‚Р° РЅР°Р¶Р°С‚РёСЏ
--- Рё СЂРµР·СЌРјРїР»РёС‚СЃСЏ РІ РўР¤ Р»РѕРіРёРєРё Рё РґРѕРї. РўР¤ С„РѕСЂРјСѓР»; Р±РѕРµРІС‹Рµ РїСЂРѕС†РµСЃСЃС‹ СЃР°РјРё
--- РґРѕСЃС‡РёС‚С‹РІР°СЋС‚ РёРЅРґРёРєР°С‚РѕСЂС‹ РґРѕ РІРёСЂС‚СѓР°Р»СЊРЅРѕРіРѕ Р±Р°СЂР°, РїСЂРёРјРµРЅСЏСЋС‚ РґРµРґСѓРї
--- (РЅРµ РґСѓР±Р»РёСЂРѕРІР°С‚СЊ СЃ Р±РѕРµРІС‹Рј С†РёРєР»РѕРј) Рё РёСЃРїРѕР»РЅСЏСЋС‚ РїРѕ РЅР°СЃС‚СЂРѕР№РєР°Рј Р»РѕРіРёРєРё.
+-- Молния (#960): ручная проверка сигналов логики на момент нажатия.
+-- Виртуальный бар логики = начало интервала её ТФ, в котором находится
+-- момент нажатия (последний бар частичный — не ждём его закрытия).
+-- Данные: минутный источник (M1/M2/M5) догружается HTTP до момента нажатия
+-- и резэмплится в ТФ логики и доп. ТФ формул; боевые процессы сами
+-- досчитывают индикаторы до виртуального бара, применяют дедуп
+-- (не дублировать с боевым циклом) и исполняют по настройкам логики.
 -- ============================================================
 CREATE OR REPLACE FUNCTION logic_lightning_run(
     p_logic_id INTEGER,
@@ -22423,8 +23948,8 @@ DECLARE
     v_pend_created INTEGER := 0;
     v_max_confirm INTEGER := 0;
     v_err TEXT;
-    v_shift JSONB;               -- #1022: СЂРµР·СѓР»СЊС‚Р°С‚ СЃРґРІРёРЅСѓС‚РѕРіРѕ РўР¤
-    v_shift_dt TIMESTAMP;        -- #1022: Р±Р°СЂ СЃРґРІРёРЅСѓС‚РѕРіРѕ СЂСЏРґР°
+    v_shift JSONB;               -- #1022: результат сдвинутого ТФ
+    v_shift_dt TIMESTAMP;        -- #1022: бар сдвинутого ряда
 BEGIN
     SELECT l.id, l.account_id, a.account_type,
            COALESCE(l.is_enabled, FALSE) AS is_enabled,
@@ -22449,11 +23974,11 @@ BEGIN
         RETURN jsonb_build_object('ok', FALSE, 'reason', 'invalid_timeframe');
     END IF;
 
-    -- РњРѕРјРµРЅС‚ РЅР°Р¶Р°С‚РёСЏ РЅРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ РІ Р±СѓРґСѓС‰РµРј.
+    -- Момент нажатия не может быть в будущем.
     v_moment := LEAST(COALESCE(p_at, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP);
-    -- #990: СЃС‡РёС‚Р°РµРј РЅР° РїРѕСЃР»РµРґРЅРµРј Р—РђРљР Р«РўРћРњ Р±Р°СЂРµ РўР¤ (РєР°Рє Р±РѕРµРІРѕР№ С†РёРєР»), Р° РЅРµ РЅР° С‚РµРєСѓС‰РµРј
-    -- С‡Р°СЃС‚РёС‡РЅРѕРј вЂ” РёРЅР°С‡Рµ РєРЅРѕРїРєР° РЅР° СЃС‚СЂРѕРєРµ Р»РѕРіРёРєРё РїРѕРєР°Р·С‹РІР°РµС‚ СЃРёРіРЅР°Р»С‹ РЅР° РЅРµР·Р°РєСЂС‹С‚РѕРј Р±Р°СЂРµ
-    -- Рё СЂР°СЃС…РѕРґРёС‚СЃСЏ СЃ С‚РµРј, С‡С‚Рѕ РїСѓР±Р»РёРєСѓРµС‚ С†РёРєР» РЅР° Р·Р°РєСЂС‹С‚РёРё СЃРІРµС‡Рё.
+    -- #990: считаем на последнем ЗАКРЫТОМ баре ТФ (как боевой цикл), а не на текущем
+    -- частичном — иначе кнопка на строке логики показывает сигналы на незакрытом баре
+    -- и расходится с тем, что публикует цикл на закрытии свечи.
     v_bar_dt := logic_last_closed_bar_dt(v_tf_sec, v_moment);
     IF v_bar_dt IS NULL THEN
         RETURN jsonb_build_object('ok', FALSE, 'reason', 'no_closed_bar');
@@ -22483,7 +24008,7 @@ BEGIN
         );
     END IF;
 
-    -- РњРёРЅСѓС‚РЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє: РЅР°РёРјРµРЅСЊС€РёР№ РёР· РґРѕСЃС‚СѓРїРЅС‹С… M1/M2/M5.
+    -- Минутный источник: наименьший из доступных M1/M2/M5.
     SELECT id, sec INTO v_src_id, v_src_sec
     FROM timeframes
     WHERE sec >= 60 AND sec <= 300
@@ -22496,11 +24021,11 @@ BEGIN
     v_date_from := v_bar_dt::date;
     v_date_to   := v_moment::date;
 
-    -- #987: СЃРµСЂРёР°Р»РёР·Р°С†РёСЏ СЃ Р±РѕРµРІС‹Рј С†РёРєР»РѕРј РѕРґРЅРёРј РѕР±С‰РёРј advisory-lock. РРЅР°С‡Рµ РґР»РёРЅРЅС‹Рµ
-    -- С‚СЂР°РЅР·Р°РєС†РёРё В«РјРѕР»РЅРёРёВ» Рё С†РёРєР»Р° РІСЃС‚Р°РІР»СЏСЋС‚ РѕРґРЅРё Рё С‚Рµ Р¶Рµ СЃРІРµС‡Рё `prices` Рё РєРѕРЅС„Р»РёРєС‚СѓСЋС‚
-    -- (РґРµРґР»РѕРєРё/РѕР¶РёРґР°РЅРёРµ Р»РѕРєРѕРІ в†’ Р·Р°РїСЂРѕСЃ РєРЅРѕРїРєРё Р·Р°РІРёСЃР°РµС‚). xact-lock РѕСЃРІРѕР±РѕР¶РґР°РµС‚СЃСЏ
-    -- Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё РІ РєРѕРЅС†Рµ РѕРїРµСЂР°С‚РѕСЂР°, СѓС‚РµС‡РєРё РЅРµС‚; С‚РѕС‚ Р¶Рµ РєР»СЋС‡ РґРµСЂР¶Р°С‚
-    -- api/trade-runner.js Рё run_trade_cycle(). РџСЂРё Р·Р°РЅСЏС‚РѕСЃС‚Рё РІРѕР·РІСЂР°С‰Р°РµРј busy.
+    -- #987: сериализация с боевым циклом одним общим advisory-lock. Иначе длинные
+    -- транзакции «молнии» и цикла вставляют одни и те же свечи `prices` и конфликтуют
+    -- (дедлоки/ожидание локов → запрос кнопки зависает). xact-lock освобождается
+    -- автоматически в конце оператора, утечки нет; тот же ключ держат
+    -- api/trade-runner.js и run_trade_cycle(). При занятости возвращаем busy.
     IF NOT pg_try_advisory_xact_lock(hashtext('multilogictrade_run_trade_cycle')) THEN
         RETURN jsonb_build_object(
             'ok', FALSE, 'reason', 'busy', 'busy', TRUE,
@@ -22512,15 +24037,15 @@ BEGIN
         );
     END IF;
 
-    -- T-Bank РјРѕР¶РµС‚ РґРѕР»РіРѕ РЅРµ РѕС‚РІРµС‡Р°С‚СЊ: Р¶РґС‘Рј РЅРµ Р±РѕР»РµРµ 1,5 СЃ Рё СѓС…РѕРґРёРј РІ MOEX fallback.
-    -- Р—Р°РґР°С‘Рј С‚Р°Р№РјР°СѓС‚ С‡РµСЂРµР· session-РїРµСЂРµРјРµРЅРЅСѓСЋ (transaction-local), Р° РќР• http_set_curlopt:
-    -- РЅР°СЃС‚СЂРѕР№РєРё curl Р¶РёРІСѓС‚ РЅР° СЃРѕРµРґРёРЅРµРЅРёРё Рё, РїРµСЂРµРёСЃРїРѕР»СЊР·СѓСЏСЃСЊ РїСѓР»РѕРј, В«РїСЂРѕС‚РµРєР°Р»РёВ» РІ РѕР±С‹С‡РЅСѓСЋ
-    -- Р·Р°РіСЂСѓР·РєСѓ СЃРІРµС‡РµР№ (С‚Р°Р№Рј-Р°СѓС‚ 1,5 СЃ) в†’ РјР°СЃСЃРѕРІС‹Рµ 502 РЅР° /api/prices/refresh.
-    -- configure_http_ssl() РїСЂРёРјРµРЅСЏРµС‚ СЌС‚Рѕ Р·РЅР°С‡РµРЅРёРµ С‚РѕР»СЊРєРѕ Рє РІС‹Р·РѕРІР°Рј РІРЅСѓС‚СЂРё СЌС‚РѕРіРѕ РѕРїРµСЂР°С‚РѕСЂР°.
+    -- T-Bank может долго не отвечать: ждём не более 1,5 с и уходим в MOEX fallback.
+    -- Задаём таймаут через session-переменную (transaction-local), а НЕ http_set_curlopt:
+    -- настройки curl живут на соединении и, переиспользуясь пулом, «протекали» в обычную
+    -- загрузку свечей (тайм-аут 1,5 с) → массовые 502 на /api/prices/refresh.
+    -- configure_http_ssl() применяет это значение только к вызовам внутри этого оператора.
     PERFORM set_config('app.http_timeout_ms', '1500', TRUE);
 
-    -- #972: С„РёРЅР°Р»РёР·РёСЂСѓРµРј СѓР¶Рµ СЃРѕР·СЂРµРІС€РёРµ РѕС‚Р»РѕР¶РµРЅРЅС‹Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ (РІРЅРѕРІСЊ СЃРѕР·РґР°РЅРЅС‹Рµ
-    -- РїСЂРё СЌС‚РѕРј РїСЂРѕРіРѕРЅРµ РёРјРµСЋС‚ deadline РІ Р±СѓРґСѓС‰РµРј вЂ” СЃСЋРґР° РЅРµ РїРѕРїР°РґР°СЋС‚).
+    -- #972: финализируем уже созревшие отложенные подтверждения (вновь созданные
+    -- при этом прогоне имеют deadline в будущем — сюда не попадают).
     IF NOT p_log_only THEN
         BEGIN
             PERFORM logic_signal_confirm_finalize();
@@ -22530,20 +24055,20 @@ BEGIN
         END;
     END IF;
 
-    -- #990: СЃРєРѕР»СЊРєРѕ РѕС‚Р»РѕР¶РµРЅРЅС‹С… РїРѕРґС‚РІРµСЂР¶РґРµРЅРёР№ (logic_signal_confirm_pending) РґРѕР±Р°РІРёС‚
-    -- СЌС‚РѕС‚ РїСЂРѕРіРѕРЅ вЂ” РЅСѓР¶РЅРѕ РєРЅРѕРїРєРµ В«Р—Р°РїСЂРѕСЃРёС‚СЊ СЃРёРіРЅР°Р»С‹В», С‚.Рє. open-СЃРёРіРЅР°Р»С‹ СЃ confirm_sec
-    -- РІС‹РґР°СЋС‚СЃСЏ РІ С‚РµСЂРјРёРЅР°Р»/РЅР° СЃРґРµР»РєСѓ РЅРµ СЃСЂР°Р·Сѓ, Р° РїРѕСЃР»Рµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ С†РµРЅС‹.
+    -- #990: сколько отложенных подтверждений (logic_signal_confirm_pending) добавит
+    -- этот прогон — нужно кнопке «Запросить сигналы», т.к. open-сигналы с confirm_sec
+    -- выдаются в терминал/на сделку не сразу, а после подтверждения цены.
     SELECT count(*) INTO v_pend_before
     FROM logic_signal_confirm_pending WHERE logic_id = p_logic_id;
 
-    -- #993: РЅРµ РїРµСЂРµРєР°С‡РёРІР°С‚СЊ СѓР¶Рµ Р·Р°РіСЂСѓР¶РµРЅРЅС‹Рµ РјРёРЅСѓС‚РєРё. РџРѕСЃР»РµРґРЅСЏСЏ РЅСѓР¶РЅР°СЏ РјРёРЅСѓС‚Р° вЂ”
-    -- РєРѕРЅРµС† Р·Р°РєСЂС‹С‚РѕРіРѕ Р±Р°СЂР° (bar_dt + tf_sec - src_sec), С‚.Рµ. РїРѕСЃР»РµРґРЅСЏСЏ РјРёРЅСѓС‚Р°,
-    -- РІС…РѕРґСЏС‰Р°СЏ РІ РёРЅС‚РµСЂРІР°Р» Р·Р°РєСЂС‹С‚РѕРіРѕ Р±Р°СЂР°. Р•СЃР»Рё РѕРЅР° СѓР¶Рµ РІ prices вЂ” HTTP РїСЂРѕРїСѓСЃРєР°РµРј.
+    -- #993: не перекачивать уже загруженные минутки. Последняя нужная минута —
+    -- конец закрытого бара (bar_dt + tf_sec - src_sec), т.е. последняя минута,
+    -- входящая в интервал закрытого бара. Если она уже в prices — HTTP пропускаем.
     v_need_last_min := v_bar_dt
         + (GREATEST(v_tf_sec - v_src_sec, 0) * INTERVAL '1 second');
 
-    -- РџРѕРґРіРѕС‚РѕРІРєР° РґР°РЅРЅС‹С… РЅР° РІРёСЂС‚СѓР°Р»СЊРЅС‹Р№ Р±Р°СЂ: СЃРІРµР¶РёРµ РјРёРЅСѓС‚С‹ + СЂРµР·ample РІ РўР¤ Р»РѕРіРёРєРё
-    -- Рё РґРѕРї. РўР¤ С„РѕСЂРјСѓР» СЃРёРіРЅР°Р»РѕРІ (tf= РІ С„РѕСЂРјСѓР»Р°С…).
+    -- Подготовка данных на виртуальный бар: свежие минуты + резample в ТФ логики
+    -- и доп. ТФ формул сигналов (tf= в формулах).
     FOR v_sec IN
         SELECT security_id
         FROM logic_securities
@@ -22551,8 +24076,8 @@ BEGIN
         ORDER BY security_id
     LOOP
         v_loaded := FALSE;
-        -- РџСЂРѕРїСѓСЃРєР°РµРј HTTP, РµСЃР»Рё РјРёРЅСѓС‚РєРё СѓР¶Рµ РїРѕРєСЂС‹РІР°СЋС‚ Р·Р°РєСЂС‹С‚С‹Р№ Р±Р°СЂ РР›Р СЃР°Рј Р·Р°РєСЂС‹С‚С‹Р№
-        -- Р±Р°СЂ СѓР¶Рµ СЃРѕР±СЂР°РЅ (Сѓ РЅРµР»РёРєРІРёРґРЅС‹С… Р±СѓРјР°Рі РјРёРЅСѓС‚С‹ РјРѕРіСѓС‚ Р·Р°РєР°РЅС‡РёРІР°С‚СЊСЃСЏ СЂР°РЅСЊС€Рµ).
+        -- Пропускаем HTTP, если минутки уже покрывают закрытый бар ИЛИ сам закрытый
+        -- бар уже собран (у неликвидных бумаг минуты могут заканчиваться раньше).
         IF NOT EXISTS (
             SELECT 1 FROM prices p
             WHERE p.security_id = v_sec.security_id
@@ -22606,8 +24131,8 @@ BEGIN
             IF v_xtf.tf_id IS NULL OR v_xtf.tf_id = v_tf_id OR v_xtf.tf_id <= 0 THEN
                 CONTINUE;
             END IF;
-            -- #993: СЂРµР·СЌРјРїР»РёРј РґРѕРї. РўР¤ С‚РѕР»СЊРєРѕ РµСЃР»Рё РѕР±РЅРѕРІРёР»Рё РјРёРЅСѓС‚РєРё РёР»Рё РЅР° РµРіРѕ
-            -- Р·Р°РєСЂС‹С‚РѕРј Р±Р°СЂРµ РµС‰С‘ РЅРµС‚ СЃРІРµС‡Рё (РёРЅР°С‡Рµ вЂ” РїРѕРІС‚РѕСЂРЅР°СЏ СЃР±РѕСЂРєР° Р·СЂСЏ).
+            -- #993: резэмплим доп. ТФ только если обновили минутки или на его
+            -- закрытом баре ещё нет свечи (иначе — повторная сборка зря).
             IF v_loaded OR NOT EXISTS (
                 SELECT 1 FROM prices p
                 WHERE p.security_id = v_sec.security_id
@@ -22626,9 +24151,9 @@ BEGIN
         END LOOP;
     END LOOP;
 
-    -- РСЃРїРѕР»РЅРµРЅРёРµ РїРѕ РЅР°СЃС‚СЂРѕР№РєР°Рј: Р±РѕРµРІС‹Рµ РїСЂРѕС†РµСЃСЃС‹ (С‡РµСЂРµР· session-РїРµСЂРµРјРµРЅРЅСѓСЋ
-    -- app.lightning_bar_dt) СЂР°Р±РѕС‚Р°СЋС‚ РЅР° РІРёСЂС‚СѓР°Р»СЊРЅРѕРј Р±Р°СЂРµ. Р”РµРґСѓРї В«РЅРµ РґСѓР±Р»РёСЂРѕРІР°С‚СЊВ»
-    -- РѕР±РµСЃРїРµС‡РёРІР°СЋС‚ СЃР°РјРё РїСЂРѕС†РµСЃСЃС‹ (СЃСЂР°РІРЅРµРЅРёРµ v_bar_dt <= last_* Рё ON CONFLICT).
+    -- Исполнение по настройкам: боевые процессы (через session-переменную
+    -- app.lightning_bar_dt) работают на виртуальном баре. Дедуп «не дублировать»
+    -- обеспечивают сами процессы (сравнение v_bar_dt <= last_* и ON CONFLICT).
     IF NOT p_log_only AND v_logic.is_enabled THEN
         BEGIN
             PERFORM set_config('app.lightning_bar_dt', to_char(v_bar_dt, 'YYYY-MM-DD"T"HH24:MI:SS'), TRUE);
@@ -22644,10 +24169,10 @@ BEGIN
 
     IF NOT p_log_only AND v_logic.use_sig THEN
         BEGIN
-            -- #1022: СЃРёРіРЅР°Р»С‹ СЃС‡РёС‚Р°СЋС‚СЃСЏ РЅР° В«СЃРґРІРёРЅСѓС‚РѕРјВ» РўР¤ вЂ” СЂСЏРґ РёР· РјРёРЅСѓС‚РѕРє, Сѓ
-            -- РєРѕС‚РѕСЂРѕРіРѕ РїСЂР°РІС‹Р№ РєСЂР°Р№ СЃРѕРІРїР°РґР°РµС‚ СЃ РїРѕСЃР»РµРґРЅРµР№ Р·Р°РєСЂС‹С‚РѕР№ РјРёРЅСѓС‚РѕР№
-            -- (Р° РЅРµ СЃ СЃРµС‚РєРѕР№ :00/:15/:30/:45). Р СЏРґ РІСЂРµРјРµРЅРЅС‹Р№: Р¶РёРІС‘С‚ РІРЅСѓС‚СЂРё
-            -- РІС‹Р·РѕРІР° (temp prices), РІ Р‘Р” РЅРµ СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ.
+            -- #1022: сигналы считаются на «сдвинутом» ТФ — ряд из минуток, у
+            -- которого правый край совпадает с последней закрытой минутой
+            -- (а не с сеткой :00/:15/:30/:45). Ряд временный: живёт внутри
+            -- вызова (temp prices), в БД не сохраняется.
             v_shift := logic_lightning_shifted_signals(
                 p_logic_id, v_tf_id, v_tf_sec, date_trunc('minute', v_moment)
             );
@@ -22670,16 +24195,16 @@ BEGIN
         END;
     END IF;
 
-    -- #990/#1022: СЃРєРѕР»СЊРєРѕ СЃРёРіРЅР°Р»РѕРІ РЅР° СЃРґРІРёРЅСѓС‚РѕРј Р±Р°СЂРµ РІСЃРµРіРѕ (РІ С‚.С‡. СѓР¶Рµ
-    -- СЃРѕР·РґР°РЅРЅС‹С… С†РёРєР»РѕРј) вЂ” РєРЅРѕРїРєР° РїРѕРєР°Р·С‹РІР°РµС‚ СЌС‚Рѕ С‡РёСЃР»Рѕ, РґР°Р¶Рµ РµСЃР»Рё РЅРѕРІС‹С… РЅРµС‚.
+    -- #990/#1022: сколько сигналов на сдвинутом баре всего (в т.ч. уже
+    -- созданных циклом) — кнопка показывает это число, даже если новых нет.
     IF v_logic.use_sig AND v_shift_dt IS NOT NULL THEN
         SELECT count(*) INTO v_term_on_bar
         FROM logic_terminal_signals
         WHERE logic_id = p_logic_id AND bar_dt = v_shift_dt;
     END IF;
 
-    -- #990: СЃРєРѕР»СЊРєРѕ СЃРёРіРЅР°Р»РѕРІ СѓС€Р»Рѕ РІ РѕС‚Р»РѕР¶РµРЅРЅРѕРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ Р·Р° СЌС‚РѕС‚ РїСЂРѕРіРѕРЅ, Рё РѕРєРЅРѕ
-    -- РѕР¶РёРґР°РЅРёСЏ (РјР°РєСЃ. confirm_sec РіСЂСѓРїРїС‹) вЂ” С‡С‚РѕР±С‹ РєРЅРѕРїРєР° РїРѕРєР°Р·Р°Р»Р° СЃС‚Р°С‚СѓСЃ Рё РґРѕР¶РґР°Р»Р°СЃСЊ.
+    -- #990: сколько сигналов ушло в отложенное подтверждение за этот прогон, и окно
+    -- ожидания (макс. confirm_sec группы) — чтобы кнопка показала статус и дождалась.
     SELECT count(*) INTO v_pend_after
     FROM logic_signal_confirm_pending WHERE logic_id = p_logic_id;
     v_pend_created := GREATEST(0, v_pend_after - v_pend_before);
@@ -22718,23 +24243,23 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_lightning_run(INTEGER, TIMESTAMP, BOOLEAN) IS
-'РњРѕР»РЅРёСЏ (#960): СЂСѓС‡РЅР°СЏ РїСЂРѕРІРµСЂРєР° СЃРёРіРЅР°Р»РѕРІ Р»РѕРіРёРєРё РЅР° РїРѕСЃР»РµРґРЅРµРј Р—РђРљР Р«РўРћРњ Р±Р°СЂРµ РўР¤ (РєР°Рє Р±РѕРµРІРѕР№ '
-'С†РёРєР»; #990 вЂ” СЂР°РЅСЊС€Рµ Р±СЂР°Р»СЃСЏ С‚РµРєСѓС‰РёР№ С‡Р°СЃС‚РёС‡РЅС‹Р№ Р±Р°СЂ Рё СЂР°СЃС…РѕРґРёР»СЃСЏ СЃ С†РёРєР»РѕРј). Р”РѕРіСЂСѓР¶Р°РµС‚ РјРёРЅСѓС‚РЅС‹Рµ '
-'СЃРІРµС‡Рё РґРѕ p_at, СЂРµР·СЌРјРїР»РёС‚ РёС… РІ РўР¤ Р»РѕРіРёРєРё Рё РґРѕРї. РўР¤, Р·Р°С‚РµРј Р±РѕРµРІС‹Рµ РїСЂРѕС†РµСЃСЃС‹ (С‡РµСЂРµР· '
-'session-РїРµСЂРµРјРµРЅРЅСѓСЋ app.lightning_bar_dt) РїСЂРёРјРµРЅСЏСЋС‚ РґРµРґСѓРї Рё РёСЃРїРѕР»РЅСЏСЋС‚: '
-'РІРєР»СЋС‡С‘РЅРЅР°СЏ Р»РѕРіРёРєР° вЂ” СЃРґРµР»РєР°, use_as_terminal_signal вЂ” СЃРёРіРЅР°Р» РІ С‚РµСЂРјРёРЅР°Р». '
-'#1022: СЃРёРіРЅР°Р»С‹ СЃС‡РёС‚Р°СЋС‚СЃСЏ РЅР° В«СЃРґРІРёРЅСѓС‚РѕРјВ» РўР¤ (Р±Р°СЂС‹ РёР· РјРёРЅСѓС‚РѕРє, РїСЂР°РІС‹Р№ РєСЂР°Р№ вЂ” РїРѕСЃР»РµРґРЅСЏСЏ '
-'Р·Р°РєСЂС‹С‚Р°СЏ РјРёРЅСѓС‚Р°), СЂСЏРґ РІСЂРµРјРµРЅРЅС‹Р№ Рё РІ Р‘Р” РЅРµ СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ; СЃРґРµР»РєРё вЂ” РїРѕ РѕР±С‹С‡РЅРѕРјСѓ Р·Р°РєСЂС‹С‚РѕРјСѓ Р±Р°СЂСѓ. '
-'p_log_only=TRUE вЂ” С‚РѕР»СЊРєРѕ РїРѕРґРіРѕС‚РѕРІРєР° РґР°РЅРЅС‹С… Р±РµР· РґРµР№СЃС‚РІРёР№. '
-'#987: Р±РµСЂС‘С‚ РѕР±С‰РёР№ advisory-lock Р±РѕРµРІРѕРіРѕ С†РёРєР»Р° (multilogictrade_run_trade_cycle); РїСЂРё Р·Р°РЅСЏС‚РѕСЃС‚Рё '
-'РІРѕР·РІСЂР°С‰Р°РµС‚ {ok:false,reason:''busy''} вЂ” РёРЅР°С‡Рµ РјРѕР»РЅРёСЏ Рё С†РёРєР» РєРѕРЅС„Р»РёРєС‚СѓСЋС‚ РЅР° СЃРІРµС‡Р°С… `prices`.';
+'Молния (#960): ручная проверка сигналов логики на последнем ЗАКРЫТОМ баре ТФ (как боевой '
+'цикл; #990 — раньше брался текущий частичный бар и расходился с циклом). Догружает минутные '
+'свечи до p_at, резэмплит их в ТФ логики и доп. ТФ, затем боевые процессы (через '
+'session-переменную app.lightning_bar_dt) применяют дедуп и исполняют: '
+'включённая логика — сделка, use_as_terminal_signal — сигнал в терминал. '
+'#1022: сигналы считаются на «сдвинутом» ТФ (бары из минуток, правый край — последняя '
+'закрытая минута), ряд временный и в БД не сохраняется; сделки — по обычному закрытому бару. '
+'p_log_only=TRUE — только подготовка данных без действий. '
+'#987: берёт общий advisory-lock боевого цикла (multilogictrade_run_trade_cycle); при занятости '
+'возвращает {ok:false,reason:''busy''} — иначе молния и цикл конфликтуют на свечах `prices`.';
 
 -- ============================================================
--- РЎРЅРёРјРѕРє (#990): СЃРёРіРЅР°Р»С‹ Р»РѕРіРёРєРё РЅР° РїРѕСЃР»РµРґРЅРµРј Р—РђРљР Р«РўРћРњ Р±Р°СЂРµ РµС‘ РўР¤ Р‘Р•Р— Р·Р°С…РІР°С‚Р°
--- advisory-lock Р±РѕРµРІРѕРіРѕ С†РёРєР»Р°. РќСѓР¶РµРЅ РєРЅРѕРїРєРµ В«Р—Р°РїСЂРѕСЃРёС‚СЊ СЃРёРіРЅР°Р»С‹В»: РєРѕРіРґР° С†РёРєР» Р·Р°РЅСЏС‚
--- (Р»РѕРє СѓРґРµСЂР¶РёРІР°РµС‚СЃСЏ РґРѕР»РіРёРј РїСЂРѕРіСЂРµРІРѕРј С†РµРЅ РїРѕ Р±СѓРјР°РіР°Рј вЂ” РЅР° M1 СЌС‚Рѕ РјРёРЅСѓС‚С‹), РІРјРµСЃС‚Рѕ
--- РѕС€РёР±РєРё 409 РєРЅРѕРїРєР° РїРѕР»СѓС‡Р°РµС‚ Р°РєС‚СѓР°Р»СЊРЅС‹Рµ С†РёС„СЂС‹ СЃ С‚РѕРіРѕ Р±Р°СЂР°, РєРѕС‚РѕСЂС‹Р№ СѓР¶Рµ РїРѕСЃС‡РёС‚Р°Р» С†РёРєР».
--- РќРёС‡РµРіРѕ РЅРµ РїРёС€РµС‚: С‚РѕР»СЊРєРѕ С‡РёС‚Р°РµС‚ logic_terminal_signals / pending.
+-- Снимок (#990): сигналы логики на последнем ЗАКРЫТОМ баре её ТФ БЕЗ захвата
+-- advisory-lock боевого цикла. Нужен кнопке «Запросить сигналы»: когда цикл занят
+-- (лок удерживается долгим прогревом цен по бумагам — на M1 это минуты), вместо
+-- ошибки 409 кнопка получает актуальные цифры с того бара, который уже посчитал цикл.
+-- Ничего не пишет: только читает logic_terminal_signals / pending.
 -- ============================================================
 CREATE OR REPLACE FUNCTION logic_lightning_snapshot(
     p_logic_id INTEGER,
@@ -22812,17 +24337,17 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_lightning_snapshot(INTEGER, TIMESTAMP) IS
-'РЎРЅРёРјРѕРє (#990): СЃРёРіРЅР°Р»С‹ Р»РѕРіРёРєРё РЅР° РїРѕСЃР»РµРґРЅРµРј Р—РђРљР Р«РўРћРњ Р±Р°СЂРµ РµС‘ РўР¤ Р±РµР· Р·Р°С…РІР°С‚Р° advisory-lock '
-'Р±РѕРµРІРѕРіРѕ С†РёРєР»Р° вЂ” С‡РёС‚Р°РµС‚ С‚РѕР»СЊРєРѕ logic_terminal_signals (terminal_signals_on_bar) Рё pending. '
-'РСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РєРЅРѕРїРєРѕР№ В«Р—Р°РїСЂРѕСЃРёС‚СЊ СЃРёРіРЅР°Р»С‹В», РєРѕРіРґР° logic_lightning_run РІРµСЂРЅСѓР» busy: РІРјРµСЃС‚Рѕ '
-'РѕС€РёР±РєРё 409 РѕС‚РґР°С‘Рј Р°РєС‚СѓР°Р»СЊРЅС‹Рµ С†РёС„СЂС‹ СЃ Р±Р°СЂР°, РєРѕС‚РѕСЂС‹Р№ СѓР¶Рµ РїРѕСЃС‡РёС‚Р°Р» Р±РѕРµРІРѕР№ С†РёРєР».';
+'Снимок (#990): сигналы логики на последнем ЗАКРЫТОМ баре её ТФ без захвата advisory-lock '
+'боевого цикла — читает только logic_terminal_signals (terminal_signals_on_bar) и pending. '
+'Используется кнопкой «Запросить сигналы», когда logic_lightning_run вернул busy: вместо '
+'ошибки 409 отдаём актуальные цифры с бара, который уже посчитал боевой цикл.';
 
 -- @include sql/logic_trading_sessions.sql
 -- ============================================
--- РќРµС‚РѕСЂРіРѕРІС‹Рµ РїРµСЂРёРѕРґС‹ Р»РѕРіРёРєРё + Р·Р°РєСЂС‹С‚РёРµ РІ РєРѕРЅС†Рµ РґРЅСЏ
+-- Неторговые периоды логики + закрытие в конце дня
 -- ============================================
--- day_of_week: 1=РџРЅ вЂ¦ 7=Р’СЃ (ISO). РРЅС‚РµСЂРІР°Р» [time_from, time_to] РІ MSK.
--- time_to РІРєР»СЋС‡РёС‚РµР»СЊРЅРѕ РґРѕ СЃРµРєСѓРЅРґС‹ (СЃСЂР°РІРЅРµРЅРёРµ <= time_to).
+-- day_of_week: 1=Пн … 7=Вс (ISO). Интервал [time_from, time_to] в MSK.
+-- time_to включительно до секунды (сравнение <= time_to).
 
 CREATE OR REPLACE FUNCTION logic_moex_equity_non_trading_template()
 RETURNS TABLE (
@@ -22832,26 +24357,26 @@ RETURNS TABLE (
     note TEXT
 )
 LANGUAGE sql IMMUTABLE AS $$
-    -- TQBR РѕСЃРЅРѕРІРЅР°СЏ СЃРµСЃСЃРёСЏ в‰€ 10:00вЂ“18:40 РњРЎРљ (РїРЅвЂ“РїС‚).
-    -- РќРµС‚РѕСЂРіРѕРІС‹Рµ: РЅРѕС‡СЊ РґРѕ РѕС‚РєСЂС‹С‚РёСЏ, РІРµС‡РµСЂ РїРѕСЃР»Рµ СЃРµСЃСЃРёРё, РІС‹С…РѕРґРЅС‹Рµ С†РµР»РёРєРѕРј.
+    -- TQBR основная сессия ≈ 10:00–18:40 МСК (пн–пт).
+    -- Неторговые: ночь до открытия, вечер после сессии, выходные целиком.
     SELECT * FROM (VALUES
-        (1::SMALLINT, TIME '00:00', TIME '09:59:59', 'РџРЅ РґРѕ РѕС‚РєСЂС‹С‚РёСЏ'),
-        (1::SMALLINT, TIME '18:40', TIME '23:59:59', 'РџРЅ РїРѕСЃР»Рµ СЃРµСЃСЃРёРё'),
-        (2::SMALLINT, TIME '00:00', TIME '09:59:59', 'Р’С‚ РґРѕ РѕС‚РєСЂС‹С‚РёСЏ'),
-        (2::SMALLINT, TIME '18:40', TIME '23:59:59', 'Р’С‚ РїРѕСЃР»Рµ СЃРµСЃСЃРёРё'),
-        (3::SMALLINT, TIME '00:00', TIME '09:59:59', 'РЎСЂ РґРѕ РѕС‚РєСЂС‹С‚РёСЏ'),
-        (3::SMALLINT, TIME '18:40', TIME '23:59:59', 'РЎСЂ РїРѕСЃР»Рµ СЃРµСЃСЃРёРё'),
-        (4::SMALLINT, TIME '00:00', TIME '09:59:59', 'Р§С‚ РґРѕ РѕС‚РєСЂС‹С‚РёСЏ'),
-        (4::SMALLINT, TIME '18:40', TIME '23:59:59', 'Р§С‚ РїРѕСЃР»Рµ СЃРµСЃСЃРёРё'),
-        (5::SMALLINT, TIME '00:00', TIME '09:59:59', 'РџС‚ РґРѕ РѕС‚РєСЂС‹С‚РёСЏ'),
-        (5::SMALLINT, TIME '18:40', TIME '23:59:59', 'РџС‚ РїРѕСЃР»Рµ СЃРµСЃСЃРёРё'),
-        (6::SMALLINT, TIME '00:00', TIME '23:59:59', 'РЎСѓР±Р±РѕС‚Р°'),
-        (7::SMALLINT, TIME '00:00', TIME '23:59:59', 'Р’РѕСЃРєСЂРµСЃРµРЅСЊРµ')
+        (1::SMALLINT, TIME '00:00', TIME '09:59:59', 'Пн до открытия'),
+        (1::SMALLINT, TIME '18:40', TIME '23:59:59', 'Пн после сессии'),
+        (2::SMALLINT, TIME '00:00', TIME '09:59:59', 'Вт до открытия'),
+        (2::SMALLINT, TIME '18:40', TIME '23:59:59', 'Вт после сессии'),
+        (3::SMALLINT, TIME '00:00', TIME '09:59:59', 'Ср до открытия'),
+        (3::SMALLINT, TIME '18:40', TIME '23:59:59', 'Ср после сессии'),
+        (4::SMALLINT, TIME '00:00', TIME '09:59:59', 'Чт до открытия'),
+        (4::SMALLINT, TIME '18:40', TIME '23:59:59', 'Чт после сессии'),
+        (5::SMALLINT, TIME '00:00', TIME '09:59:59', 'Пт до открытия'),
+        (5::SMALLINT, TIME '18:40', TIME '23:59:59', 'Пт после сессии'),
+        (6::SMALLINT, TIME '00:00', TIME '23:59:59', 'Суббота'),
+        (7::SMALLINT, TIME '00:00', TIME '23:59:59', 'Воскресенье')
     ) AS t(day_of_week, time_from, time_to, note);
 $$;
 
 COMMENT ON FUNCTION logic_moex_equity_non_trading_template() IS
-'РЁР°Р±Р»РѕРЅ РЅРµС‚РѕСЂРіРѕРІС‹С… РѕРєРѕРЅ TQBR (MOEX Р°РєС†РёРё): РІРЅРµ 10:00вЂ“18:40 РњРЎРљ РїРЅвЂ“РїС‚ + РІС‹С…РѕРґРЅС‹Рµ';
+'Шаблон неторговых окон TQBR (MOEX акции): вне 10:00–18:40 МСК пн–пт + выходные';
 
 CREATE OR REPLACE FUNCTION logic_apply_moex_non_trading_periods(p_logic_id INTEGER)
 RETURNS INTEGER
@@ -22884,7 +24409,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_apply_moex_non_trading_periods(INTEGER) IS
-'Р—Р°РјРµРЅРёС‚СЊ РЅРµС‚РѕСЂРіРѕРІС‹Рµ РёРЅС‚РµСЂРІР°Р»С‹ Р»РѕРіРёРєРё С€Р°Р±Р»РѕРЅРѕРј MOEX TQBR';
+'Заменить неторговые интервалы логики шаблоном MOEX TQBR';
 
 CREATE OR REPLACE FUNCTION logic_ensure_non_trading_periods(p_logic_id INTEGER)
 RETURNS INTEGER
@@ -22905,11 +24430,11 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_ensure_non_trading_periods(INTEGER) IS
-'Р•СЃР»Рё Сѓ Р»РѕРіРёРєРё РЅРµС‚ РёРЅС‚РµСЂРІР°Р»РѕРІ вЂ” РїРѕСЃС‚Р°РІРёС‚СЊ MOEX РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ';
+'Если у логики нет интервалов — поставить MOEX по умолчанию';
 
--- Р РµР¶РёРј С‚РѕСЂРіРѕРІС‹С… РїРµСЂРёРѕРґРѕРІ Р»РѕРіРёРєРё: off | trading | non_trading.
--- РќРѕРІС‹Р№ text-РїР°СЂР°РјРµС‚СЂ non_trading_periods_mode; РїСЂРё РµРіРѕ РѕС‚СЃСѓС‚СЃС‚РІРёРё вЂ” РѕР±СЂР°С‚РЅР°СЏ
--- СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚СЊ СЃ boolean use_non_trading_periods (true в†’ trading, РёРЅР°С‡Рµ off).
+-- Режим торговых периодов логики: off | trading | non_trading.
+-- Новый text-параметр non_trading_periods_mode; при его отсутствии — обратная
+-- совместимость с boolean use_non_trading_periods (true → trading, иначе off).
 CREATE OR REPLACE FUNCTION get_non_trading_periods_mode(
     p_logic_id INTEGER
 )
@@ -22932,9 +24457,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION get_non_trading_periods_mode(INTEGER) IS
-'Р РµР¶РёРј С‚РѕСЂРіРѕРІС‹С… РїРµСЂРёРѕРґРѕРІ: off (РЅРµ СѓС‡РёС‚С‹РІР°С‚СЊ) | trading (С‚РѕР»СЊРєРѕ С‚РѕСЂРіРѕРІС‹Рµ) | non_trading (С‚РѕР»СЊРєРѕ РЅРµС‚РѕСЂРіРѕРІС‹Рµ)';
+'Режим торговых периодов: off (не учитывать) | trading (только торговые) | non_trading (только неторговые)';
 
--- True РµСЃР»Рё РјРѕРјРµРЅС‚ РІРЅСѓС‚СЂРё РЅРµС‚РѕСЂРіРѕРІРѕРіРѕ РёРЅС‚РµСЂРІР°Р»Р° Р»РѕРіРёРєРё (Р±РµР· СѓС‡С‘С‚Р° СЂРµР¶РёРјР°).
+-- True если момент внутри неторгового интервала логики (без учёта режима).
 CREATE OR REPLACE FUNCTION logic_is_non_trading_dt(
     p_logic_id INTEGER,
     p_dt TIMESTAMP
@@ -22945,7 +24470,7 @@ DECLARE
     v_dow SMALLINT;
     v_t TIME;
 BEGIN
-    -- ISO: Monday=1 вЂ¦ Sunday=7 (PostgreSQL DOW: 0=Sun вЂ¦ 6=Sat)
+    -- ISO: Monday=1 … Sunday=7 (PostgreSQL DOW: 0=Sun … 6=Sat)
     v_dow := EXTRACT(ISODOW FROM p_dt)::SMALLINT;
     v_t := p_dt::TIME;
 
@@ -22962,12 +24487,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_is_non_trading_dt(INTEGER, TIMESTAMP) IS
-'True РµСЃР»Рё РјРѕРјРµРЅС‚ РІРЅСѓС‚СЂРё РЅРµС‚РѕСЂРіРѕРІРѕРіРѕ РёРЅС‚РµСЂРІР°Р»Р° Р»РѕРіРёРєРё (Р±РµР· СѓС‡С‘С‚Р° СЂРµР¶РёРјР°)';
+'True если момент внутри неторгового интервала логики (без учёта режима)';
 
--- True РµСЃР»Рё РЅР° СЌС‚РѕРј РјРѕРјРµРЅС‚Рµ РќР• РЅСѓР¶РЅРѕ РѕС‚РєСЂС‹РІР°С‚СЊ РЅРѕРІС‹Рµ СЃРґРµР»РєРё РїРѕ СЂРµР¶РёРјСѓ РїРµСЂРёРѕРґРѕРІ:
---   off         вЂ” РЅРёРєРѕРіРґР° РЅРµ Р±Р»РѕРєРёСЂСѓРµРј (С‚РѕСЂРіСѓРµРј РІ Р»СЋР±РѕРµ РІСЂРµРјСЏ);
---   trading     вЂ” Р±Р»РѕРєРёСЂСѓРµРј РІРЅСѓС‚СЂРё РЅРµС‚РѕСЂРіРѕРІРѕРіРѕ РёРЅС‚РµСЂРІР°Р»Р°;
---   non_trading вЂ” Р±Р»РѕРєРёСЂСѓРµРј РІРЅРµ РЅРµС‚РѕСЂРіРѕРІРѕРіРѕ РёРЅС‚РµСЂРІР°Р»Р° (С‚РѕСЂРіСѓРµРј С‚РѕР»СЊРєРѕ РЅРµС‚РѕСЂРіРѕРІС‹Рµ).
+-- True если на этом моменте НЕ нужно открывать новые сделки по режиму периодов:
+--   off         — никогда не блокируем (торгуем в любое время);
+--   trading     — блокируем внутри неторгового интервала;
+--   non_trading — блокируем вне неторгового интервала (торгуем только неторговые).
 CREATE OR REPLACE FUNCTION logic_skip_signal_by_periods(
     p_logic_id INTEGER,
     p_dt TIMESTAMP
@@ -22991,9 +24516,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_skip_signal_by_periods(INTEGER, TIMESTAMP) IS
-'True: РїРѕ СЂРµР¶РёРјСѓ С‚РѕСЂРіРѕРІС‹С… РїРµСЂРёРѕРґРѕРІ СЃРёРіРЅР°Р»С‹ РЅР° СЌС‚РѕРј РјРѕРјРµРЅС‚Рµ РЅРµ РѕС‚РєСЂС‹РІР°СЋС‚СЃСЏ';
+'True: по режиму торговых периодов сигналы на этом моменте не открываются';
 
--- РЎС‚Р°СЂС‚ РІРµС‡РµСЂРЅРµРіРѕ РЅРµС‚РѕСЂРіРѕРІРѕРіРѕ РѕРєРЅР° РґРЅСЏ (MSK), РёР»Рё NULL.
+-- Старт вечернего неторгового окна дня (MSK), или NULL.
 CREATE OR REPLACE FUNCTION logic_eod_session_end_dt(
     p_logic_id INTEGER,
     p_bar_dt TIMESTAMP
@@ -23024,11 +24549,11 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_eod_session_end_dt(INTEGER, TIMESTAMP) IS
-'РќР°С‡Р°Р»Рѕ РІРµС‡РµСЂРЅРµРіРѕ РЅРµС‚РѕСЂРіРѕРІРѕРіРѕ РѕРєРЅР° (РїРѕСЃР»Рµ РѕСЃРЅРѕРІРЅРѕР№ СЃРµСЃСЃРёРё MOEX)';
+'Начало вечернего неторгового окна (после основной сессии MOEX)';
 
--- РњРѕРјРµРЅС‚ EOD-СЃРµСЃСЃРёРё (РІРµС‡РµСЂРЅРµРµ РѕРєРЅРѕ / РїРѕСЃР»РµРґРЅСЏСЏ СЃРІРµС‡Р° РґРЅСЏ).
--- РќРµ Р·Р°РІРёСЃРёС‚ РѕС‚ use_non_trading_periods: СЂР°СЃРїРёСЃР°РЅРёРµ РѕРєРѕРЅ вЂ” С‚РѕР»СЊРєРѕ С‚Р°Р№РјРёРЅРі РєРѕРЅС†Р° РґРЅСЏ;
--- С‡РµРєР±РѕРєСЃ В«РЈС‡РёС‚С‹РІР°С‚СЊ РЅРµС‚РѕСЂРіРѕРІС‹Рµ РїРµСЂРёРѕРґС‹В» СЂРµР¶РµС‚ Р»РёС€СЊ РѕС‚РєСЂС‹С‚РёРµ СЃРёРіРЅР°Р»РѕРІ.
+-- Момент EOD-сессии (вечернее окно / последняя свеча дня).
+-- Не зависит от use_non_trading_periods: расписание окон — только тайминг конца дня;
+-- чекбокс «Учитывать неторговые периоды» режет лишь открытие сигналов.
 CREATE OR REPLACE FUNCTION logic_is_eod_session_bar(
     p_logic_id INTEGER,
     p_bar_dt TIMESTAMP,
@@ -23040,14 +24565,14 @@ LANGUAGE plpgsql STABLE AS $$
 DECLARE
     v_trigger TIMESTAMP;
 BEGIN
-    -- РРЅС‚РµСЂРІР°Р»С‹ С‡РёС‚Р°РµРј РІСЃРµРіРґР° (РµСЃР»Рё РµСЃС‚СЊ), РґР°Р¶Рµ РєРѕРіРґР° use_non_trading_periods=off.
+    -- Интервалы читаем всегда (если есть), даже когда use_non_trading_periods=off.
     v_trigger := logic_eod_session_end_dt(p_logic_id, p_bar_dt);
     IF v_trigger IS NOT NULL THEN
-        -- РџРµСЂРІР°СЏ СЃРІРµС‡Р° at/after СЃС‚Р°СЂС‚Р° РІРµС‡РµСЂРЅРµРіРѕ РѕРєРЅР° (РµСЃР»Рё С‚Р°РєРёРµ Р±Р°СЂС‹ РµСЃС‚СЊ)
+        -- Первая свеча at/after старта вечернего окна (если такие бары есть)
         IF p_bar_dt >= v_trigger THEN
             RETURN p_prev_bar_dt IS NULL OR p_prev_bar_dt < v_trigger;
         END IF;
-        -- РџРѕСЃР»РµРґРЅСЏСЏ СЃРµСЃСЃРёРѕРЅРЅР°СЏ СЃРІРµС‡Р° РґРѕ РѕРєРЅР° (С‚РёРїРёС‡РЅРѕ 18:30 РїСЂРё РѕРєРЅРµ СЃ 18:40)
+        -- Последняя сессионная свеча до окна (типично 18:30 при окне с 18:40)
         IF p_next_bar_dt IS NOT NULL AND p_next_bar_dt >= v_trigger THEN
             RETURN TRUE;
         END IF;
@@ -23057,7 +24582,7 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    -- РќРµС‚ РІРµС‡РµСЂРЅРµРіРѕ РѕРєРЅР° РІ СЂР°СЃРїРёСЃР°РЅРёРё вЂ” РїРѕСЃР»РµРґРЅСЏСЏ СЃРІРµС‡Р° РєР°Р»РµРЅРґР°СЂРЅРѕРіРѕ РґРЅСЏ
+    -- Нет вечернего окна в расписании — последняя свеча календарного дня
     IF p_next_bar_dt IS NULL THEN
         RETURN FALSE;
     END IF;
@@ -23066,9 +24591,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_is_eod_session_bar(INTEGER, TIMESTAMP, TIMESTAMP, TIMESTAMP) IS
-'True: Р±Р°СЂ РєРѕРЅС†Р° С‚РѕСЂРіРѕРІРѕР№ СЃРµСЃСЃРёРё. РќРµ Р·Р°РІРёСЃРёС‚ РѕС‚ use_non_trading_periods (РѕРєРЅР° вЂ” С‚РѕР»СЊРєРѕ С‚Р°Р№РјРёРЅРі EOD)';
+'True: бар конца торговой сессии. Не зависит от use_non_trading_periods (окна — только тайминг EOD)';
 
--- p_prev_bar_dt / p_next_bar_dt вЂ” СЃРѕСЃРµРґРЅРёРµ Р±Р°СЂС‹ РїСЂРѕРіРѕРЅР° (РјРѕРіСѓС‚ Р±С‹С‚СЊ NULL).
+-- p_prev_bar_dt / p_next_bar_dt — соседние бары прогона (могут быть NULL).
 CREATE OR REPLACE FUNCTION logic_is_eod_close_bar(
     p_logic_id INTEGER,
     p_bar_dt TIMESTAMP,
@@ -23081,16 +24606,16 @@ BEGIN
     IF NOT get_logic_param_boolean(p_logic_id, 'close_positions_eod', FALSE) THEN
         RETURN FALSE;
     END IF;
-    -- close_positions_eod РІСЃРµРіРґР° РїС‹С‚Р°РµС‚СЃСЏ Р·Р°РєСЂС‹С‚СЊ РЅР° EOD-Р±Р°СЂРµ, РґР°Р¶Рµ РµСЃР»Рё
-    -- В«РЈС‡РёС‚С‹РІР°С‚СЊ РЅРµС‚РѕСЂРіРѕРІС‹Рµ РїРµСЂРёРѕРґС‹В» РІРєР»СЋС‡С‘РЅ (СЃРёРіРЅР°Р»С‹ РІ СЌС‚Рё РѕРєРЅР° РЅРµ РѕС‚РєСЂС‹РІР°СЋС‚СЃСЏ).
+    -- close_positions_eod всегда пытается закрыть на EOD-баре, даже если
+    -- «Учитывать неторговые периоды» включён (сигналы в эти окна не открываются).
     RETURN logic_is_eod_session_bar(p_logic_id, p_bar_dt, p_prev_bar_dt, p_next_bar_dt);
 END;
 $$;
 
 COMMENT ON FUNCTION logic_is_eod_close_bar(INTEGER, TIMESTAMP, TIMESTAMP, TIMESTAMP) IS
-'True: close_positions_eod РЅР° Р±Р°СЂРµ РєРѕРЅС†Р° РґРЅСЏ; РёРіРЅРѕСЂРёСЂСѓРµС‚ use_non_trading_periods (С„РѕРЅРґС‹ РЅРµ Р·Р°РєСЂС‹РІР°СЋС‚СЃСЏ РѕС‚РґРµР»СЊРЅРѕ)';
+'True: close_positions_eod на баре конца дня; игнорирует use_non_trading_periods (фонды не закрываются отдельно)';
 
--- РљР°Р»РµРЅРґР°СЂРЅС‹С… РґРЅРµР№ РґРѕ СЌРєСЃРїРёСЂР°С†РёРё Р°РєС‚РёРІРЅРѕРіРѕ РєРѕРЅС‚СЂР°РєС‚Р°; NULL = РЅРµ С„СЊСЋС‡РµСЂСЃ / РІРµС‡РЅС‹Р№ / РЅРµС‚ РґР°С‚С‹.
+-- Календарных дней до экспирации активного контракта; NULL = не фьючерс / вечный / нет даты.
 CREATE OR REPLACE FUNCTION logic_futures_days_to_expiry(
     p_security_id INTEGER,
     p_date DATE
@@ -23136,9 +24661,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_futures_days_to_expiry(INTEGER, DATE) IS
-'Р”РЅРµР№ РґРѕ СЌРєСЃРїРёСЂР°С†РёРё Р±Р»РёР¶Р°Р№С€РµРіРѕ РєРѕРЅС‚СЂР°РєС‚Р° (expiration_date в€’ date); NULL РґР»СЏ РІРµС‡РЅС‹С…/РЅРµ-С„СЊСЋС‡РµСЂСЃРѕРІ';
+'Дней до экспирации ближайшего контракта (expiration_date − date); NULL для вечных/не-фьючерсов';
 
--- Р–РёРІРѕР№ Р±РѕР№: Р·Р°РєСЂС‹С‚СЊ С„СЊСЋС‡РµСЂСЃС‹ СЃ days_to_expiry в‰¤ N (РїР°СЂР°РјРµС‚СЂ sell_futures_*).
+-- Живой бой: закрыть фьючерсы с days_to_expiry ≤ N (параметр sell_futures_*).
 CREATE OR REPLACE FUNCTION logic_close_futures_near_expiry(
     p_logic_id INTEGER,
     p_as_of_date DATE DEFAULT CURRENT_DATE
@@ -23208,9 +24733,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_close_futures_near_expiry(INTEGER, DATE) IS
-'Р‘РѕР№: РЅР° EOD Р·Р°РєСЂС‹С‚СЊ РѕС‚РєСЂС‹С‚С‹Рµ С„СЊСЋС‡РµСЂСЃС‹ СЃ days_to_expiry в‰¤ sell_futures_days_before_expiry';
+'Бой: на EOD закрыть открытые фьючерсы с days_to_expiry ≤ sell_futures_days_before_expiry';
 
--- Р–РёРІРѕР№ Р±РѕР№: Р·Р°РєСЂС‹С‚СЊ РІСЃРµ РїРѕР·РёС†РёРё РєСЂРѕРјРµ TMON/LQDT/SBMM.
+-- Живой бой: закрыть все позиции кроме TMON/LQDT/SBMM.
 CREATE OR REPLACE FUNCTION logic_close_positions_eod_except_funds(p_logic_id INTEGER)
 RETURNS JSONB
 LANGUAGE plpgsql AS $$
@@ -23223,9 +24748,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_close_positions_eod_except_funds(INTEGER) IS
-'Р‘РѕР№: Р·Р°РєСЂС‹С‚СЊ РїРѕР·РёС†РёРё РІ РєРѕРЅС†Рµ РґРЅСЏ, РєСЂРѕРјРµ РґРµРЅРµР¶РЅС‹С… С„РѕРЅРґРѕРІ TMON/LQDT/SBMM';
+'Бой: закрыть позиции в конце дня, кроме денежных фондов TMON/LQDT/SBMM';
 
--- @include sql/logic_backtest_runner.sql (СЃРј. sql/logic_backtest_runner.sql вЂ” РґСѓР±Р»РёСЂСѓРµС‚СЃСЏ РЅРёР¶Рµ)
+-- @include sql/logic_backtest_runner.sql (см. sql/logic_backtest_runner.sql — дублируется ниже)
 -- ============================================
 -- Historical backtest runner (is_test=TRUE book)
 -- ============================================
@@ -23277,7 +24802,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_log(BIGINT, INTEGER, TEXT, TEXT, JSONB, INTEGER, INTEGER) IS
-'Р–СѓСЂРЅР°Р» backtest РІ app_tech_log (milestone: start/progress/done/error; РЅРµ РЅР° РєР°Р¶РґСѓСЋ СЃРґРµР»РєСѓ)';
+'Журнал backtest в app_tech_log (milestone: start/progress/done/error; не на каждую сделку)';
 
 CREATE OR REPLACE FUNCTION logic_backtest_diagnose(
     p_run_id BIGINT,
@@ -23389,7 +24914,7 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    -- Р‘СѓРґСѓС‰РёРµ РґР°С‚С‹ РІ date_to РЅРµРґРѕСЃС‚РёР¶РёРјС‹ РґР»СЏ СЂС‹РЅРєР° вЂ” РёРЅР°С‡Рµ РІРµС‡РЅС‹Р№ re-fetch T-Bank.
+    -- Будущие даты в date_to недостижимы для рынка — иначе вечный re-fetch T-Bank.
     v_date_to := LEAST(p_date_to, CURRENT_DATE);
     IF p_date_from > v_date_to THEN
         RETURN FALSE;
@@ -23399,7 +24924,7 @@ BEGIN
     v_tf_sec := COALESCE(v_tf_sec, 86400);
     v_span_days := GREATEST(1, (v_date_to - p_date_from) + 1);
     v_edge_slack := GREATEST(3, LEAST(14, v_span_days / 20));
-    -- Р’С‚РѕСЂСѓСЋ В«С‚СЂРѕР№РєСѓВ» С‚СЂРµР±СѓРµРј, РµСЃР»Рё РїРµСЂРёРѕРґ >= 10 РґРЅРµР№; СЂР°Р·РЅРѕРµ ~ С‡РµС‚РІРµСЂС‚СЊ РѕРєРЅР°, РјРёРЅ. 3 РґРЅСЏ.
+    -- Вторую «тройку» требуем, если период >= 10 дней; разное ~ четверть окна, мин. 3 дня.
     v_sep_days := GREATEST(3, v_span_days / 4);
 
     SELECT COUNT(*)::INTEGER, MIN(p.dt::date), MAX(p.dt::date)
@@ -23422,14 +24947,14 @@ BEGIN
         );
     END IF;
 
-    -- РљРѕРЅРµС† РїРµСЂРёРѕРґР° РѕР±СЏР·Р°РЅ Р±С‹С‚СЊ СЃРІРµР¶РёРј вЂ” РёРЅР°С‡Рµ РґРѕРіСЂСѓР¶Р°РµРј.
+    -- Конец периода обязан быть свежим — иначе догружаем.
     IF v_max_date < v_date_to - v_edge_slack THEN
         RETURN FALSE;
     END IF;
 
-    -- РЎС‚Р°СЂС‚ РёСЃС‚РѕСЂРёРё: СЃС‚СЂРѕРіРёР№ РєСЂР°Р№ С‚РѕР»СЊРєРѕ РµСЃР»Рё Р±Р°СЂРѕРІ РјР°Р»Рѕ.
-    -- РЈ M15 Р±СЂРѕРєРµСЂ С‡Р°СЃС‚Рѕ РѕС‚РґР°С‘С‚ РѕРєРЅРѕ РєРѕСЂРѕС‡Рµ date_from (РЅР°РїСЂ. СЃ 27.04 РїСЂРё from=01.04) вЂ”
-    -- РїРѕРІС‚РѕСЂРЅС‹Р№ HTTP РЅРµ СѓРґР»РёРЅСЏРµС‚ РёСЃС‚РѕСЂРёСЋ Рё РєР°Р¶РґС‹Р№ РїСЂРѕРіРѕРЅ В«РІРёСЃРёС‚В» РЅР° load_prices.
+    -- Старт истории: строгий край только если баров мало.
+    -- У M15 брокер часто отдаёт окно короче date_from (напр. с 27.04 при from=01.04) —
+    -- повторный HTTP не удлиняет историю и каждый прогон «висит» на load_prices.
     IF v_min_date > p_date_from + v_edge_slack
        AND v_in_period < v_min_bars THEN
         RETURN FALSE;
@@ -23445,10 +24970,10 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    -- РќРµ РґРѕРІРµСЂСЏРµРј СЃС‹СЂРѕРјСѓ СЃС‡С‘С‚Сѓ: РѕРґРёРЅРѕС‡РЅР°СЏ В«Р·Р°РІР°Р»СЏРІС€Р°СЏСЃСЏВ» СЃРІРµС‡Р° РЅРµ РґРѕР»Р¶РЅР° РґРµР»Р°С‚СЊ СЃРµСЂРёСЋ
-    -- В«Р·Р°РєСЌС€РёСЂРѕРІР°РЅРЅРѕР№В» (РёРЅР°С‡Рµ СЂРµРіСѓР» РЅРµ РґРѕРіСЂСѓР·РёС‚ РёСЃС‚РѕСЂРёСЋ Рё С‚РµСЃС‚ РїРѕР№РґС‘С‚ РЅР° РґС‹СЂСЏРІС‹С… С†РµРЅР°С…).
-    -- РўСЂРµР±СѓРµРј >=1 СЃРµСЂРёСЋ РёР· 3 Р±Р°СЂРѕРІ РїРѕРґСЂСЏРґ СЃ С‚РѕС‡РЅС‹Рј С€Р°РіРѕРј TF (Р±РµР· skip), РєР°Рє Сѓ РёРЅРґРёРєР°С‚РѕСЂРѕРІ
-    -- РІ backtest_indicators_cached; РЅР° РґР»РёРЅРЅРѕРј РїРµСЂРёРѕРґРµ вЂ” РґРІРµ С‚Р°РєРёРµ СЃРµСЂРёРё СЃ СЂР°Р·РЅРѕСЃРѕРј.
+    -- Не доверяем сырому счёту: одиночная «завалявшаяся» свеча не должна делать серию
+    -- «закэшированной» (иначе регул не догрузит историю и тест пойдёт на дырявых ценах).
+    -- Требуем >=1 серию из 3 баров подряд с точным шагом TF (без skip), как у индикаторов
+    -- в backtest_indicators_cached; на длинном периоде — две такие серии с разносом.
     WITH pts AS (
         SELECT DISTINCT p.dt AS dt
         FROM prices p
@@ -23477,7 +25002,7 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    -- Р”Р»РёРЅРЅС‹Р№ РїРµСЂРёРѕРґ (>=10 РґРЅРµР№): РЅСѓР¶РЅР° РІС‚РѕСЂР°СЏ В«С‚СЂРѕР№РєР°В» СЃРїСѓСЃС‚СЏ sep_days (РµСЃР»Рё РѕРєРЅРѕ РїРѕР·РІРѕР»СЏРµС‚).
+    -- Длинный период (>=10 дней): нужна вторая «тройка» спустя sep_days (если окно позволяет).
     IF v_span_days >= 10 THEN
         WITH pts AS (
             SELECT DISTINCT p.dt AS dt
@@ -23517,7 +25042,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION backtest_prices_cached(INTEGER, INTEGER, DATE, DATE, DATE, INTEGER) IS
-'True РµСЃР»Рё СЃРІРµС‡РµР№ РґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РґРѕ LEAST(date_to, СЃРµРіРѕРґРЅСЏ). РџРѕР·РґРЅРёР№ СЃС‚Р°СЂС‚ РёСЃС‚РѕСЂРёРё РїСЂРё РґРѕСЃС‚Р°С‚РѕС‡РЅРѕРј С‡РёСЃР»Рµ Р±Р°СЂРѕРІ вЂ” РєСЌС€ (Р±РµР· РІРµС‡РЅРѕРіРѕ HTTP).';
+'True если свечей достаточно до LEAST(date_to, сегодня). Поздний старт истории при достаточном числе баров — кэш (без вечного HTTP).';
 
 CREATE OR REPLACE FUNCTION backtest_indicators_cached(
     p_security_id INTEGER,
@@ -23540,9 +25065,9 @@ DECLARE
     v_streak_cnt INTEGER := 0;
     v_has_two_clusters BOOLEAN := FALSE;
 BEGIN
-    -- Р Р°РЅСЊС€Рµ С…РІР°С‚Р°Р»Рѕ EXISTS(1 С‚РѕС‡РєР°) в†’ РґС‹СЂСЏРІС‹Р№ Stoch (С…РІРѕСЃС‚ СЃ РјР°СЏ) СЃС‡РёС‚Р°Р»СЃСЏ В«Р·Р°РєСЌС€РёСЂРѕРІР°РЅВ».
-    -- РўРµРїРµСЂСЊ: в‰Ґ1 СЃРµСЂРёСЏ РёР· 3 Р±Р°СЂРѕРІ РїРѕРґСЂСЏРґ Р±РµР· РїСЂРѕРїСѓСЃРєР° С€Р°РіР° TF; РЅР° РґР»РёРЅРЅРѕРј РїРµСЂРёРѕРґРµ вЂ”
-    -- РґРІРµ С‚Р°РєРёРµ СЃРµСЂРёРё СЃ СЂР°Р·РЅРµСЃРµРЅРёРµРј; РїР»СЋСЃ РєСЂР°СЏ СЂСЏРґРѕРј СЃ С†РµРЅР°РјРё/date_to.
+    -- Раньше хватало EXISTS(1 точка) → дырявый Stoch (хвост с мая) считался «закэширован».
+    -- Теперь: ≥1 серия из 3 баров подряд без пропуска шага TF; на длинном периоде —
+    -- две такие серии с разнесением; плюс края рядом с ценами/date_to.
     IF p_date_from IS NULL OR p_date_to IS NULL OR p_date_from > p_date_to THEN
         RETURN FALSE;
     END IF;
@@ -23556,7 +25081,7 @@ BEGIN
     v_tf_sec := COALESCE(v_tf_sec, 86400);
     v_span_days := GREATEST(1, (v_date_to - p_date_from) + 1);
     v_edge_slack := GREATEST(3, LEAST(14, v_span_days / 20));
-    -- Р’С‚РѕСЂСѓСЋ В«С‚СЂРѕР№РєСѓВ» С‚СЂРµР±СѓРµРј, РµСЃР»Рё РїРµСЂРёРѕРґ в‰Ґ 10 РґРЅРµР№; СЂР°Р·РЅРѕСЃ в‰€ С‡РµС‚РІРµСЂС‚СЊ РѕРєРЅР°, РјРёРЅ. 3 РґРЅСЏ.
+    -- Вторую «тройку» требуем, если период ≥ 10 дней; разнос ≈ четверть окна, мин. 3 дня.
     v_sep_days := GREATEST(3, v_span_days / 4);
 
     SELECT MIN(iv.dt::date), MAX(iv.dt::date)
@@ -23578,12 +25103,12 @@ BEGIN
       AND p.timeframe_id = p_timeframe_id
       AND p.dt::date BETWEEN p_date_from AND v_date_to;
 
-    -- РљРѕРЅРµС† РёРЅРґРёРєР°С‚РѕСЂР° РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ СЃРІРµР¶РёРј РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅРѕ РєРѕРЅС†Р° РїРµСЂРёРѕРґР° (РєР°Рє Сѓ С†РµРЅ).
+    -- Конец индикатора должен быть свежим относительно конца периода (как у цен).
     IF v_max_ind < v_date_to - v_edge_slack THEN
         RETURN FALSE;
     END IF;
 
-    -- РЎС‚Р°СЂС‚: РЅРµ РїРѕР·Р¶Рµ РЅР°С‡Р°Р»Р° С†РµРЅРѕРІРѕР№ РёСЃС‚РѕСЂРёРё (+ slack). РќРµС‚ С†РµРЅ вЂ” РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅРѕ date_from.
+    -- Старт: не позже начала ценовой истории (+ slack). Нет цен — относительно date_from.
     IF v_min_price IS NOT NULL THEN
         IF v_min_ind > v_min_price + v_edge_slack THEN
             RETURN FALSE;
@@ -23592,7 +25117,7 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    -- РЎРµСЂРёРё РёР· в‰Ґ3 Р±Р°СЂРѕРІ РїРѕРґСЂСЏРґ: С€Р°Рі РјРµР¶РґСѓ СЃРѕСЃРµРґСЏРјРё СЂРѕРІРЅРѕ tf_sec (Р±РµР· skip).
+    -- Серии из ≥3 баров подряд: шаг между соседями ровно tf_sec (без skip).
     WITH pts AS (
         SELECT DISTINCT iv.dt AS dt
         FROM indicator_values iv
@@ -23622,7 +25147,7 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    -- Р”Р»РёРЅРЅС‹Р№ РїРµСЂРёРѕРґ: РЅСѓР¶РЅР° РІС‚РѕСЂР°СЏ В«С‚СЂРѕР№РєР°В» СЃРїСѓСЃС‚СЏ sep_days (РµСЃР»Рё РѕРєРЅРѕ РїРѕР·РІРѕР»СЏРµС‚).
+    -- Длинный период: нужна вторая «тройка» спустя sep_days (если окно позволяет).
     IF v_span_days >= 10 THEN
         WITH pts AS (
             SELECT DISTINCT iv.dt AS dt
@@ -23663,7 +25188,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION backtest_indicators_cached(INTEGER, INTEGER, INTEGER, DATE, DATE) IS
-'True РµСЃР»Рё РёРЅРґРёРєР°С‚РѕСЂ РЅР° РїРµСЂРёРѕРґРµ РґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїРѕР»РЅС‹Р№: в‰Ґ3 Р±Р°СЂР° РїРѕРґСЂСЏРґ Р±РµР· skip TF; РЅР° РїРµСЂРёРѕРґРµ в‰Ґ10Рґ вЂ” РґРІРµ С‚Р°РєРёРµ СЃРµСЂРёРё СЃ СЂР°Р·РЅРµСЃРµРЅРёРµРј; РєСЂР°СЏ Сѓ С†РµРЅ/date_to. РќРµ РїСѓС‚Р°С‚СЊ СЃ EXISTS(1 С‚РѕС‡РєР°).';
+'True если индикатор на периоде достаточно полный: ≥3 бара подряд без skip TF; на периоде ≥10д — две такие серии с разнесением; края у цен/date_to. Не путать с EXISTS(1 точка).';
 
 CREATE OR REPLACE PROCEDURE logic_backtest_ensure_security_data(
     p_run_id BIGINT,
@@ -23714,13 +25239,13 @@ BEGIN
         p_prices_cached := 1;
         PERFORM logic_backtest_log(
             p_run_id, p_logic_id, 'backtest.prices.cached',
-            format('РљСЌС€ С†РµРЅ sec=%s (%s вЂ” %s)', p_security_id, p_warmup_from, p_date_to),
+            format('Кэш цен sec=%s (%s — %s)', p_security_id, p_warmup_from, p_date_to),
             jsonb_build_object('security_id', p_security_id),
             p_security_id, p_tf_id
         );
     END IF;
 
-    -- Р¦РµРЅС‹ Р±Р°Р·РѕРІС‹С… Р°РєС‚РёРІРѕРІ РґР»СЏ signal_acts_on=base_asset|contango
+    -- Цены базовых активов для signal_acts_on=base_asset|contango
     FOR v_ind IN
         SELECT DISTINCT logic_future_underlying_security_id(p_security_id) AS und_id
         FROM logic_indicator_signals lis
@@ -23751,7 +25276,7 @@ BEGIN
         END;
     END LOOP;
 
-    -- РЎРёРЅС‚РµС‚РёРєР° contango (fut в€’ und) РєР°Рє СЂСЏРґ С†РµРЅ РґР»СЏ РёРЅРґРёРєР°С‚РѕСЂРѕРІ
+    -- Синтетика contango (fut − und) как ряд цен для индикаторов
     IF EXISTS (
         SELECT 1 FROM logic_indicator_signals lis
         WHERE lis.logic_id = p_logic_id AND lis.is_active
@@ -23888,8 +25413,8 @@ BEGIN
         END;
     END LOOP;
 
-    -- РњСѓР»СЊС‚РёС‚Р°Р№РјС„СЂРµР№Рј-СЃРёРіРЅР°Р»С‹ (#843): С†РµРЅС‹ + СЃРµСЂРёРё РЅР° РўР¤ РєР°Р¶РґРѕРіРѕ tf= СЃРёРіРЅР°Р»Р°.
-    -- РћРєРЅРѕ С‚РѕС‡РµРє РјР°СЃС€С‚Р°Р±РёСЂСѓРµС‚СЃСЏ РѕС‚ РўР¤ Р»РѕРіРёРєРё (M5-СЃРёРіРЅР°Р» РЅР° M15-Р»РѕРіРёРєРµ в†’ Г—3 Р±Р°СЂРѕРІ).
+    -- Мультитаймфрейм-сигналы (#843): цены + серии на ТФ каждого tf= сигнала.
+    -- Окно точек масштабируется от ТФ логики (M5-сигнал на M15-логике → ×3 баров).
     FOR v_mtf IN
         SELECT x.tf_id, GREATEST(t.sec, 60) AS tf_sec
         FROM logic_signal_extra_tf_ids(p_logic_id, p_tf_id) x
@@ -23943,7 +25468,7 @@ BEGIN
         END;
     END LOOP;
 
-    -- РРЅРґРёРєР°С‚РѕСЂС‹ РЅР° Р±Р°Р·РѕРІРѕРј Р°РєС‚РёРІРµ (signal_acts_on=base_asset)
+    -- Индикаторы на базовом активе (signal_acts_on=base_asset)
     FOR v_ind IN
         SELECT DISTINCT
             lis.indicator_id,
@@ -23978,7 +25503,7 @@ BEGIN
         END;
     END LOOP;
 
-    -- РРЅРґРёРєР°С‚РѕСЂС‹ РЅР° РєРѕРЅС‚Р°РЅРіРѕ (signal_acts_on=contango)
+    -- Индикаторы на контанго (signal_acts_on=contango)
     FOR v_ind IN
         SELECT DISTINCT
             lis.indicator_id,
@@ -24080,7 +25605,7 @@ LANGUAGE sql STABLE AS $$
     );
 $$;
 
--- Shadow С‚РѕР»СЊРєРѕ РґР»СЏ СѓРєР°Р·Р°РЅРЅРѕР№ СЃС‚РѕСЂРѕРЅС‹ (long/short).
+-- Shadow только для указанной стороны (long/short).
 CREATE OR REPLACE FUNCTION logic_backtest_sec_side_shadow(
     p_run_id BIGINT,
     p_security_id INTEGER,
@@ -24194,7 +25719,7 @@ DECLARE
     v_position_event TEXT;
 BEGIN
     SELECT sd.name INTO v_side_name FROM sides sd WHERE sd.id = p_side_id;
-    -- Р”РµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ РїРѕСЃР»Рµ РїРѕРєСѓРїРєРё РЅРµ РїСЂРѕРґР°С‘Рј: Р·Р°РїСЂРµС‚ Close (SL/TP/СЃРёРіРЅР°Р»С‹/EOD).
+    -- Денежный фонд после покупки не продаём: запрет Close (SL/TP/сигналы/EOD).
     IF v_side_name = 'Close' AND logic_is_cash_fund_security(p_security_id) THEN
         o_trade_id := NULL;
         o_new_balance := v_balance;
@@ -24227,7 +25752,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Shadow: СЃС‡РёС‚Р°РµРј FR/РєРѕРјРёСЃСЃРёРё, РЅРѕ РЅРµ С‚СЂРѕРіР°РµРј С‚РµСЃС‚РѕРІС‹Р№ cash (РєР°Рє РІ Р±РѕСЋ).
+    -- Shadow: считаем FR/комиссии, но не трогаем тестовый cash (как в бою).
     IF p_is_shadow THEN
         PERFORM logic_trade_finalize(v_trade_id, NULL);
         UPDATE logic_backtest_runs
@@ -24297,7 +25822,7 @@ DECLARE
     v_close_long BOOLEAN := TRUE;
     v_close_short BOOLEAN := TRUE;
 BEGIN
-    -- Р”РµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ РѕСЃС‚Р°С‘С‚СЃСЏ РєСѓРїР»РµРЅРЅС‹Рј: SL/TP/СЃРёРіРЅР°Р»С‹ РЅРµ Р·Р°РєСЂС‹РІР°СЋС‚ TMON/LQDT/SBMM.
+    -- Денежный фонд остаётся купленным: SL/TP/сигналы не закрывают TMON/LQDT/SBMM.
     IF logic_is_cash_fund_security(p_security_id) THEN
         o_closed := 0;
         o_new_balance := v_balance;
@@ -24316,9 +25841,9 @@ BEGIN
     SELECT id INTO v_action_short_id FROM actions WHERE name = 'Short' LIMIT 1;
 
     v_price := logic_backtest_price_at(p_security_id, p_timeframe_id, p_bar_dt);
-    -- #1039: РЅР° РїРѕСЃР»РµРґРЅРµРј Р±Р°СЂРµ С‚РѕС‡РЅРѕР№ СЃРІРµС‡Рё РјРѕР¶РµС‚ РЅРµ Р±С‹С‚СЊ (С‚РѕСЂРіРё Р·Р°РєСЂС‹Р»РёСЃСЊ
-    -- СЂР°РЅСЊС€Рµ) вЂ” Р±РµСЂС‘Рј РїРѕСЃР»РµРґРЅСЋСЋ С†РµРЅСѓ РЅРµ РїРѕР·Р¶Рµ Р±Р°СЂР°, РёРЅР°С‡Рµ Р»РёРєРІРёРґР°С†РёСЏ РІ РєРѕРЅС†Рµ
-    -- РїСЂРѕРіРѕРЅР° РјРѕР»С‡Р° РїСЂРѕРїСѓСЃРєР°Р»Р°СЃСЊ Рё РѕС‚РєСЂС‹С‚С‹Рµ РїРѕР·РёС†РёРё РѕСЃС‚Р°РІР°Р»РёСЃСЊ РІРёСЃРµС‚СЊ.
+    -- #1039: на последнем баре точной свечи может не быть (торги закрылись
+    -- раньше) — берём последнюю цену не позже бара, иначе ликвидация в конце
+    -- прогона молча пропускалась и открытые позиции оставались висеть.
     IF v_price IS NULL OR v_price <= 0 THEN
         SELECT p.close_price INTO v_price
         FROM prices p
@@ -24370,7 +25895,7 @@ BEGIN
     o_closed := v_closed;
     o_new_balance := v_balance;
 
-    -- РђРІС‚Рѕ РѕРїС‚РёРјРёР·Р°С†РёСЏ: РїРѕ С„Р°РєС‚Сѓ Р·Р°РєСЂС‹С‚РёСЏ РїРѕРґСЃС‚СЂР°РёРІР°РµРј РїРµСЂРёРѕРґ СЃРёРіРЅР°Р»РѕРІ РІС…РѕРґР°.
+    -- Авто оптимизация: по факту закрытия подстраиваем период сигналов входа.
     IF v_closed > 0 AND NOT COALESCE(p_is_shadow, FALSE) THEN
         IF v_close_long THEN
             PERFORM logic_auto_optimize_on_close(
@@ -24446,7 +25971,7 @@ BEGIN
 END;
 $$;
 
--- Track Р±СѓРјР°РіРё РІ С‚РµСЃС‚Рµ (realized + unrealized РЅР° Р±Р°СЂРµ), Р°РЅР°Р»РѕРі logic_security_track_value.
+-- Track бумаги в тесте (realized + unrealized на баре), аналог logic_security_track_value.
 CREATE OR REPLACE FUNCTION logic_backtest_security_track_value(
     p_logic_id INTEGER,
     p_security_id INTEGER,
@@ -24793,7 +26318,7 @@ BEGIN
                 END LOOP;
             END IF;
         ELSIF v_stop.rule_kind = 'stop_loss' AND v_stop.scope_type = 'portfolio_resume' THEN
-            -- Resume check while paused (mirror live: baseline + shadow FR в‰Ґ equity before close)
+            -- Resume check while paused (mirror live: baseline + shadow FR ≥ equity before close)
             SELECT COALESCE(r.portfolio_trading_paused, FALSE) AS portfolio_trading_paused,
                    r.portfolio_stop_resume_equity,
                    r.portfolio_stop_resume_baseline,
@@ -24826,7 +26351,7 @@ BEGIN
                     WHERE id = p_run_id;
                 END IF;
             ELSE
-                -- Peak for DD%; resume target = cash equity before close (РєР°Рє РІ Р±РѕСЋ)
+                -- Peak for DD%; resume target = cash equity before close (как в бою)
                 UPDATE logic_backtest_runs
                 SET portfolio_equity_peak = GREATEST(
                     COALESCE(portfolio_equity_peak, 0),
@@ -24846,7 +26371,7 @@ BEGIN
 
                 IF v_drawdown >= v_stop.value THEN
                     v_reason := format('stop_loss:portfolio_resume (%s%%)', round(v_drawdown, 2));
-                    -- Р¦РµР»СЊ РІРѕР·РѕР±РЅРѕРІР»РµРЅРёСЏ = equity РґРѕ Р·Р°РєСЂС‹С‚РёСЏ, РЅРµ РїРёРє
+                    -- Цель возобновления = equity до закрытия, не пик
                     v_track_before := p_balance;
                     FOR v_sec IN
                         SELECT DISTINCT lt.security_id
@@ -25019,7 +26544,7 @@ BEGIN
                 END LOOP;
             END LOOP;
         ELSIF v_stop.rule_kind = 'stop_loss' AND v_stop.scope_type = 'security_inversion' THEN
-            -- Like security_resume (paper Г— side), but on shadowв†’zero toggle real_trading_inverted.
+            -- Like security_resume (paper × side), but on shadow→zero toggle real_trading_inverted.
             -- Signal-side pause/shadow; when inverted, DD/close use opposite position side
             -- (long signals open shorts). Shadow recovery uses base logic (ignore inverted).
             FOR v_sec IN
@@ -25082,7 +26607,7 @@ BEGIN
                         v_hwm := NULL;
                     END IF;
 
-                    -- Shadow on this signal-side: recover to peak в†’ unpause + toggle inverted
+                    -- Shadow on this signal-side: recover to peak → unpause + toggle inverted
                     IF v_side_paused THEN
                         IF v_resume_equity IS NOT NULL AND v_resume_baseline IS NOT NULL THEN
                             v_track_after := logic_backtest_security_side_track_value(
@@ -25236,8 +26761,8 @@ BEGIN
                 );
             END LOOP;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio' THEN
-            -- Equity (cash+MTM), РЅРµ СЃРІРѕР±РѕРґРЅС‹Р№ РєСЌС€: РёРЅР°С‡Рµ TP СЃРїР°РјРёС‚ РїСЂРё В«Р¶РёСЂРЅРѕРјВ» РєСЌС€Рµ
-            -- РїСЂРё РїР°РґР°СЋС‰РµРј РїРѕСЂС‚С„РµР»Рµ. Latch: РїРѕСЃР»Рµ СЃСЂР°Р±Р°С‚С‹РІР°РЅРёСЏ Р¶РґС‘Рј РІРѕР·РІСЂР°С‚ РЅРёР¶Рµ РїРѕСЂРѕРіР°.
+            -- Equity (cash+MTM), не свободный кэш: иначе TP спамит при «жирном» кэше
+            -- при падающем портфеле. Latch: после срабатывания ждём возврат ниже порога.
             v_initial := COALESCE(get_logic_param_numeric(p_logic_id, 'initial_balance', 0), 0);
             v_equity := COALESCE(
                 logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance),
@@ -25300,9 +26825,9 @@ BEGIN
                 END IF;
             END LOOP;
         ELSIF v_stop.rule_kind = 'take_profit' AND v_stop.scope_type = 'portfolio_ltp_renew' THEN
-            -- Р›РёРЅРµР№РЅС‹Р№ TP: arm РЅР° РІСЃРїР»РµСЃРєРµ; РїСЂРѕРґР°Р¶Р° РїСЂРё РѕС‚РєР°С‚Рµ РѕС‚ РїРёРєР° >= TP%; latch РїСЂРѕС‚РёРІ С‡РѕРїР°.
-            -- Р‘Р°Р·Р° вЂ” СЃС‚Р°СЂС‚ С‚РµСЃС‚Р° (test_initial_balance), РёРЅР°С‡Рµ live initial_balance, РёРЅР°С‡Рµ 1 000 000
-            -- (РєР°Рє Р±Р°Р»Р°РЅСЃ РїСЂРѕРіРѕРЅР° РІ logic-backtest.js). РРЅР°С‡Рµ РІ С‚РµСЃС‚Рµ Р±РµР· live initial_balance TP РјРѕР»С‡РёС‚.
+            -- Линейный TP: arm на всплеске; продажа при откате от пика >= TP%; latch против чопа.
+            -- База — старт теста (test_initial_balance), иначе live initial_balance, иначе 1 000 000
+            -- (как баланс прогона в logic-backtest.js). Иначе в тесте без live initial_balance TP молчит.
             v_initial := COALESCE(
                 NULLIF(get_logic_param_numeric(p_logic_id, 'test_initial_balance', NULL), 0),
                 NULLIF(get_logic_param_numeric(p_logic_id, 'initial_balance', NULL), 0),
@@ -25460,11 +26985,11 @@ BEGIN
 END;
 $$;
 
--- РҐРµР»РїРµСЂ: РёСЃРїРѕР»РЅРµРЅРёРµ СЃРёРіРЅР°Р»СЊРЅРѕРіРѕ С„РёР»Р»Р° СЃ СѓС‡С‘С‚РѕРј РїСЂРѕСЃРєР°Р»СЊР·С‹РІР°РЅРёСЏ.
--- slippage_pct (%) Р·Р°РґР°С‘С‚ РњРђРљРЎРРњРђР›Р¬РќР«Р™ СЃР»СѓС‡Р°Р№РЅС‹Р№ СЃРґРІРёРі С†РµРЅС‹ СЃРґРµР»РєРё РѕС‚ Р±Р°Р·РѕРІРѕР№:
--- С†РµРЅР° = round(p_base * (1 + uni(-X..+X)/100), 6), РіРґРµ X = p_slippage_pct.
--- Р Р°РІРЅРѕРјРµСЂРЅС‹Р№ СЃРґРІРёРі РїСЂРёРјРµРЅСЏРµС‚СЃСЏ Рє РљРђР–Р”РћРњРЈ С„РёР»Р»Сѓ Рё РёРґС‘С‚ РІ РѕР±Рµ СЃС‚РѕСЂРѕРЅС‹ (РѕС‚ -X% РґРѕ +X%);
--- 0% / NULL = Р±Р°Р·РѕРІР°СЏ С†РµРЅР°, РїСЂРѕСЃРєР°Р»СЊР·С‹РІР°РЅРёРµ РІС‹РєР»СЋС‡РµРЅРѕ.
+-- Хелпер: исполнение сигнального филла с учётом проскальзывания.
+-- slippage_pct (%) задаёт МАКСИМАЛЬНЫЙ случайный сдвиг цены сделки от базовой:
+-- цена = round(p_base * (1 + uni(-X..+X)/100), 6), где X = p_slippage_pct.
+-- Равномерный сдвиг применяется к КАЖДОМУ филлу и идёт в обе стороны (от -X% до +X%);
+-- 0% / NULL = базовая цена, проскальзывание выключено.
 CREATE OR REPLACE FUNCTION logic_backtest_fill_at(
     p_run_id BIGINT,
     p_security_id INTEGER,
@@ -25482,7 +27007,7 @@ BEGIN
         RETURN p_base;
     END IF;
 
-    -- Р Р°РІРЅРѕРјРµСЂРЅС‹Р№ СЃР»СѓС‡Р°Р№РЅС‹Р№ СЃРґРІРёРі С†РµРЅС‹: РѕС‚ -p_slippage_pct% РґРѕ +p_slippage_pct%.
+    -- Равномерный случайный сдвиг цены: от -p_slippage_pct% до +p_slippage_pct%.
     v_shift_pct := (random() * 2 - 1) * COALESCE(p_slippage_pct, 0);
 
     RETURN round(p_base * (1 + v_shift_pct / 100.0), 6);
@@ -25490,7 +27015,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_fill_at(BIGINT, INTEGER, INTEGER, TIMESTAMP, NUMERIC, NUMERIC) IS
-'Р¤РёР»Р» СЃРёРіРЅР°Р»СЊРЅРѕР№ СЃРґРµР»РєРё СЃ РїСЂРѕСЃРєР°Р»СЊР·С‹РІР°РЅРёРµРј: С†РµРЅР° СЃР»СѓС‡Р°Р№РЅРѕ СЃРґРІРёРіР°РµС‚СЃСЏ СЂР°РІРЅРѕРјРµСЂРЅРѕ РѕС‚ -slippage_pct%% РґРѕ +slippage_pct%% РѕС‚ Р±Р°Р·РѕРІРѕР№ (РєР°Р¶РґС‹Р№ С„РёР»Р», РѕР±Рµ СЃС‚РѕСЂРѕРЅС‹)';
+'Филл сигнальной сделки с проскальзыванием: цена случайно сдвигается равномерно от -slippage_pct%% до +slippage_pct%% от базовой (каждый филл, обе стороны)';
 
 CREATE OR REPLACE FUNCTION logic_backtest_process_signals(
     p_run_id BIGINT,
@@ -25544,9 +27069,10 @@ DECLARE
     v_room NUMERIC;
     v_order_notional NUMERIC;
     v_slippage_pct NUMERIC;
+    v_portfolio_did_close BOOLEAN := FALSE;
+    v_portfolio_out_bal NUMERIC;
 BEGIN
-    -- РџСЂРѕСЃРєР°Р»СЊР·С‹РІР°РЅРёРµ РїСЂРѕРіРѕРЅР°: slippage_pct РёР· logic_backtest_runs РїСЂРёРјРµРЅСЏРµС‚СЃСЏ
-    -- Рє РєР°Р¶РґРѕР№ СЃРґРµР»РєРµ (СЃР»СѓС‡Р°Р№РЅС‹Р№ СЃРґРІРёРі С†РµРЅС‹ РґРѕ В±slippage_pct%).
+    -- Проскальзывание: slippage_pct из logic_backtest_runs применяется в момент сделки.
     SELECT COALESCE(slippage_pct, 0) INTO v_slippage_pct
     FROM logic_backtest_runs WHERE id = p_run_id;
 
@@ -25566,19 +27092,19 @@ BEGIN
         v_size_mode := 'free_cash';
     END IF;
     v_inversion := get_logic_param_boolean(p_logic_id, 'inversion', FALSE);
-    -- РђРІС‚Рѕ РѕРїС‚РёРјРёР·Р°С†РёСЏ РјРµРЅСЏРµС‚ period СЃРёРіРЅР°Р»РѕРІ РїРѕ С…РѕРґСѓ РїСЂРѕРіРѕРЅР°; С‡С‚РѕР±С‹ РёР·РјРµРЅРµРЅРёРµ
-    -- РІР»РёСЏР»Рѕ РЅР° РѕС†РµРЅРєСѓ Р±РµР· РїРµСЂРµСЃС‡С‘С‚Р° РѕР±С‰РµР№ СЃРµСЂРёРё indicator_values, РѕС†РµРЅРёРІР°РµРј
-    -- СЃРёРіРЅР°Р»С‹ РЅР° Р»РµС‚Сѓ (РєР°Рє РїСЂРё OPT), Р° РЅРµ РёР· РїСЂРµРґСЂР°СЃСЃС‡РёС‚Р°РЅРЅРѕР№ СЃРµСЂРёРё.
-    -- #1036: Р’РЎР•Р“Р”Рђ СЃС‡РёС‚Р°РµРј СЃРёРіРЅР°Р»С‹ РЅР° Р»РµС‚Сѓ РїРѕ С„РѕСЂРјСѓР»Рµ СЃРІРѕРµР№ Р»РѕРіРёРєРё.
-    -- Р Р°РЅСЊС€Рµ РґР»СЏ Р»РѕРіРёРє Р±РµР· OPT Р±СЂР°Р»РёСЃСЊ Р·РЅР°С‡РµРЅРёСЏ РёР· РѕР±С‰РµР№ СЃРµСЂРёРё
-    -- indicator_values (РµС‘ РїР°СЂР°РјРµС‚СЂС‹), РїРѕСЌС‚РѕРјСѓ РїСЂР°РІРєР° formula Рё РїРѕР»Р·СѓРЅРѕРє
-    -- В«СЃС‚СЂРѕР¶Рµ/РјСЏРіС‡РµВ» РЅРµ РІР»РёСЏР»Рё РЅР° Р±СЌРєС‚РµСЃС‚ вЂ” С‡РёСЃР»Рѕ СЃРґРµР»РѕРє РЅРµ РјРµРЅСЏР»РѕСЃСЊ.
+    -- Авто оптимизация меняет period сигналов по ходу прогона; чтобы изменение
+    -- влияло на оценку без пересчёта общей серии indicator_values, оцениваем
+    -- сигналы на лету (как при OPT), а не из предрассчитанной серии.
+    -- #1036: ВСЕГДА считаем сигналы на лету по формуле своей логики.
+    -- Раньше для логик без OPT брались значения из общей серии
+    -- indicator_values (её параметры), поэтому правка formula и ползунок
+    -- «строже/мягче» не влияли на бэктест — число сделок не менялось.
     v_use_opt := TRUE;
     v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE)
         + logic_backtest_count_open_positions(p_logic_id, TRUE);
-    -- Р‘Р°Р·Р° РЅР° РІРµСЃСЊ Р±Р°СЂ (РєР°Рє РІ live): short-РІС‹СЂСѓС‡РєР° / Р·Р°С‘Рј РЅРµ РІ Р±Р°Р·Рµ (С‚РѕР»СЊРєРѕ equity).
+    -- База на весь бар (как в live): short-выручка / заём не в базе (только equity).
     IF v_size_mode = 'free_cash' THEN
-        -- p_balance СЂР°СЃС‚С‘С‚ РѕС‚ short Open; equity = cash + long в€’ short СѓР¶Рµ В«СЃРІРѕР№В» РєР°РїРёС‚Р°Р».
+        -- p_balance растёт от short Open; equity = cash + long − short уже «свой» капитал.
         v_cycle_budget := LEAST(
             GREATEST(0, COALESCE(p_balance, 0)),
             GREATEST(
@@ -25611,8 +27137,33 @@ BEGIN
         * v_max_positions;
     v_spent_notional := logic_open_notional_exposure(p_logic_id, TRUE, '', p_run_id);
 
-    -- РћРґРёРЅ Р°РіСЂРµРіР°С‚ PnL РЅР° Р±Р°СЂ (РЅРµ РєРѕСЂСЂРµР»РёСЂРѕРІР°РЅРЅС‹Р№ SUM РЅР° РєР°Р¶РґСѓСЋ Р±СѓРјР°РіСѓ вЂ” РёРЅР°С‡Рµ mid-run
-    -- test-panel/UI РїСѓСЃС‚РµРµС‚ РёР·вЂ‘Р·Р° РґРѕР»РіРёС… Р»РѕРєРѕРІ, Р° /pnl-summary РµС‰С‘ СѓСЃРїРµРІР°РµС‚).
+    -- Один агрегат PnL на бар (не коррелированный SUM на каждую бумагу — иначе mid-run
+    -- test-panel/UI пустеет из‑за долгих локов, а /pnl-summary ещё успевает).
+    -- Portfolio signals: process first (set/consume pending, bulk close except funds)
+    SELECT out_balance, did_close INTO v_portfolio_out_bal, v_portfolio_did_close
+    FROM logic_backtest_process_portfolio_signal_groups(
+        p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, p_balance
+    );
+    p_balance := COALESCE(v_portfolio_out_bal, p_balance);
+    IF v_portfolio_did_close THEN
+        v_open_positions := logic_backtest_count_open_positions(p_logic_id, FALSE)
+            + logic_backtest_count_open_positions(p_logic_id, TRUE);
+        v_spent_notional := logic_open_notional_exposure(p_logic_id, TRUE, '', p_run_id);
+        IF v_size_mode = 'free_cash' THEN
+            v_cycle_budget := LEAST(
+                GREATEST(0, COALESCE(p_balance, 0)),
+                GREATEST(0, COALESCE(logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance), 0))
+            );
+        ELSIF v_size_mode = 'portfolio_incl_fund' THEN
+            v_cycle_budget := GREATEST(0, COALESCE(logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance), 0));
+        ELSE
+            v_cycle_budget := GREATEST(0,
+                COALESCE(logic_backtest_portfolio_equity(p_logic_id, p_tf_id, p_bar_dt, p_balance), 0)
+                - logic_backtest_selected_cash_fund_mtm(p_logic_id, p_tf_id, p_bar_dt)
+            );
+        END IF;
+        v_max_exposure := v_cycle_budget * (GREATEST(0, COALESCE(v_position_size_pct, 0)) / 100.0) * v_max_positions;
+    END IF;
     FOR v_sec IN
         SELECT ls.security_id
         FROM logic_securities ls
@@ -25643,6 +27194,7 @@ BEGIN
             SELECT lis.position_event, lis.position_side
             FROM logic_indicator_signals lis
             WHERE lis.logic_id = p_logic_id AND lis.is_active = TRUE
+              AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
             GROUP BY lis.position_event, lis.position_side
             ORDER BY lis.position_event, lis.position_side
         LOOP
@@ -25655,7 +27207,7 @@ BEGIN
                 );
             -- Shadow recovery to "zero" must use base logic (checkbox only).
             -- If shadow kept paper inverted, recovery after inverted SL used the
-            -- losing book в†’ stuck inverted; ON was easy, OFF was hard.
+            -- losing book → stuck inverted; ON was easy, OFF was hard.
             v_eff_inversion := (
                 v_inversion <> CASE
                     WHEN v_is_shadow THEN FALSE
@@ -25678,14 +27230,15 @@ BEGIN
                 FROM logic_indicator_signals lis
                 WHERE lis.logic_id = p_logic_id
                   AND lis.is_active = TRUE
+                  AND COALESCE(lis.signal_acts_on, 'security') <> 'portfolio'
                   AND lis.position_event = v_grp.position_event
                   AND lis.position_side = v_grp.position_side
                 ORDER BY lis.display_order, lis.id
             LOOP
-                -- Inversion = ReverseSides only (Longв†”Short). Do NOT invert
+                -- Inversion = ReverseSides only (Long↔Short). Do NOT invert
                 -- comparison ops: for band fades (pp<=LOWER) that would become
-                -- pp>=LOWER (almost always true) в†’ trade spam, no equity mirror.
-                -- РўР¤ СЃРёРіРЅР°Р»Р° (tf=) Рё РµРіРѕ Р·Р°РєСЂС‹С‚С‹Р№ Р±Р°СЂ РґРѕ close Р±Р°СЂР° Р»РѕРіРёРєРё.
+                -- pp>=LOWER (almost always true) → trade spam, no equity mirror.
+                -- ТФ сигнала (tf=) и его закрытый бар до close бара логики.
                 SELECT * INTO v_pt
                 FROM logic_signal_eval_point(v_sig.formula, p_tf_id, p_bar_dt);
                 IF v_pt.tf_id IS NULL OR v_pt.bar_dt IS NULL THEN
@@ -25713,9 +27266,9 @@ BEGIN
 
                 IF v_signal_kind IS NULL THEN
                     v_signal_kind := v_sig.signal_kind;
-                    -- #1042: contango-СЃРёРіРЅР°Р» СЃС‡РёС‚Р°РµС‚СЃСЏ РїРѕ СЃРёРЅС‚РµС‚РёРєРµ
-                    -- (v_eval.close_price), Р° СЃРґРµР»РєР° РёСЃРїРѕР»РЅСЏРµС‚СЃСЏ РїРѕ С†РµРЅРµ
-                    -- СЃР°РјРѕР№ Р±СѓРјР°РіРё (С„СЊСЋС‡РµСЂСЃР°), РёРЅР°С‡Рµ Р»РѕС‚/РЅРѕРјРёРЅР°Р» Р»РѕРјР°СЋС‚СЃСЏ.
+                    -- #1042: contango-сигнал считается по синтетике
+                    -- (v_eval.close_price), а сделка исполняется по цене
+                    -- самой бумаги (фьючерса), иначе лот/номинал ломаются.
                     v_pp := logic_backtest_fill_at(
                         p_run_id, v_sec.security_id, v_pt.tf_id, v_pt.bar_dt,
                         COALESCE(
@@ -25753,7 +27306,7 @@ BEGIN
                 THEN logic_short_position_qty(p_logic_id, v_sec.security_id, v_is_shadow, TRUE) ELSE 0 END;
             v_is_open_event := COALESCE(v_grp.position_event, 'open') = 'open';
             v_reason := format(
-                'signal:AND%s:%s/%sв†’%s %s',
+                'signal:AND%s:%s/%s→%s %s',
                 CASE WHEN v_eff_inversion THEN ':inv' ELSE '' END,
                 v_grp.position_event, v_grp.position_side, v_eff_side, v_formulas
             );
@@ -25772,7 +27325,7 @@ BEGIN
                         v_sizing_base, v_position_size_pct, v_pp, v_lot_size, v_room
                     );
                     IF v_quantity < v_lot_size THEN
-                        -- Р¤СЊСЋС‡РµСЂСЃС‹: РЅРѕС‚РёРѕРЅР°Р» РєРѕРЅС‚СЂР°РєС‚Р° >> % РґРµРїРѕР·РёС‚Р° в†’ 1 Р»РѕС‚ РїСЂРё СЃРёРіРЅР°Р»Рµ
+                        -- Фьючерсы: нотионал контракта >> % депозита → 1 лот при сигнале
                         IF v_is_futures AND v_lot_size * v_pp <= v_room THEN
                             v_quantity := v_lot_size;
                         ELSE
@@ -25884,8 +27437,8 @@ BEGIN
 END;
 $$;
 
--- Р¦РµРЅР° С„РѕРЅРґР° РґР»СЏ РїР°СЂРєРѕРІРєРё РЅР° Р±Р°СЂРµ: С‚РѕР»СЊРєРѕ prices (+ fallback 100).
--- Р‘РµР· HTTP: РёРЅР°С‡Рµ РїСЂРё РѕС‚СЃСѓС‚СЃС‚РІРёРё СЃРІРµС‡РµР№ TMON РєР°Р¶РґС‹Р№ Р±Р°СЂ Р·РѕРІС‘С‚ T-Bank (~2СЃ) Рё С‚РµСЃС‚ В«РІРёСЃРёС‚В».
+-- Цена фонда для парковки на баре: только prices (+ fallback 100).
+-- Без HTTP: иначе при отсутствии свечей TMON каждый бар зовёт T-Bank (~2с) и тест «висит».
 CREATE OR REPLACE FUNCTION logic_cash_fund_price_at(
     p_security_id INTEGER,
     p_timeframe_id INTEGER,
@@ -25922,15 +27475,15 @@ BEGIN
         RETURN v_price;
     END IF;
 
-    -- Р‘РџРР¤ РґРµРЅРµР¶РЅРѕРіРѕ СЂС‹РЅРєР° ~100 в‚Ѕ/РїР°Р№. HTTP вЂ” С‚РѕР»СЊРєРѕ РІ live logic_park_excess_cash (resolve).
+    -- БПИФ денежного рынка ~100 ₽/пай. HTTP — только в live logic_park_excess_cash (resolve).
     RETURN 100;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_cash_fund_price_at(INTEGER, INTEGER, TIMESTAMP, TEXT) IS
-'Р¦РµРЅР° TMON/LQDT/SBMM РґР»СЏ РїР°СЂРєРѕРІРєРё: prices в†’ fallback 100 (Р±РµР· HTTP РЅР° РєР°Р¶РґС‹Р№ Р±Р°СЂ)';
+'Цена TMON/LQDT/SBMM для парковки: prices → fallback 100 (без HTTP на каждый бар)';
 
--- Equity С‚РµСЃС‚Р° РЅР° Р±Р°СЂРµ: РѕРґРёРЅ set-based Р·Р°РїСЂРѕСЃ (Р±РµР· С†РёРєР»Р° РїРѕ Р±СѓРјР°РіР°Рј РЅР° РєР°Р¶РґС‹Р№ Р±Р°СЂ).
+-- Equity теста на баре: один set-based запрос (без цикла по бумагам на каждый бар).
 CREATE OR REPLACE FUNCTION logic_backtest_portfolio_equity(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER,
@@ -25939,8 +27492,8 @@ CREATE OR REPLACE FUNCTION logic_backtest_portfolio_equity(
 )
 RETURNS NUMERIC
 LANGUAGE sql STABLE AS $$
-    -- LATERAL вЂ¦ ORDER BY dt DESC LIMIT 1 uses idx_prices_unique_candle (backward).
-    -- Old DISTINCT ON (security_id) вЂ¦ JOIN prices caused huge temp sorts (~0.4s+/call).
+    -- LATERAL … ORDER BY dt DESC LIMIT 1 uses idx_prices_unique_candle (backward).
+    -- Old DISTINCT ON (security_id) … JOIN prices caused huge temp sorts (~0.4s+/call).
     WITH pos AS (
         SELECT
             lt.security_id,
@@ -26005,9 +27558,9 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_backtest_portfolio_equity(INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'РўРµСЃС‚: equity С‡РµРјРїРёРѕРЅР° (Р±РµР· opt_lane) = cash + longГ—price в€’ shortГ—price';
+'Тест: equity чемпиона (без opt_lane) = cash + long×price − short×price';
 
--- MTM РІС‹Р±СЂР°РЅРЅРѕРіРѕ РґРµРЅРµР¶РЅРѕРіРѕ С„РѕРЅРґР° РІ С‚РµСЃС‚Рµ (РёСЃРєР»СЋС‡Р°РµС‚СЃСЏ РёР· Р±Р°Р·С‹ Р»РѕС‚Р° В«РІРµСЃСЊ РїРѕСЂС‚С„РµР»СЊВ»).
+-- MTM выбранного денежного фонда в тесте (исключается из базы лота «весь портфель»).
 CREATE OR REPLACE FUNCTION logic_backtest_selected_cash_fund_mtm(
     p_logic_id INTEGER,
     p_timeframe_id INTEGER,
@@ -26068,9 +27621,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_selected_cash_fund_mtm(INTEGER, INTEGER, TIMESTAMP) IS
-'РўРµСЃС‚: MTM РІС‹Р±СЂР°РЅРЅРѕРіРѕ cash_fund_code РЅР° bar_dt (С‚РѕР»СЊРєРѕ С‡РµРјРїРёРѕРЅ, Р±РµР· opt_lane)';
+'Тест: MTM выбранного cash_fund_code на bar_dt (только чемпион, без opt_lane)';
 
--- РџР°СЂРєРѕРІРєР°: BUY С„РѕРЅРґР° РЅР° min(СЃРІРѕР±РѕРґРЅС‹Р№ РєСЌС€, equityв€’РїРѕСЂРѕРів€’СѓР¶Рµ_РІ_С„РѕРЅРґРµ); Р±РµР· РїСЂРѕРґР°Р¶Рё С„РѕРЅРґР°.
+-- Парковка: BUY фонда на min(свободный кэш, equity−порог−уже_в_фонде); без продажи фонда.
 CREATE OR REPLACE FUNCTION logic_backtest_park_excess_cash(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -26125,7 +27678,7 @@ BEGIN
     IF v_security_id IS NULL THEN
         PERFORM logic_backtest_log(
             p_run_id, p_logic_id, 'backtest.cash_fund.skip',
-            format('Р¤РѕРЅРґ %s РЅРµ РЅР°Р№РґРµРЅ РІ securities', v_code),
+            format('Фонд %s не найден в securities', v_code),
             jsonb_build_object('fund', v_code, 'balance', v_balance, 'threshold', v_threshold),
             NULL, p_timeframe_id
         );
@@ -26136,14 +27689,14 @@ BEGIN
     IF v_price IS NULL OR v_price <= 0 THEN
         PERFORM logic_backtest_log(
             p_run_id, p_logic_id, 'backtest.cash_fund.skip',
-            format('РќРµС‚ С†РµРЅС‹ РґР»СЏ %s РЅР° %s', v_code, p_bar_dt),
+            format('Нет цены для %s на %s', v_code, p_bar_dt),
             jsonb_build_object('fund', v_code, 'bar_dt', p_bar_dt),
             v_security_id, p_timeframe_id
         );
         RETURN v_balance;
     END IF;
 
-    -- РР·Р±С‹С‚РѕРє РїРѕСЂС‚С„РµР»СЏ РЅР°Рґ РїРѕСЂРѕРіРѕРј; СѓР¶Рµ РєСѓРїР»РµРЅРЅС‹Р№ С„РѕРЅРґ РІ equity СѓС‡РёС‚С‹РІР°РµРј, С‡С‚РѕР±С‹ РЅРµ РґРѕРєСѓРїР°С‚СЊ СЃРЅРѕРІР°.
+    -- Избыток портфеля над порогом; уже купленный фонд в equity учитываем, чтобы не докупать снова.
     v_equity := logic_backtest_portfolio_equity(p_logic_id, p_timeframe_id, p_bar_dt, v_balance);
     v_fund_qty := logic_long_position_qty(p_logic_id, v_security_id, FALSE, TRUE);
     v_fund_mtm := COALESCE(v_fund_qty, 0) * v_price;
@@ -26156,7 +27709,7 @@ BEGIN
 
     v_lot := GREATEST(1, logic_security_lot_size(v_security_id));
     v_qty := (FLOOR(v_park_amount / (v_price * v_lot)))::INTEGER * v_lot;
-    -- РќРµ Р»РѕРіРёСЂСѓРµРј В«РјР°Р»Рѕ РґР»СЏ Р»РѕС‚Р°В» РЅР° РєР°Р¶РґРѕРј Р±Р°СЂРµ вЂ” Р·Р°СЃРѕСЂСЏРµС‚ app_tech_log Рё С‚РѕСЂРјРѕР·РёС‚ РїСЂРѕРіРѕРЅ.
+    -- Не логируем «мало для лота» на каждом баре — засоряет app_tech_log и тормозит прогон.
     IF v_qty < v_lot THEN
         RETURN v_balance;
     END IF;
@@ -26183,7 +27736,7 @@ BEGIN
     IF v_trade_id IS NOT NULL THEN
         PERFORM logic_backtest_log(
             p_run_id, p_logic_id, 'backtest.cash_fund.park',
-            format('РўРµСЃС‚: РєСѓРїР»РµРЅРѕ %s qty=%s price=%s bar=%s', v_code, v_qty, v_price, p_bar_dt),
+            format('Тест: куплено %s qty=%s price=%s bar=%s', v_code, v_qty, v_price, p_bar_dt),
             jsonb_build_object(
                 'fund', v_code,
                 'quantity', v_qty,
@@ -26204,9 +27757,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_park_excess_cash(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'РўРµСЃС‚: РЅР° РєР°Р¶РґРѕРј Р±Р°СЂРµ BUY С„РѕРЅРґР° РЅР° min(РєСЌС€, equityв€’РїРѕСЂРѕРів€’СѓР¶Рµ_РІ_С„РѕРЅРґРµ); С„РѕРЅРґ РЅРµ РїСЂРѕРґР°С‘Рј';
+'Тест: на каждом баре BUY фонда на min(кэш, equity−порог−уже_в_фонде); фонд не продаём';
 
--- Р—Р°РєСЂС‹С‚СЊ РІСЃРµ test-РїРѕР·РёС†РёРё РєСЂРѕРјРµ РґРµРЅРµР¶РЅРѕРіРѕ С„РѕРЅРґР° (TMON/LQDT/SBMM).
+-- Закрыть все test-позиции кроме денежного фонда (TMON/LQDT/SBMM).
 CREATE OR REPLACE FUNCTION logic_backtest_close_all_except_funds(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -26255,9 +27808,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_close_all_except_funds(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'EOD: Р·Р°РєСЂС‹С‚СЊ РІСЃРµ test-РїРѕР·РёС†РёРё РєСЂРѕРјРµ TMON/LQDT/SBMM';
+'EOD: закрыть все test-позиции кроме TMON/LQDT/SBMM';
 
--- РўРµСЃС‚: Р·Р°РєСЂС‹С‚СЊ С„СЊСЋС‡РµСЂСЃС‹ СЃ days_to_expiry в‰¤ N (sell_futures_*).
+-- Тест: закрыть фьючерсы с days_to_expiry ≤ N (sell_futures_*).
 CREATE OR REPLACE FUNCTION logic_backtest_close_futures_near_expiry(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -26322,9 +27875,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_close_futures_near_expiry(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, NUMERIC) IS
-'EOD/С‚РµСЃС‚: Р·Р°РєСЂС‹С‚СЊ С„СЊСЋС‡РµСЂСЃС‹ СЃ days_to_expiry в‰¤ sell_futures_days_before_expiry';
+'EOD/тест: закрыть фьючерсы с days_to_expiry ≤ sell_futures_days_before_expiry';
 
--- РћРґРёРЅ Р±Р°СЂ С‚РµСЃС‚Р° (Node + SQL path): РјРµРЅСЊС€Рµ round-trip, С‡РµРј 5 РѕС‚РґРµР»СЊРЅС‹С… CALL.
+-- Один бар теста (Node + SQL path): меньше round-trip, чем 5 отдельных CALL.
 CREATE OR REPLACE FUNCTION logic_backtest_process_bar(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -26361,7 +27914,7 @@ BEGIN
             p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
         );
         -- Same test run: formula OPT() and/or offline grid paper lanes (opt_lane).
-        -- Grid: no promote вЂ” rank FinRes at finish.
+        -- Grid: no promote — rank FinRes at finish.
         IF logic_opt_logic_has_opt(p_logic_id)
            OR EXISTS (
                 SELECT 1 FROM logic_backtest_runs r
@@ -26382,8 +27935,8 @@ BEGIN
     v_balance := logic_backtest_park_excess_cash(
         p_run_id, p_logic_id, p_account_id, p_tf_id, p_bar_dt, v_balance
     );
-    -- #1040: СЃРЅРёРјРѕРє equity РЅР° РєР°Р¶РґРѕРј Р±Р°СЂРµ вЂ” СЃ РЅРµСЂРµР°Р»РёР·РѕРІР°РЅРЅС‹Рј P&L РѕС‚РєСЂС‹С‚С‹С…
-    -- РїРѕР·РёС†РёР№, С‡С‚РѕР±С‹ РіСЂР°С„РёРє РЅРµ В«РѕР±СЂС‹РІР°Р»СЃСЏВ» С‚РѕР»СЊРєРѕ РЅР° Р·Р°РєСЂС‹С‚РёСЏС….
+    -- #1040: снимок equity на каждом баре — с нереализованным P&L открытых
+    -- позиций, чтобы график не «обрывался» только на закрытиях.
     INSERT INTO logic_backtest_equity_points (run_id, dt, equity)
     VALUES (
         p_run_id, p_bar_dt,
@@ -26397,10 +27950,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_process_bar(BIGINT, INTEGER, INTEGER, INTEGER, TIMESTAMP, TIMESTAMP, TIMESTAMP, NUMERIC) IS
-'РўРµСЃС‚: rate в†’ risk в†’ EOD в†’ signals в†’ OPT(paper/promote) в†’ park.';
+'Тест: rate → risk → EOD → signals → OPT(paper/promote) → park.';
 
--- РџСЂРѕРіРѕРЅ РїРѕ СЃРІРµС‡Р°Рј (РµРґРёРЅС‹Р№ РјРѕР·Рі С‚РµСЃС‚Р°): rate в†’ risk в†’ EOD в†’ signals в†’ park.
--- PROCEDURE + COMMIT РєР°Р¶РґС‹Рµ N Р±Р°СЂРѕРІ: РёРЅР°С‡Рµ РѕРґРЅР° РґР»РёРЅРЅР°СЏ tx РґРµСЂР¶РёС‚ Р»РѕРєРё Рё UI РЅРµ РІРёРґРёС‚ РїСЂРѕРіСЂРµСЃСЃ.
+-- Прогон по свечам (единый мозг теста): rate → risk → EOD → signals → park.
+-- PROCEDURE + COMMIT каждые N баров: иначе одна длинная tx держит локи и UI не видит прогресс.
 DROP ROUTINE IF EXISTS logic_backtest_run_bars(BIGINT);
 
 CREATE OR REPLACE PROCEDURE logic_backtest_run_bars(p_run_id BIGINT)
@@ -26428,7 +27981,7 @@ BEGIN
     WHERE r.id = p_run_id;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'backtest run % РЅРµ РЅР°Р№РґРµРЅ', p_run_id;
+        RAISE EXCEPTION 'backtest run % не найден', p_run_id;
     END IF;
 
     IF v_run.status IN ('completed', 'cancelled', 'failed') THEN
@@ -26436,7 +27989,7 @@ BEGIN
     END IF;
 
     IF COALESCE(v_run.cancel_requested, FALSE) THEN
-        PERFORM logic_backtest_update_run(p_run_id, 'cancelled', NULL, 'РћС‚РјРµРЅРµРЅРѕ', NULL);
+        PERFORM logic_backtest_update_run(p_run_id, 'cancelled', NULL, 'Отменено', NULL);
         COMMIT;
         RETURN;
     END IF;
@@ -26445,8 +27998,8 @@ BEGIN
     FROM logics l WHERE l.id = v_run.logic_id;
     IF NOT FOUND THEN
         PERFORM logic_backtest_update_run(
-            p_run_id, 'failed', 100, 'Р›РѕРіРёРєР° РЅРµ РЅР°Р№РґРµРЅР°', NULL, NULL, NULL, NULL, NULL, 0,
-            format('Р›РѕРіРёРєР° %s РЅРµ РЅР°Р№РґРµРЅР°', v_run.logic_id)
+            p_run_id, 'failed', 100, 'Логика не найдена', NULL, NULL, NULL, NULL, NULL, 0,
+            format('Логика %s не найдена', v_run.logic_id)
         );
         COMMIT;
         RETURN;
@@ -26457,8 +28010,8 @@ BEGIN
     v_tf_id := logic_resolve_timeframe_id(v_run.logic_id);
     IF v_tf_id IS NULL THEN
         PERFORM logic_backtest_update_run(
-            p_run_id, 'failed', 100, 'РќРµ Р·Р°РґР°РЅ timeframe', NULL, NULL, NULL, NULL, NULL, 0,
-            'РќРµ Р·Р°РґР°РЅ timeframe'
+            p_run_id, 'failed', 100, 'Не задан timeframe', NULL, NULL, NULL, NULL, NULL, 0,
+            'Не задан timeframe'
         );
         COMMIT;
         RETURN;
@@ -26487,16 +28040,16 @@ BEGIN
 
     IF v_total = 0 THEN
         PERFORM logic_backtest_update_run(
-            p_run_id, 'failed', 100, 'РќРµС‚ СЃРІРµС‡РµР№', NULL, NULL, NULL, NULL, v_balance, 0,
-            'РќРµС‚ С†РµРЅ РІ РІС‹Р±СЂР°РЅРЅРѕРј РїРµСЂРёРѕРґРµ'
+            p_run_id, 'failed', 100, 'Нет свечей', NULL, NULL, NULL, NULL, v_balance, 0,
+            'Нет цен в выбранном периоде'
         );
         COMMIT;
         RETURN;
     END IF;
 
     PERFORM logic_backtest_update_run(
-        p_run_id, 'running', 40, 'РџСЂРѕРіРѕРЅ РїРѕ СЃРІРµС‡Р°Рј',
-        format('0 / %s Р±Р°СЂРѕРІ', v_total),
+        p_run_id, 'running', 40, 'Прогон по свечам',
+        format('0 / %s баров', v_total),
         NULL, 0, NULL, v_balance
     );
     COMMIT;
@@ -26511,12 +28064,12 @@ BEGIN
             PERFORM logic_opt_restore_formulas_from_run(p_run_id);
             PERFORM logic_backtest_log(
                 p_run_id, v_run.logic_id, 'backtest.cancelled',
-                format('РћС‚РјРµРЅРµРЅРѕ РЅР° %s/%s', v_i, v_total), NULL
+                format('Отменено на %s/%s', v_i, v_total), NULL
             );
             PERFORM logic_backtest_update_run(
                 p_run_id, 'cancelled',
                 round(40 + v_i::NUMERIC / v_total * 60, 2),
-                'РћС‚РјРµРЅРµРЅРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј', NULL, v_bars[v_i], v_i, NULL, v_balance, v_pnl
+                'Отменено пользователем', NULL, v_bars[v_i], v_i, NULL, v_balance, v_pnl
             );
             COMMIT;
             RETURN;
@@ -26535,8 +28088,8 @@ BEGIN
             PERFORM logic_backtest_update_run(
                 p_run_id, 'running',
                 round(40 + v_i::NUMERIC / v_total * 60, 2),
-                'РџСЂРѕРіРѕРЅ РїРѕ СЃРІРµС‡Р°Рј',
-                format('%s / %s Р±Р°СЂРѕРІ', v_i, v_total),
+                'Прогон по свечам',
+                format('%s / %s баров', v_i, v_total),
                 v_bar_dt, v_i, NULL, v_balance
             );
             COMMIT;
@@ -26547,9 +28100,9 @@ BEGIN
         v_balance := logic_backtest_park_excess_cash(
             p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
         );
-        -- #1061: РіР°Р»РѕС‡РєР° В«РџРѕ РѕРєРѕРЅС‡Р°РЅРёРё С‚РµСЃС‚Р° Р·Р°РєСЂС‹С‚СЊ РІСЃРµ РїРѕР·РёС†РёРёВ» (default TRUE).
-        -- #1040 РѕСЃС‚Р°РІРёР» equity СЃ РїРµСЂРµРѕС†РµРЅРєРѕР№ РЅР° РєР°Р¶РґРѕРј Р±Р°СЂРµ; С‚РµРїРµСЂСЊ РїРѕСЃР»РµРґРЅРёРј
-        -- Р°РєС‚РѕРј РїСЂРѕРіРѕРЅР° СЃС‚Р°РЅРѕРІРёС‚СЃСЏ Р»РёРєРІРёРґР°С†РёСЏ, РµСЃР»Рё РіР°Р»РѕС‡РєР° РІРєР»СЋС‡РµРЅР°.
+        -- #1061: галочка «По окончании теста закрыть все позиции» (default TRUE).
+        -- #1040 оставил equity с переоценкой на каждом баре; теперь последним
+        -- актом прогона становится ликвидация, если галочка включена.
         IF COALESCE(v_run.close_all_at_end, TRUE) THEN
             v_balance := logic_backtest_close_all_except_funds(
                 p_run_id, v_run.logic_id, v_logic.account_id, v_tf_id, v_bars[v_total], v_balance
@@ -26557,7 +28110,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- #1039: С‚РµРЅРµРІС‹Рµ (shadow) СЃРґРµР»РєРё вЂ” Р±СѓРјР°Р¶РЅС‹Рµ, РІ С„РёРЅСЂРµР· РїСЂРѕРіРѕРЅР° РЅРµ РІС…РѕРґСЏС‚.
+    -- #1039: теневые (shadow) сделки — бумажные, в финрез прогона не входят.
     SELECT COALESCE(SUM(financial_result), 0) INTO v_pnl
     FROM logic_trades
     WHERE logic_id = v_run.logic_id
@@ -26580,8 +28133,8 @@ BEGIN
     PERFORM logic_backtest_log(
         p_run_id, v_run.logic_id, 'backtest.complete',
         CASE WHEN v_trades_created > 0
-            THEN format('Р—Р°РІРµСЂС€РµРЅРѕ: %s СЃРґРµР»РѕРє, PnL=%s', v_trades_created, round(v_pnl, 2))
-            ELSE format('Р—Р°РІРµСЂС€РµРЅРѕ Р±РµР· СЃРґРµР»РѕРє (%s Р±Р°СЂРѕРІ)', v_total)
+            THEN format('Завершено: %s сделок, PnL=%s', v_trades_created, round(v_pnl, 2))
+            ELSE format('Завершено без сделок (%s баров)', v_total)
         END,
         v_diag || jsonb_build_object(
             'trades_created', v_trades_created,
@@ -26594,8 +28147,8 @@ BEGIN
 
     PERFORM logic_backtest_update_run(
         p_run_id, 'completed', 100,
-        CASE WHEN v_trades_created > 0 THEN 'РўРµСЃС‚РёСЂРѕРІР°РЅРёРµ Р·Р°РІРµСЂС€РµРЅРѕ' ELSE 'РўРµСЃС‚ Р·Р°РІРµСЂС€С‘РЅ вЂ” СЃРґРµР»РѕРє РЅРµС‚' END,
-        format('%s Р±Р°СЂРѕРІ, СЃРґРµР»РѕРє: %s', v_total, v_trades_created),
+        CASE WHEN v_trades_created > 0 THEN 'Тестирование завершено' ELSE 'Тест завершён — сделок нет' END,
+        format('%s баров, сделок: %s', v_total, v_trades_created),
         v_bars[v_total], v_total, v_trades_created, v_balance, v_pnl
     );
     COMMIT;
@@ -26603,7 +28156,7 @@ END;
 $$;
 
 COMMENT ON PROCEDURE logic_backtest_run_bars(BIGINT) IS
-'SQL-СЂРѕР±РѕС‚ С‚РµСЃС‚Р°: РїСЂРѕРіРѕРЅ Р±Р°СЂРѕРІ СЃ COMMIT РєР°Р¶РґС‹Рµ 5 СЃРІРµС‡РµР№ (Р±РµР· РґР»РёРЅРЅРѕРіРѕ Р»РѕРєР° РЅР° РІРµСЃСЊ С‚РµСЃС‚)';
+'SQL-робот теста: прогон баров с COMMIT каждые 5 свечей (без длинного лока на весь тест)';
 
 DROP ROUTINE IF EXISTS run_logic_backtest(INTEGER, DATE, DATE);
 DROP ROUTINE IF EXISTS run_logic_backtest(INTEGER, DATE, DATE, BIGINT);
@@ -26649,14 +28202,14 @@ BEGIN
     SELECT l.id, l.account_id INTO v_logic
     FROM logics l WHERE l.id = p_logic_id;
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Р›РѕРіРёРєР° % РЅРµ РЅР°Р№РґРµРЅР°', p_logic_id;
+        RAISE EXCEPTION 'Логика % не найдена', p_logic_id;
     END IF;
 
     PERFORM logic_ensure_non_trading_periods(p_logic_id);
 
     v_tf_id := logic_resolve_timeframe_id(p_logic_id);
     IF v_tf_id IS NULL THEN
-        RAISE EXCEPTION 'РќРµ Р·Р°РґР°РЅ timeframe';
+        RAISE EXCEPTION 'Не задан timeframe';
     END IF;
     SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = v_tf_id;
 
@@ -26690,7 +28243,7 @@ BEGIN
     )
     VALUES (
         p_logic_id, v_date_from, v_date_to, 'loading_prices', 0,
-        'Р—Р°РіСЂСѓР·РєР° С†РµРЅ', v_balance, CURRENT_TIMESTAMP
+        'Загрузка цен', v_balance, CURRENT_TIMESTAMP
     )
     RETURNING id INTO v_run_id;
     o_run_id := v_run_id;
@@ -26701,12 +28254,12 @@ BEGIN
         IF NOT COALESCE((v_tbank->>'valid')::BOOLEAN, FALSE) THEN
             PERFORM logic_backtest_log(
                 v_run_id, p_logic_id, 'backtest.failed',
-                COALESCE(v_tbank->>'error_message', 'РќСѓР¶РµРЅ С‚РѕРєРµРЅ T-Bank РґР»СЏ intraday'),
+                COALESCE(v_tbank->>'error_message', 'Нужен токен T-Bank для intraday'),
                 v_tbank
             );
             PERFORM logic_backtest_update_run(
-                v_run_id, 'failed', 100, 'РќСѓР¶РµРЅ T-Bank', NULL, NULL, NULL, NULL, v_balance, 0,
-                COALESCE(v_tbank->>'error_message', 'Р”Р»СЏ M15 РЅСѓР¶РµРЅ РІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ T-Bank')
+                v_run_id, 'failed', 100, 'Нужен T-Bank', NULL, NULL, NULL, NULL, v_balance, 0,
+                COALESCE(v_tbank->>'error_message', 'Для M15 нужен валидный токен T-Bank')
             );
             COMMIT;
             RETURN;
@@ -26715,7 +28268,7 @@ BEGIN
 
     PERFORM logic_backtest_log(
         v_run_id, p_logic_id, 'backtest.start',
-        format('РЎС‚Р°СЂС‚ %s вЂ” %s', v_date_from, v_date_to),
+        format('Старт %s — %s', v_date_from, v_date_to),
         jsonb_build_object('date_from', v_date_from, 'date_to', v_date_to, 'load_from', v_load_from)
     );
 
@@ -26734,8 +28287,8 @@ BEGIN
         ORDER BY ls.display_order, ls.id
     LOOP
         IF logic_backtest_cancel_requested(v_run_id) THEN
-            PERFORM logic_backtest_log(v_run_id, p_logic_id, 'backtest.cancelled', 'РћС‚РјРµРЅРµРЅРѕ РЅР° Р·Р°РіСЂСѓР·РєРµ', NULL);
-            PERFORM logic_backtest_update_run(v_run_id, 'cancelled', NULL, 'РћС‚РјРµРЅРµРЅРѕ', NULL);
+            PERFORM logic_backtest_log(v_run_id, p_logic_id, 'backtest.cancelled', 'Отменено на загрузке', NULL);
+            PERFORM logic_backtest_update_run(v_run_id, 'cancelled', NULL, 'Отменено', NULL);
             COMMIT;
             RETURN;
         END IF;
@@ -26755,13 +28308,13 @@ BEGIN
         PERFORM logic_backtest_update_run(
             v_run_id, 'loading_prices',
             round(v_sec_i::NUMERIC / GREATEST(v_secs, 1) * 35, 2),
-            'РџРѕРґРіРѕС‚РѕРІРєР° РґР°РЅРЅС‹С…',
-            format('Р‘СѓРјР°РіР° %s/%s', v_sec_i, v_secs)
+            'Подготовка данных',
+            format('Бумага %s/%s', v_sec_i, v_secs)
         );
         COMMIT;
     END LOOP;
 
-    -- Р¦РµРЅС‹ РґРµРЅРµР¶РЅРѕРіРѕ С„РѕРЅРґР° (СЃРёРіРЅР°Р»С‹ РїРѕ РЅРµРјСѓ РЅРµ РіРѕРЅСЏРµРј, РЅРѕ РїР°СЂРєРѕРІРєР° РІ С‚РµСЃС‚Рµ РЅСѓР¶РЅР°).
+    -- Цены денежного фонда (сигналы по нему не гоняем, но парковка в тесте нужна).
     IF v_cash_fund_id IS NOT NULL THEN
         BEGIN
             CALL logic_backtest_ensure_security_data(
@@ -26788,15 +28341,15 @@ BEGIN
 
     PERFORM logic_backtest_log(
         v_run_id, p_logic_id, 'backtest.prices.done',
-        format('Р¦РµРЅС‹ РІ РїРµСЂРёРѕРґРµ=%s', v_prices_in_period),
+        format('Цены в периоде=%s', v_prices_in_period),
         jsonb_build_object('prices_in_period', v_prices_in_period),
         NULL, v_tf_id
     );
 
     IF v_prices_in_period = 0 THEN
         PERFORM logic_backtest_update_run(
-            v_run_id, 'failed', 100, 'РќРµС‚ СЃРІРµС‡РµР№', NULL, NULL, NULL, NULL, v_balance, 0,
-            'РќРµ Р·Р°РіСЂСѓР¶РµРЅС‹ С†РµРЅС‹. Р—Р°РґР°Р№С‚Рµ С‚РѕРєРµРЅ T-Bank (M15) РёР»Рё СЃРј. price_load_log.'
+            v_run_id, 'failed', 100, 'Нет свечей', NULL, NULL, NULL, NULL, v_balance, 0,
+            'Не загружены цены. Задайте токен T-Bank (M15) или см. price_load_log.'
         );
         COMMIT;
         RETURN;
@@ -26811,7 +28364,7 @@ BEGIN
 
     PERFORM logic_backtest_log(
         v_run_id, p_logic_id, 'backtest.indicators.done',
-        format('РРЅРґРёРєР°С‚РѕСЂС‹ РІ РїРµСЂРёРѕРґРµ=%s', v_ind_in_period),
+        format('Индикаторы в периоде=%s', v_ind_in_period),
         jsonb_build_object('indicator_values_in_period', v_ind_in_period),
         NULL, v_tf_id
     );
@@ -26819,21 +28372,21 @@ BEGIN
 
     IF v_ind_in_period = 0 THEN
         PERFORM logic_backtest_update_run(
-            v_run_id, 'failed', 100, 'РќРµС‚ РёРЅРґРёРєР°С‚РѕСЂРѕРІ', NULL, NULL, NULL, NULL, v_balance, 0,
-            'РРЅРґРёРєР°С‚РѕСЂС‹ РЅРµ СЂР°СЃСЃС‡РёС‚Р°РЅС‹. РЎРј. backtest.indicator.error.'
+            v_run_id, 'failed', 100, 'Нет индикаторов', NULL, NULL, NULL, NULL, v_balance, 0,
+            'Индикаторы не рассчитаны. См. backtest.indicator.error.'
         );
         COMMIT;
         RETURN;
     END IF;
 
-    -- Р•РґРёРЅС‹Р№ SQL-РїСЂРѕРіРѕРЅ Р±Р°СЂРѕРІ (С‚РѕС‚ Р¶Рµ РїСѓС‚СЊ, С‡С‚Рѕ РІС‹Р·С‹РІР°РµС‚ Node РїРѕСЃР»Рµ parallel prep).
+    -- Единый SQL-прогон баров (тот же путь, что вызывает Node после parallel prep).
     CALL logic_backtest_run_bars(v_run_id);
     o_run_id := v_run_id;
 END;
 $$;
 
 COMMENT ON PROCEDURE run_logic_backtest(INTEGER, DATE, DATE, BIGINT) IS
-'РСЃС‚РѕСЂРёС‡РµСЃРєРёР№ backtest (SQL PROCEDURE): Р·Р°РіСЂСѓР·РєР° + logic_backtest_run_bars СЃ С‡Р°СЃС‚С‹РјРё COMMIT';
+'Исторический backtest (SQL PROCEDURE): загрузка + logic_backtest_run_bars с частыми COMMIT';
 
 CREATE OR REPLACE FUNCTION logic_backtest_request_cancel(p_run_id BIGINT)
 RETURNS BOOLEAN
@@ -27520,8 +29073,8 @@ COMMENT ON FUNCTION configure_http_ssl() IS
 
 -- @begin logic_cash_fund_park_http
 -- ============================================
--- РџР°СЂРєРѕРІРєР° СЃРІРѕР±РѕРґРЅРѕРіРѕ РєСЌС€Р° РІ РґРµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ (TMON/LQDT/SBMM)
--- Р’С‹Р·РѕРІ РёР· run_trade_cycle / Node trade-runner
+-- Парковка свободного кэша в денежный фонд (TMON/LQDT/SBMM)
+-- Вызов из run_trade_cycle / Node trade-runner
 -- ============================================
 
 CREATE OR REPLACE FUNCTION logic_is_cash_fund_security(p_security_id INTEGER)
@@ -27536,7 +29089,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 COMMENT ON FUNCTION logic_is_cash_fund_security(INTEGER) IS
-'TRUE РµСЃР»Рё Р±СѓРјР°РіР° вЂ” РґРµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ TMON/LQDT/SBMM (РЅРµ Р·Р°РєСЂС‹РІР°С‚СЊ СЃС‚РѕРїР°РјРё/СЃРёРіРЅР°Р»Р°РјРё)';
+'TRUE если бумага — денежный фонд TMON/LQDT/SBMM (не закрывать стопами/сигналами)';
 
 CREATE OR REPLACE FUNCTION logic_ensure_cash_fund_security(
     p_logic_id INTEGER,
@@ -27588,7 +29141,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_ensure_cash_fund_security(INTEGER, TEXT) IS
-'Р”РѕР±Р°РІРёС‚СЊ РІС‹Р±СЂР°РЅРЅС‹Р№ РґРµРЅРµР¶РЅС‹Р№ С„РѕРЅРґ РІ logic_securities СЃ display_order=0 (РІРµСЂС… СЃРїРёСЃРєР°)';
+'Добавить выбранный денежный фонд в logic_securities с display_order=0 (верх списка)';
 
 CREATE OR REPLACE FUNCTION logic_resolve_cash_fund_instrument(p_ticker TEXT)
 RETURNS JSONB
@@ -27631,7 +29184,7 @@ BEGIN
         http_header('Accept', 'application/json')
     ];
 
-    -- EtfBy: ticker + classCode TQTF (Рё РІР°СЂРёР°РЅС‚ TMON@)
+    -- EtfBy: ticker + classCode TQTF (и вариант TMON@)
     FOREACH v_try IN ARRAY ARRAY[v_ticker, v_ticker || '@']
     LOOP
         SELECT * INTO v_response FROM http((
@@ -27703,7 +29256,7 @@ BEGIN
     END IF;
 
     IF v_price IS NULL OR v_price <= 0 THEN
-        v_price := 100; -- С‚РёРїРёС‡РЅС‹Р№ РїРѕСЂСЏРґРѕРє С†РµРЅС‹ Р‘РџРР¤ РґРµРЅРµР¶РЅРѕРіРѕ СЂС‹РЅРєР°
+        v_price := 100; -- типичный порядок цены БПИФ денежного рынка
     END IF;
 
     RETURN jsonb_build_object(
@@ -27722,7 +29275,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_resolve_cash_fund_instrument(TEXT) IS
-'FIGI/Р»РѕС‚/С†РµРЅР° РґРµРЅРµР¶РЅРѕРіРѕ С„РѕРЅРґР° (EtfBy TQTF РёР»Рё FindInstrument + GetLastPrices)';
+'FIGI/лот/цена денежного фонда (EtfBy TQTF или FindInstrument + GetLastPrices)';
 
 CREATE OR REPLACE FUNCTION logic_park_excess_cash(p_logic_id INTEGER)
 RETURNS JSONB
@@ -27815,7 +29368,7 @@ BEGIN
         END;
     END IF;
 
-    -- РРґРµРјРїРѕС‚РµРЅС‚РЅРѕСЃС‚СЊ: РѕРґРЅР° РїРѕРїС‹С‚РєР° РЅР° Р·Р°РєСЂС‹С‚СѓСЋ СЃРІРµС‡Сѓ TF
+    -- Идемпотентность: одна попытка на закрытую свечу TF
     PERFORM logic_upsert_param(
         p_logic_id,
         'last_cash_fund_bar_dt',
@@ -27823,7 +29376,7 @@ BEGIN
         'text'
     );
 
-    -- Р¤РѕРЅРґ РІ РїРѕСЂС‚С„РµР»Рµ Р»РѕРіРёРєРё (СЃРІРµСЂС…Сѓ СЃРїРёСЃРєР° В«Р¦РµРЅРЅС‹Рµ Р±СѓРјР°РіРёВ»)
+    -- Фонд в портфеле логики (сверху списка «Ценные бумаги»)
     PERFORM logic_ensure_cash_fund_security(p_logic_id, v_code);
 
     SELECT s.id
@@ -27860,9 +29413,9 @@ BEGIN
         RETURN jsonb_build_object('ok', FALSE, 'reason', 'bad_price', 'detail', v_inst);
     END IF;
 
-    -- РР·Р±С‹С‚РѕРє = equity в€’ РїРѕСЂРѕРі; РґРѕРєСѓРїР°РµРј min(РєСЌС€, РёР·Р±С‹С‚РѕРє в€’ СѓР¶Рµ_РІ_С„РѕРЅРґРµ); С„РѕРЅРґ РЅРµ РїСЂРѕРґР°С‘Рј.
-    -- РљСЌС€ СЂРµР°Р»СЊРЅРѕРіРѕ СЃС‡С‘С‚Р° СЂР°Р·РґСѓС‚ РІС‹СЂСѓС‡РєРѕР№ С€РѕСЂС‚РѕРІ вЂ” РІС‹С‡РёС‚Р°РµРј РЅРѕРјРёРЅР°Р» РѕС‚РєСЂС‹С‚С‹С… С€РѕСЂС‚РѕРІ,
-    -- РёРЅР°С‡Рµ РїР°СЂРєРѕРІРєР° С‚СЂР°С‚РёС‚ В«Р·Р°С‘РјРЅС‹РµВ» РґРµРЅСЊРіРё Рё СѓРіР»СѓР±Р»СЏРµС‚ РїРѕР·РёС†РёСЋ РїРѕ Р·Р°Р№РјР°Рј.
+    -- Избыток = equity − порог; докупаем min(кэш, избыток − уже_в_фонде); фонд не продаём.
+    -- Кэш реального счёта раздут выручкой шортов — вычитаем номинал открытых шортов,
+    -- иначе парковка тратит «заёмные» деньги и углубляет позицию по займам.
     v_equity := COALESCE(logic_portfolio_equity(p_logic_id, v_tf_id), v_balance);
     SELECT GREATEST(0, COALESCE(SUM(rem.qty * lt.price), 0))
     INTO v_short_notional
@@ -27918,7 +29471,7 @@ BEGIN
         PERFORM logic_trade_log(
             p_logic_id,
             'cash_fund.skip_qty',
-            format('РЎСѓРјРјР° %s в‚Ѕ РјРµРЅСЊС€Рµ 1 Р»РѕС‚Р° %s РїРѕ С†РµРЅРµ %s', v_park_amount, v_code, v_price),
+            format('Сумма %s ₽ меньше 1 лота %s по цене %s', v_park_amount, v_code, v_price),
             jsonb_build_object(
                 'fund', v_code,
                 'park_amount', v_park_amount,
@@ -27941,7 +29494,7 @@ BEGIN
         );
     END IF;
 
-    -- Fake / РЅРµС‚ FIGI: СЃРёРјСѓР»РёСЂСѓРµРј BUY РІ Р±РѕРµРІРѕР№ РєРЅРёРіРµ (РєР°Рє РІ С‚РµСЃС‚Рµ).
+    -- Fake / нет FIGI: симулируем BUY в боевой книге (как в тесте).
     IF v_logic.account_type = 'fake' OR v_figi IS NULL OR btrim(v_figi) = '' THEN
         SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
         SELECT id INTO v_action_long_id FROM actions WHERE name = 'Long' LIMIT 1;
@@ -27976,7 +29529,7 @@ BEGIN
             p_logic_id,
             CASE WHEN v_trade_id IS NOT NULL THEN 'cash_fund.sim_ok' ELSE 'cash_fund.sim_dup' END,
             format(
-                'Р‘РѕР№ (sim): РїР°СЂРєРѕРІРєР° %s qty=%s price=%s bar=%s',
+                'Бой (sim): парковка %s qty=%s price=%s bar=%s',
                 v_code, v_qty, v_price, v_closed_bar_dt
             ),
             jsonb_build_object(
@@ -28025,7 +29578,7 @@ BEGIN
         END IF;
     EXCEPTION
         WHEN undefined_function THEN
-            v_note := 'tbank_post_order РЅРµРґРѕСЃС‚СѓРїРµРЅ (РЅРµС‚ HTTP-СЂР°СЃС€РёСЂРµРЅРёСЏ)';
+            v_note := 'tbank_post_order недоступен (нет HTTP-расширения)';
         WHEN OTHERS THEN
             v_note := SQLERRM;
     END;
@@ -28034,7 +29587,7 @@ BEGIN
         p_logic_id,
         CASE WHEN v_status IN ('submitted', 'filled') THEN 'cash_fund.order_ok' ELSE 'cash_fund.order_fail' END,
         format(
-            'РџР°СЂРєРѕРІРєР° %s: qty=%s price=%s status=%s',
+            'Парковка %s: qty=%s price=%s status=%s',
             v_code, v_qty, v_price, v_status
         ),
         jsonb_build_object(
@@ -28069,8 +29622,19 @@ END;
 $$;
 
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
-'РљР°Р¶РґР°СЏ Р·Р°РєСЂС‹С‚Р°СЏ СЃРІРµС‡Р° TF: РµСЃР»Рё equity > РїРѕСЂРѕРіР° вЂ” BUY РЅР° min(РєСЌС€, РёР·Р±С‹С‚РѕРєв€’СѓР¶Рµ_РІ_С„РѕРЅРґРµ); С„РѕРЅРґ РЅРµ РїСЂРѕРґР°С‘Рј; realв†’T-Bank, fake/Р±РµР· FIGIв†’sim';
+'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
+
+
+
+
+
+
+
+
+
 
 
 

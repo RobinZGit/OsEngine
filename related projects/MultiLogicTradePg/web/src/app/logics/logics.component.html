@@ -2096,11 +2096,12 @@
                                   [ngModel]="sig.signal_acts_on || 'security'"
                                   [disabled]="isFormulaSaving(sig.id)"
                                   (ngModelChange)="onSignalActsOnChange(sig, $event)"
-                                  title="Бумага = торгуемый инструмент; Базовый актив = underlying; Контанго = фьючерс − база (ряд цен для индикатора)"
+                                  title="Бумага = выбранный инструмент; Базовый актив = underlying; Контанго = спред к базе; Весь портфель = equity портфеля логики (ТФ = ТФ логики)"
                                 >
                                   <option value="security">Бумага</option>
                                   <option value="base_asset">Базовый актив</option>
                                   <option value="contango">Контанго</option>
+                                  <option value="portfolio">Весь портфель</option>
                                 </select>
                               </td>
 
@@ -2115,9 +2116,9 @@
                                     <select
                                       class="sig-tf-select"
                                       [ngModel]="signalTfBase(formulaDraft(sig))"
-                                      [disabled]="isFormulaSaving(sig.id)"
+                                      [disabled]="isFormulaSaving(sig.id) || (sig.signal_acts_on || 'security') === 'portfolio'"
                                       (ngModelChange)="onSignalTfBaseChange(sig, $event)"
-                                      title="Таймфрейм сигнала: пусто = ТФ логики. Можно умножить: M1×7 = семиминутный ТФ"
+                                      title="Таймфрейм сигнала: пусто = ТФ логики. Для portfolio-сигнала фиксируется ТФ логики."
                                     >
                                       <option value="">ТФ логики</option>
                                       @for (b of signalTfBases; track b) {
@@ -2133,10 +2134,10 @@
                                       max="200"
                                       class="sig-tf-mult"
                                       [ngModel]="signalTfMult(formulaDraft(sig))"
-                                      [disabled]="isFormulaSaving(sig.id) || !signalTfBase(formulaDraft(sig))"
+                                      [disabled]="isFormulaSaving(sig.id) || !signalTfBase(formulaDraft(sig)) || (sig.signal_acts_on || 'security') === 'portfolio'"
                                       (ngModelChange)="onSignalTfMultChange(sig, $event)"
-                                      title="Множитель базы (целое ≥1): 7 × M1 = M7. Пусто = без множителя"
-                                      placeholder="—"
+                                      title="Множитель базы (целое ≥1). Для portfolio-сигнала недоступен."
+                                      placeholder="×"
                                     />
 
                                   </div>
