@@ -84,9 +84,14 @@ if (lotStart === -1 || lotEnd === -1) {
   throw new Error('sync-02: logic_security_lot_size / logic_upsert_param not found in logic_trade_runner.sql');
 }
 const lotBlock = tradeTail.slice(lotStart, lotEnd).trimEnd() + '\n\n';
+// Якорь на первый logic_security_lot_size: в 02 исторически накопились десятки
+// копий этого блока; замена от первой копии до logic_upsert_param схлопывает их.
+const lotAnchor02 = sql02.includes('CREATE OR REPLACE FUNCTION logic_security_lot_size')
+  ? 'CREATE OR REPLACE FUNCTION logic_security_lot_size'
+  : 'CREATE OR REPLACE FUNCTION logic_calc_open_quantity(';
 sql02 = replaceBetween(
   sql02,
-  'CREATE OR REPLACE FUNCTION logic_calc_open_quantity(',
+  lotAnchor02,
   'CREATE OR REPLACE FUNCTION logic_upsert_param(',
   lotBlock,
   'logic_security_lot_size + logic_calc_open_quantity'
@@ -378,6 +383,35 @@ const calcExtra = read('sql/calc_ind_extra.sql').trimEnd() + '\n';
     console.warn('sync-02: account_portfolio_actions markers not found — skipped');
   }
 }
+
+// #1079: подтягиваем в 02 функции, которые исторически не синхронизировались
+// и потому отсутствовали в установщике (актуальные тела живут только в sql/*).
+function syncFunctionBlock(moduleRel, marker) {
+  const src = read(moduleRel);
+  const srcStart = src.indexOf(marker);
+  if (srcStart === -1) {
+    throw new Error(`sync-02: ${marker} not found in ${moduleRel}`);
+  }
+  const srcEnd = src.indexOf('$$;', srcStart);
+  if (srcEnd === -1) {
+    throw new Error(`sync-02: body end ($$;) not found for ${marker} in ${moduleRel}`);
+  }
+  const block = src.slice(srcStart, srcEnd + 3);
+
+  const dstStart = sql02.indexOf(marker);
+  if (dstStart === -1) {
+    throw new Error(`sync-02: ${marker} not found in 02`);
+  }
+  const dstEnd = sql02.indexOf('$$;', dstStart);
+  if (dstEnd === -1) {
+    throw new Error(`sync-02: body end ($$;) not found for ${marker} in 02`);
+  }
+  sql02 = sql02.slice(0, dstStart) + block + sql02.slice(dstEnd + 3);
+}
+
+syncFunctionBlock('sql/logic_trade_pnl.sql', 'CREATE OR REPLACE FUNCTION logic_trade_build_lots(p_close_trade_id BIGINT)');
+syncFunctionBlock('sql/logic_trade_pnl.sql', 'CREATE OR REPLACE FUNCTION logic_trade_rebuild_pnl(p_logic_id INTEGER DEFAULT NULL)');
+syncFunctionBlock('sql/price_load_http_policy.sql', 'CREATE OR REPLACE PROCEDURE load_prices_http(');
 
 fs.writeFileSync(path.join(root, '02_multilogictrade_functions_and_procedures.sql'), sql02, 'utf8');
 console.log('sync-02: OK — 02_multilogictrade_functions_and_procedures.sql updated');
