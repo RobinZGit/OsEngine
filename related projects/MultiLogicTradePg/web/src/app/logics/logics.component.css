@@ -1690,6 +1690,23 @@ tbody tr.logic-main-row:hover {
   white-space: nowrap;
 }
 
+/* #1083: алерт большой задержки исполнения в строке логики. */
+.logic-delay-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #7f1d1d;
+  background: #fee2e2;
+  border: 2px solid #b91c1c;
+  vertical-align: middle;
+  white-space: nowrap;
+  box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.1);
+}
+
 .rating-precalc-spin {
   display: inline-block;
   margin-left: 0.25rem;

@@ -129,4 +129,27 @@ export class MonitoringService {
   ping(): Observable<PingResult> {
     return this.http.post<PingResult>(`${this.appConfig.apiUrl}/monitoring/ping`, {});
   }
+
+  /** #1083: логики с большой задержкой исполнения (порог 30 сек). */
+  getDelayAlerts(): Observable<DelayAlertsResponse> {
+    return this.http.get<DelayAlertsResponse>(
+      `${this.appConfig.apiUrl}/logic-trades/delay-alerts`
+    );
+  }
+}
+
+export interface DelayAlertRow {
+  logic_id: number;
+  logic_name: string;
+  trade_count: number;
+  slow_count: number;
+  avg_delay_sec: number;
+  max_delay_sec: number;
+  last_at: string | null;
+}
+
+export interface DelayAlertsResponse {
+  threshold_sec: number;
+  window_hours: number;
+  rows: DelayAlertRow[];
 }

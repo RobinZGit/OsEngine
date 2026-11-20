@@ -183,7 +183,7 @@ BEGIN
         BEGIN
             v_order := tbank_get_order_state(v_tr.account_id, v_tr.broker_order_id);
             v_comm := tbank_order_commission(v_order);
-            v_price := tbank_order_unit_price(v_order);
+            v_price := logic_order_fill_unit_price(v_order);
 
             IF v_comm > 0 OR (v_price IS NOT NULL AND v_price > 0) THEN
                 UPDATE logic_trades
@@ -306,7 +306,7 @@ BEGIN
         BEGIN
             v_order := tbank_get_order_state(v_tr.account_id, v_tr.broker_order_id);
             v_comm := tbank_order_commission(v_order);
-            v_unit := tbank_order_unit_price(v_order);
+            v_unit := logic_order_fill_unit_price(v_order);
 
             -- Фактически исполненное количество = лоты × размер лота (у терминала quantity в штуках).
             v_lots := COALESCE(

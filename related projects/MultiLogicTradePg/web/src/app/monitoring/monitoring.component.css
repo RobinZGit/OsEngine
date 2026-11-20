@@ -299,3 +299,61 @@
   font-variant-numeric: tabular-nums;
   font-size: 0.76rem;
 }
+
+/* #1083: мониторинг большой задержки исполнения. */
+.mon-delay-alerts {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #fca5a5;
+  border-left: 4px solid #b91c1c;
+  border-radius: 8px;
+  background: #fef2f2;
+}
+
+.mon-delay-title {
+  color: #991b1b;
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 0.5rem;
+}
+
+.mon-delay-title small {
+  color: #b91c1c;
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+.mon-delay-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  background: #fff;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.mon-delay-table th,
+.mon-delay-table td {
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #fee2e2;
+}
+
+.mon-delay-table th {
+  background: #fecaca;
+  color: #7f1d1d;
+  font-size: 0.75rem;
+}
+
+.mon-delay-value {
+  color: #b91c1c;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mon-delay-hint {
+  margin-top: 0.45rem;
+  color: #b91c1c;
+  font-size: 0.76rem;
+  font-weight: 700;
+}

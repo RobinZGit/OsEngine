@@ -98,6 +98,241 @@ function buildBacktestReportDownloadName(model) {
   return `MLT-report_${name}_${from}_${to}_${tf}_${pnlBit}_${deals}.html`;
 }
 
+/* ==== #1083: задержка исполнения (зеркало shared/logic-trade.ts + backtest-report.ts) ==== */
+const EXEC_DELAY_ALERT_SEC = 30;
+const EXEC_DELAY_WARNING_TEXT =
+  'превышает 30 секунд внимание внимание большая задержка исполнения';
+const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+function timeframeSeconds(tf) {
+  const m = String(tf ?? '').match(/(\d+)\s*[smh]?/i);
+  if (!m) return 300;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return 300;
+  return /h/i.test(String(tf)) ? n * 3600 : /s/i.test(String(tf)) ? n : n * 60;
+}
+
+function tradeExecDelaySec(t) {
+  if (!t) return null;
+  if (t.exec_delay_sec != null && Number.isFinite(Number(t.exec_delay_sec))) {
+    return Number(t.exec_delay_sec);
+  }
+  const reason = `${t.signal_formula ?? ''} ${t.trade_reason ?? ''}`;
+  if (/(eod\.close|close_all|force|stop_loss|take_profit)/i.test(reason)) return null;
+  const barMs = parseDt(t.bar_dt);
+  const execMs = parseDt(t.executed_at);
+  if (barMs == null || execMs == null) return null;
+  if (new Date(barMs).getSeconds() !== 0) return null;
+  const delay = (execMs - barMs) / 1000 - timeframeSeconds(t.timeframe_tf);
+  return Number.isFinite(delay) && delay >= 0 ? delay : null;
+}
+
+function averageExecDelaySec(trades) {
+  const values = (Array.isArray(trades) ? trades : [])
+    .map((t) => tradeExecDelaySec(t))
+    .filter((v) => v != null && Number.isFinite(v));
+  if (!values.length) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function hourlyExecDelayValues(trades) {
+  const sum = new Array(24).fill(0);
+  const count = new Array(24).fill(0);
+  for (const t of trades || []) {
+    if (!t || t.is_shadow || (t.opt_lane && String(t.opt_lane) !== '')) continue;
+    if (t.status !== 'filled' && t.status !== 'submitted') continue;
+    const delay = tradeExecDelaySec(t);
+    if (delay == null) continue;
+    const m = String(t.bar_dt || t.executed_at || '').match(/(\d{2}):(\d{2})/);
+    if (!m) continue;
+    const hour = Number(m[1]);
+    if (hour > 23) continue;
+    sum[hour] += delay;
+    count[hour] += 1;
+  }
+  return sum.map((v, i) => (count[i] > 0 ? v / count[i] : 0));
+}
+
+function weekdayIndex(value) {
+  const ms = parseDt(value);
+  if (ms == null) return null;
+  const d = new Date(ms).getDay();
+  return d === 0 ? 6 : d - 1;
+}
+
+function losingOpenTradeIds(trades, tradeLots) {
+  const ids = new Set();
+  const closeRows = (trades || []).filter(
+    (t) =>
+      t &&
+      t.side_name === 'Close' &&
+      Number(t.financial_result) < 0 &&
+      (t.status === 'filled' || t.status === 'submitted') &&
+      !t.is_shadow &&
+      !t.opt_lane
+  );
+  const queues = new Map();
+  for (const t of trades || []) {
+    if (!t || t.side_name !== 'Open' || (t.status !== 'filled' && t.status !== 'submitted')) continue;
+    if (t.is_shadow || t.opt_lane) continue;
+    const key = `${t.security_id}:${t.action_name}`;
+    const q = queues.get(key) || [];
+    q.push(t);
+    queues.set(key, q);
+  }
+  for (const close of closeRows) {
+    const lots = (tradeLots?.get(Number(close.id)) ?? []).filter(
+      (l) => Number(l.financial_result) < 0
+    );
+    for (const l of lots) {
+      const oid = Number(l.open_trade_id);
+      if (oid > 0) ids.add(oid);
+    }
+    if (!lots.length) {
+      const q = queues.get(`${close.security_id}:${close.action_name}`) || [];
+      let need = Number(close.quantity) || 0;
+      for (const open of q) {
+        if (need <= 1e-9) break;
+        if (ids.has(Number(open.id))) continue;
+        ids.add(Number(open.id));
+        need -= Number(open.quantity) || 0;
+      }
+    }
+  }
+  return ids;
+}
+
+function weekdayStats(trades, tradeLots) {
+  const open = new Array(7).fill(0);
+  const close = new Array(7).fill(0);
+  const openLoss = new Array(7).fill(0);
+  const closeLoss = new Array(7).fill(0);
+  const delaySum = new Array(7).fill(0);
+  const delayCount = new Array(7).fill(0);
+  const lossOpenIds = losingOpenTradeIds(trades, tradeLots);
+  for (const t of trades || []) {
+    if (!t || t.is_shadow || (t.opt_lane && String(t.opt_lane) !== '')) continue;
+    if (t.status !== 'filled' && t.status !== 'submitted') continue;
+    const idx = weekdayIndex(t.bar_dt || t.executed_at);
+    if (idx == null) continue;
+    const side = String(t.side_name || '').toLowerCase();
+    const pnl = Number(t.financial_result);
+    if (side === 'open') {
+      open[idx] += 1;
+      if (lossOpenIds.has(Number(t.id))) openLoss[idx] += 1;
+    } else if (side === 'close') {
+      close[idx] += 1;
+      if (Number.isFinite(pnl) && pnl < 0) closeLoss[idx] += 1;
+    }
+    const delay = tradeExecDelaySec(t);
+    if (delay != null) {
+      delaySum[idx] += delay;
+      delayCount[idx] += 1;
+    }
+  }
+  return { open, close, openLoss, closeLoss, delaySum, delayCount };
+}
+
+function delayBarsSvg(values, labels, title, color, aria, maxValue) {
+  const w = 720;
+  const h = 165;
+  const left = 46;
+  const right = 12;
+  const top = 12;
+  const bottom = 28;
+  const maxY = Math.max(maxValue, EXEC_DELAY_ALERT_SEC, 1) * 1.15;
+  const Y = (v) => top + (1 - v / maxY) * (h - top - bottom);
+  const parts = [];
+  parts.push(`<div style="margin:10px 0 2px;font-size:12px;font-weight:600;color:#334155">${esc(title)}</div>`);
+  parts.push(`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${esc(aria)}">`);
+  for (const t of [0, Math.round(maxY / 2), Math.round(maxY)]) {
+    const gy = Y(t);
+    parts.push(`<line x1="${left}" y1="${gy.toFixed(1)}" x2="${w - right}" y2="${gy.toFixed(1)}" stroke="#e2e8f0"/>`);
+    parts.push(`<text x="${left - 6}" y="${(gy + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#64748b">${t}</text>`);
+  }
+  const thresholdY = Y(EXEC_DELAY_ALERT_SEC);
+  parts.push(`<line x1="${left}" y1="${thresholdY.toFixed(1)}" x2="${w - right}" y2="${thresholdY.toFixed(1)}" stroke="#b91c1c" stroke-dasharray="4 3"/>`);
+  parts.push(`<text x="${w - right}" y="${(thresholdY - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="#b91c1c">${EXEC_DELAY_ALERT_SEC} сек</text>`);
+  const step = (w - left - right) / Math.max(1, values.length);
+  const barW = Math.max(3, step * 0.72);
+  values.forEach((v, i) => {
+    const x = left + i * step + (step - barW) / 2;
+    const y = Y(v);
+    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(h - bottom - y).toFixed(1)}" fill="${v > EXEC_DELAY_ALERT_SEC ? '#b91c1c' : color}" opacity="0.85"><title>${esc(labels[i])}: ${fmtNum(v, 1)} сек</title></rect>`);
+    parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${h - bottom + 13}" text-anchor="middle" font-size="9" fill="#64748b">${esc(labels[i])}</text>`);
+  });
+  parts.push('</svg>');
+  return parts.join('\n');
+}
+
+function countBarsSvg(values, labels, title, color, aria, maxValue) {
+  const w = 720;
+  const h = 150;
+  const left = 42;
+  const right = 12;
+  const top = 12;
+  const bottom = 28;
+  const maxY = Math.max(1, maxValue);
+  const Y = (v) => top + (1 - v / maxY) * (h - top - bottom);
+  const parts = [];
+  parts.push(`<div style="margin:10px 0 2px;font-size:12px;font-weight:600;color:#334155">${esc(title)}</div>`);
+  parts.push(`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${esc(aria)}">`);
+  for (const t of [0, Math.round(maxY / 2), maxY]) {
+    const gy = Y(t);
+    parts.push(`<line x1="${left}" y1="${gy.toFixed(1)}" x2="${w - right}" y2="${gy.toFixed(1)}" stroke="#e2e8f0"/>`);
+    parts.push(`<text x="${left - 6}" y="${(gy + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#64748b">${t}</text>`);
+  }
+  const step = (w - left - right) / Math.max(1, values.length);
+  const barW = Math.max(6, step * 0.5);
+  values.forEach((v, i) => {
+    const x = left + i * step + (step - barW) / 2;
+    const y = Y(v);
+    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(h - bottom - y).toFixed(1)}" fill="${color}" opacity="0.85"><title>${esc(labels[i])}: ${v}</title></rect>`);
+    parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${h - bottom + 13}" text-anchor="middle" font-size="9" fill="#64748b">${esc(labels[i])}</text>`);
+  });
+  parts.push('</svg>');
+  return parts.join('\n');
+}
+
+function hourlyExecDelaySvg(trades) {
+  const values = hourlyExecDelayValues(trades);
+  if (values.every((v) => v === 0)) {
+    return '<div class="empty-chart">Нет измеримых задержек исполнения по часам</div>';
+  }
+  return `<div class="hourly-charts-stack">${delayBarsSvg(
+    values,
+    Array.from({ length: 24 }, (_, i) => String(i)),
+    'Средняя задержка исполнения по часам, сек',
+    '#0891b2',
+    'Средняя задержка исполнения по часам',
+    Math.max(...values)
+  )}<div class="muted" style="font-size:11px;margin-top:4px">Красная линия — порог 30 секунд. Задержка считается от закрытия сигнального бара.</div></div>`;
+}
+
+function weekdayChartsSvg(trades, tradeLots) {
+  const st = weekdayStats(trades, tradeLots);
+  const delay = st.delaySum.map((v, i) => (st.delayCount[i] > 0 ? v / st.delayCount[i] : 0));
+  const countMax = Math.max(1, ...st.open, ...st.close, ...st.openLoss, ...st.closeLoss);
+  const out = ['<div class="hourly-charts-stack">'];
+  out.push(countBarsSvg(st.open, WEEKDAY_LABELS, 'Открытия по дням недели', '#16a34a', 'Открытия по дням недели', countMax));
+  out.push(countBarsSvg(st.close, WEEKDAY_LABELS, 'Закрытия по дням недели', '#2563eb', 'Закрытия по дням недели', countMax));
+  out.push(countBarsSvg(st.openLoss, WEEKDAY_LABELS, 'Убыточные открытия по дням недели', '#dc2626', 'Убыточные открытия по дням недели', countMax));
+  out.push(countBarsSvg(st.closeLoss, WEEKDAY_LABELS, 'Убыточные закрытия по дням недели', '#b91c1c', 'Убыточные закрытия по дням недели', countMax));
+  out.push(delayBarsSvg(delay, WEEKDAY_LABELS, 'Средняя задержка исполнения по дням недели, сек', '#0891b2', 'Средняя задержка исполнения по дням недели', Math.max(...delay, 0)));
+  out.push('</div>');
+  return out.join('\n');
+}
+
+function execDelayCardHtml(avgSec) {
+  if (avgSec == null || !Number.isFinite(avgSec)) {
+    return '<div class="card"><div class="lbl">Средняя задержка</div><div class="val muted">—</div></div>';
+  }
+  const warn = avgSec > EXEC_DELAY_ALERT_SEC;
+  return `<div class="card" title="executed_at − закрытие сигнального бара (bar_dt + таймфрейм)"><div class="lbl">Средняя задержка исполнения</div><div class="val ${warn ? 'neg' : ''}">${esc(fmtNum(avgSec, 1))} сек${
+    warn ? `<span class="delay-warning"> (${esc(EXEC_DELAY_WARNING_TEXT)})</span>` : ''
+  }</div></div>`;
+}
+
 function collectClosedDeals(trades, tradeLots) {
   const closes = trades.filter(
     (t) =>
@@ -574,6 +809,9 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
     short: computeSideStats(shortDeals, initial, rate, false, num(logic.commission_pct)),
     equitySvg: equitySparklineSvg(allDeals),
     hourlyOpenCloseSvg: hourlyOpenCloseSvg(trades),
+    hourlyExecDelaySvg: hourlyExecDelaySvg(trades),
+    weekdayChartsSvg: weekdayChartsSvg(trades, opts.tradeLots),
+    avgExecDelaySec: averageExecDelaySec(trades),
     topWins: sortedByPnl.filter((d) => d.pnl > 0).slice(0, 8),
     topLosses: sortedByPnl.filter((d) => d.pnl < 0).slice(-8).reverse(),
     dealCount: allDeals.length,
@@ -822,6 +1060,7 @@ function buildReportTradeLedger(trades, tradeLots) {
         id,
         time: String(t.bar_dt || t.executed_at || t.created_at || ''),
         executedAt: t.executed_at ? String(t.executed_at) : null,
+        execDelaySec: tradeExecDelaySec(t),
         security: t.security_prefix || t.security_name || `#${t.security_id}`,
         side: String(t.side_name || ''),
         action: t.action_name === 'Short' ? 'Short' : 'Long',
@@ -855,14 +1094,14 @@ function tradeDt(value) {
 function allTradesSectionHtml(rows) {
   const head = `<thead><tr>
     <th>#</th><th>Время</th><th>Бумага</th><th>Операция</th><th>Кол-во</th>
-    <th>Цена</th><th>Сумма</th><th>Комиссия</th><th>П\\У</th>
+    <th>Цена</th><th>Сумма</th><th>Комиссия</th><th>П\\У</th><th>Задержка</th>
     <th>Причина</th><th>Статус</th><th>Сигнал / примечание</th>
   </tr></thead>`;
   if (!rows.length) {
     return `<section>
       <h2>Все сделки</h2>
       <div class="trades-all-wrap"><table class="trades-all">${head}<tbody>
-        <tr><td colspan="12" class="muted">Нет сделок</td></tr>
+        <tr><td colspan="13" class="muted">Нет сделок</td></tr>
       </tbody></table></div>
     </section>`;
   }
@@ -894,6 +1133,9 @@ function allTradesSectionHtml(rows) {
         <td class="num ${pnlCls}">${
           r.financialResult != null ? esc(fmtMoney(r.financialResult)) : '—'
         }</td>
+        <td class="num ${r.execDelaySec != null && r.execDelaySec > EXEC_DELAY_ALERT_SEC ? 'neg' : ''}" title="От закрытия сигнального бара">${
+          r.execDelaySec != null ? `${esc(fmtNum(r.execDelaySec, 1))} с` : '—'
+        }</td>
         <td>${esc(r.reason || '—')}</td>
         <td>${esc(r.status || '—')}${
           r.brokerOrderId ? ` · ${esc(r.brokerOrderId)}` : ''
@@ -921,7 +1163,7 @@ function allTradesSectionHtml(rows) {
             )}</td>
             <td class="num">${esc(fmtMoney(openComm + closeComm))}</td>
             <td class="num ${fin >= 0 ? 'pos' : 'neg'}">${esc(fmtMoney(fin))}</td>
-            <td colspan="3" class="muted">комиссия открытия ${esc(
+            <td colspan="4" class="muted">комиссия открытия ${esc(
               fmtMoney(openComm)
             )} + закрытия ${esc(fmtMoney(closeComm))}; закрытие ${esc(
               tradeDt(lot.close_executed_at)
@@ -1070,15 +1312,17 @@ function renderBacktestReportHtml(model) {
     * { box-sizing: border-box; }
     body { margin:0; font-family:"Segoe UI","IBM Plex Sans",system-ui,sans-serif; color:var(--ink); background:var(--bg); line-height:1.45; }
     .hero { background:linear-gradient(135deg,#0f172a 0%,#134e4a 55%,#0f766e 100%); color:#f8fafc; padding:1.75rem 2rem 1.5rem; }
+    .hero-top { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:.75rem 1rem; }
     .hero h1 { margin:0 0 .35rem; font-size:1.55rem; font-weight:700; }
     .hero .sub { color:#cbd5e1; font-size:.92rem; }
     .pill { display:inline-block; margin-left:.5rem; padding:.15rem .55rem; border-radius:999px; background:rgba(255,255,255,.12); font-size:.78rem; }
-    .wrap { max-width:980px; margin:0 auto; padding:1.25rem 1.25rem 2.5rem; }
-    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin:-2rem 0 1.25rem; }
+    .wrap { width:100%; max-width:none; margin:0; padding:1.25rem 1.25rem 2.5rem; }
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:.75rem; margin:1rem 0 1.25rem; }
     .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:.85rem 1rem; box-shadow:0 8px 24px rgba(15,23,42,.06); }
     .card .lbl { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
     .card .val { font-size:1.25rem; font-weight:700; margin-top:.25rem; font-variant-numeric:tabular-nums; }
     .card .val.pos { color:var(--pos); } .card .val.neg { color:var(--neg); }
+    .card .delay-warning { display:block; margin-top:.3rem; font-size:.68rem; line-height:1.25; font-weight:700; color:var(--neg); }
     section { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1rem 1.15rem 1.15rem; margin-bottom:1rem; }
     section h2 { margin:0 0 .75rem; font-size:1rem; font-weight:700; }
     .params { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.55rem 1rem; font-size:.88rem; }
@@ -1107,11 +1351,12 @@ function renderBacktestReportHtml(model) {
     table.trades-all .pos { color:var(--pos); font-weight:600; } table.trades-all .neg { color:var(--neg); font-weight:600; }
     .muted { color:var(--muted); }
     .foot { margin-top:1.25rem; font-size:.78rem; color:var(--muted); text-align:center; }
-    .report-tools { display:flex; justify-content:flex-end; margin-bottom:1rem; gap:.5rem; }
     .btn { display:inline-flex; align-items:center; gap:.45rem; padding:.5rem 1rem; border-radius:9px; border:1px solid var(--line); background:var(--panel); color:var(--ink); font:inherit; font-size:.85rem; font-weight:600; cursor:pointer; box-shadow:0 4px 12px rgba(15,23,42,.05); }
     .btn:hover { border-color:#94a3b8; }
     .btn.primary { background:#0f766e; border-color:#0f766e; color:#fff; }
     .btn.primary:hover { background:#115e59; }
+    .hero-top .btn.primary { flex:0 0 auto; background:rgba(255,255,255,.12); border-color:rgba(248,250,252,.4); color:#f8fafc; box-shadow:none; }
+    .hero-top .btn.primary:hover { background:rgba(255,255,255,.22); }
     .papers-report { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:1rem 1.15rem 1.15rem; margin-bottom:1rem; }
     .papers-report>h2 { margin:0 0 .75rem; font-size:1rem; font-weight:700; }
     .paper-report { border:1px solid var(--line); border-radius:10px; margin-bottom:.85rem; overflow:hidden; background:#fff; }
@@ -1142,26 +1387,29 @@ function renderBacktestReportHtml(model) {
     table.paper-fifo .pf-arrow { color:#94a3b8; }
     table.paper-fifo .pos { color:var(--pos); font-weight:600; } table.paper-fifo .neg { color:var(--neg); font-weight:600; }
     .paper-svg { display:block; }
-    @media print { .no-print, .report-tools, .pchart-toolbar { display:none !important; } .paper-report { break-inside:auto; } }
+    @media print { .no-print, .pchart-toolbar { display:none !important; } .paper-report { break-inside:auto; } }
   ${hasPapers ? papersModule.css : ''}
   </style>
 </head>
 <body>
   <header class="hero">
-    <h1>Отчёт тестирования ${statusBit}</h1>
-    <div class="sub">${esc(model.logicName)} · #${model.logicId} · период ${esc(model.periodLabel)}</div>
-    <div class="sub">Сформирован ${esc(model.generatedAt)} · архив PostgreSQL · метрики как OsEngine Journal → Статистика</div>
+    <div class="hero-top">
+      <div>
+        <h1>Отчёт тестирования ${statusBit}</h1>
+        <div class="sub">${esc(model.logicName)} · #${model.logicId} · период ${esc(model.periodLabel)}</div>
+        <div class="sub">Сформирован ${esc(model.generatedAt)} · архив PostgreSQL · метрики как OsEngine Journal → Статистика</div>
+      </div>
+      <button type="button" class="btn primary no-print" onclick="downloadBacktestReport()" title="Скачать этот отчёт HTML-файлом">Скачать отчёт</button>
+    </div>
   </header>
   <div class="wrap">
-    <div class="report-tools no-print">
-      <button type="button" class="btn primary" onclick="downloadBacktestReport()" title="Скачать этот отчёт HTML-файлом">Скачать отчёт</button>
-    </div>
     <div class="cards">
       <div class="card"><div class="lbl">Чистый П\\У</div><div class="val ${a.netPnl >= 0 ? 'pos' : 'neg'}">${esc(fmtMoney(a.netPnl))}</div></div>
       <div class="card"><div class="lbl">П\\У %</div><div class="val ${a.netPnlPct >= 0 ? 'pos' : 'neg'}">${esc(fmtPct(a.netPnlPct))}</div></div>
       ${annualPctCardHtml(a.netPnlPct, model.dateFrom, model.dateTo)}
       <div class="card"><div class="lbl">Profit Factor</div><div class="val">${esc(pf(a))}</div></div>
       <div class="card"><div class="lbl">Макс. просадка</div><div class="val neg">${esc(a.maxDrawdownPct != null ? fmtPct(a.maxDrawdownPct) : '—')}</div></div>
+      ${execDelayCardHtml(model.avgExecDelaySec)}
       <div class="card"><div class="lbl">Прибыльных %</div><div class="val">${esc(fmtPct(a.winPct))}</div></div>
       <div class="card"><div class="lbl">Sharpe</div><div class="val">${esc(fmtNum(a.sharpe, 3))}</div></div>
       <div class="card"><div class="lbl">Recovery</div><div class="val">${esc(fmtNum(a.recovery, 3))}</div></div>
@@ -1184,6 +1432,13 @@ function renderBacktestReportHtml(model) {
     <section>
       <h2>Открытия и закрытия по часам</h2>
       <div class="chart">${model.hourlyOpenCloseSvg}</div>
+      <h3>Средняя задержка исполнения по часам</h3>
+      <div class="chart">${model.hourlyExecDelaySvg}</div>
+    </section>
+
+    <section>
+      <h2>По дням недели</h2>
+      <div class="chart">${model.weekdayChartsSvg}</div>
     </section>
     <section>
       <h2>Лучшие сделки</h2>
@@ -1241,4 +1496,10 @@ module.exports = {
   computeSideStats,
   hourlyOpenCloseCounts,
   hourlyOpenCloseSvg,
+  tradeExecDelaySec,
+  averageExecDelaySec,
+  hourlyExecDelaySvg,
+  weekdayStats,
+  weekdayChartsSvg,
+  execDelayCardHtml,
 };

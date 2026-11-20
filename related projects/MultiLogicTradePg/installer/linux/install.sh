@@ -424,6 +424,14 @@ deploy_schema() {
   if [[ "$drop_first" == "1" ]]; then
     step "Dropping public functions/procedures (data tables kept)"
     psql_q multilogictrade -f "$PREFIX/sql/drop_public_routines.sql"
+    # #1083/#1084: на уже установленной БД колонки exec_delay_sec и триггер
+    # могут отсутствовать. Миграция идемпотентна и применяется до 01.
+    if [[ ! -f "$PREFIX/sql/upgrade_1083_exec_delay.sql" ]]; then
+      echo "Missing $PREFIX/sql/upgrade_1083_exec_delay.sql (required for upgrade migration)." >&2
+      exit 1
+    fi
+    step "Applying #1083/#1084 upgrade migration (exec_delay_sec, T-Bank fill price)"
+    psql_q multilogictrade -f "$PREFIX/sql/upgrade_1083_exec_delay.sql"
   fi
   step "Deploying database 01 -> ensure_seed -> 02"
   if [[ ! -f "$PREFIX/01_multilogictrade_tables_and_data.sql" ]]; then

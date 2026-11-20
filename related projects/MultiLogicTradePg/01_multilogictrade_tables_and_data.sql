@@ -4226,6 +4226,9 @@ CREATE TABLE IF NOT EXISTS logic_trades (
     price NUMERIC(18, 6) NOT NULL CHECK (price > 0),
     bar_dt TIMESTAMP NOT NULL,
     executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- #1083: задержка исполнения = executed_at − закрытие сигнального бара (bar_dt + tf.sec), сек.
+    -- NULL — не измерима (EOD/forced-close, где bar_dt пишется текущим временем).
+    exec_delay_sec NUMERIC(12, 3),
     is_simulated BOOLEAN NOT NULL DEFAULT FALSE,
     is_fictitious BOOLEAN NOT NULL DEFAULT FALSE,
     is_shadow BOOLEAN NOT NULL DEFAULT FALSE,
@@ -4352,6 +4355,7 @@ ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS quantity NUMERIC(20, 6) NOT NU
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS price NUMERIC(18, 6) CHECK (price > 0);
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS bar_dt TIMESTAMP;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS exec_delay_sec NUMERIC(12, 3);
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_simulated BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_fictitious BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE logic_trades ADD COLUMN IF NOT EXISTS is_shadow BOOLEAN NOT NULL DEFAULT FALSE;
@@ -4425,6 +4429,119 @@ COMMENT ON COLUMN logic_trades.commission IS 'Комиссия по сделке
 COMMENT ON COLUMN logic_trades.financial_result IS 'Итог PnL закрывающей сделки (сумма пакетов); NULL для открытия';
 COMMENT ON COLUMN logic_trades.run_id IS
 'FK → logic_backtest_runs: прогон теста, породивший сделку; NULL для боевых и legacy';
+COMMENT ON COLUMN logic_trades.exec_delay_sec IS
+'#1083: задержка исполнения в секундах от закрытия сигнального бара (bar_dt + timeframe.sec) до executed_at; NULL — не измерима (EOD/forced close)';
+
+-- #1083: единая формула задержки исполнения: сигнал = закрытие бара bar_dt + tf.sec.
+-- И тест, и бой считаются одной формулой: тест с задержкой 0 даёт 0, а с
+-- exec_delay_sec > 0 даёт реальную задержку. Forced close (EOD/stop/close_all)
+-- пишет bar_dt как текущее время (не выровненную свечу) → NULL.
+CREATE OR REPLACE FUNCTION logic_trades_calc_exec_delay_sec(
+    p_bar_dt TIMESTAMP,
+    p_executed_at TIMESTAMP,
+    p_timeframe_id INTEGER,
+    p_is_test BOOLEAN,
+    p_signal_formula TEXT,
+    p_trade_reason TEXT
+)
+RETURNS NUMERIC LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_tf_sec INTEGER;
+BEGIN
+    -- #1083: задержка считается и для теста (executed_at = закрытие бара + задержка).
+    IF p_bar_dt IS NULL OR p_executed_at IS NULL THEN
+        RETURN NULL;
+    END IF;
+    IF COALESCE(p_signal_formula, '') LIKE '%eod.close%'
+       OR COALESCE(p_trade_reason, '') ~* '(eod|close_all|force|stop_loss|take_profit)' THEN
+        RETURN NULL;
+    END IF;
+    SELECT sec INTO v_tf_sec FROM timeframes WHERE id = p_timeframe_id;
+    IF v_tf_sec IS NULL OR v_tf_sec <= 0 THEN
+        RETURN NULL;
+    END IF;
+    IF EXTRACT(SECOND FROM p_bar_dt) <> 0
+       OR MOD(EXTRACT(MINUTE FROM p_bar_dt)::INTEGER, GREATEST(1, v_tf_sec / 60)) <> 0 THEN
+        RETURN NULL;
+    END IF;
+    RETURN GREATEST(0, ROUND(EXTRACT(EPOCH FROM
+        (p_executed_at - (p_bar_dt + v_tf_sec * INTERVAL '1 second')))::NUMERIC, 3));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION logic_trades_exec_delay_trg() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.exec_delay_sec IS NULL THEN
+        NEW.exec_delay_sec := logic_trades_calc_exec_delay_sec(
+            NEW.bar_dt, NEW.executed_at, NEW.timeframe_id, NEW.is_test,
+            NEW.signal_formula, NEW.trade_reason);
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS logic_trades_exec_delay_trg ON logic_trades;
+CREATE TRIGGER logic_trades_exec_delay_trg
+    BEFORE INSERT OR UPDATE OF bar_dt, executed_at, timeframe_id, signal_formula, trade_reason
+    ON logic_trades FOR EACH ROW EXECUTE FUNCTION logic_trades_exec_delay_trg();
+
+-- #1084: безопасная цена исполнения T-Bank «за штуку».
+-- Раньше везде вызывался tbank_order_unit_price; в части развёрнутых БД этой функции
+-- нет, и при закрытии позиций падало «function tbank_order_unit_price(jsonb) does not exist»
+-- (попадало в общий WHEN undefined_function → сделка rejected).
+-- Новый хелпер самодостаточен: не вызывает tbank_order_unit_price, при отсутствии
+-- данных возвращает NULL, поэтому закрытие позиций всегда завершается.
+CREATE OR REPLACE FUNCTION logic_order_fill_unit_price(p_order JSONB)
+RETURNS NUMERIC LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v NUMERIC;
+    v_lots NUMERIC;
+    v_total NUMERIC;
+BEGIN
+    IF p_order IS NULL THEN
+        RETURN NULL;
+    END IF;
+    v := parse_tbank_quotation(
+        COALESCE(p_order->'averagePositionPrice', p_order->'average_position_price'));
+    IF v IS NOT NULL AND v > 0 THEN
+        RETURN round(v, 6);
+    END IF;
+    v := parse_tbank_quotation(
+        COALESCE(p_order->'initialSecurityPrice', p_order->'initial_security_price'));
+    IF v IS NOT NULL AND v > 0 THEN
+        RETURN round(v, 6);
+    END IF;
+    v := parse_tbank_quotation(p_order->'stages'->0->'price');
+    IF v IS NOT NULL AND v > 0 THEN
+        RETURN round(v, 6);
+    END IF;
+    v_lots := COALESCE(
+        NULLIF(regexp_replace(
+            COALESCE(p_order->>'lotsExecuted', p_order->>'lots_executed', '0'),
+            '[^0-9.\-]', '', 'g'
+        ), ''), '0')::numeric;
+    v_total := parse_tbank_quotation(
+        COALESCE(p_order->'executedOrderPrice', p_order->'executed_order_price'));
+    IF v_total IS NOT NULL AND v_total > 0 THEN
+        IF v_lots > 1 THEN
+            RETURN round(v_total / v_lots, 6);
+        END IF;
+        RETURN round(v_total, 6);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_order_fill_unit_price(JSONB) IS
+'#1084: безопасная цена T-Bank за штуку; не зависит от tbank_order_unit_price (которой может не быть в БД)';
+
+-- Backfill старых сделок: идемпотентно, считаем только незаполненные строки.
+UPDATE logic_trades lt
+SET exec_delay_sec = logic_trades_calc_exec_delay_sec(
+    lt.bar_dt, lt.executed_at, lt.timeframe_id, lt.is_test,
+    lt.signal_formula, lt.trade_reason)
+WHERE lt.exec_delay_sec IS NULL;
 
 CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     id BIGSERIAL PRIMARY KEY,
@@ -4444,7 +4561,10 @@ CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     processed_bars INTEGER NOT NULL DEFAULT 0,
     trades_created INTEGER NOT NULL DEFAULT 0,
     test_balance NUMERIC(20, 6),
+    -- legacy: раньше случайный ±% сдвиг цены, теперь не используется (см. exec_delay_sec).
     slippage_pct NUMERIC(5, 2) NOT NULL DEFAULT 0,
+    -- #1083: задержка исполнения теста в секундах от закрытия сигнального бара; 0 = без задержки.
+    exec_delay_sec INTEGER NOT NULL DEFAULT 0,
     -- #1061: галочка в диалоге теста «По окончании теста закрыть все позиции» (по умолчанию включена).
     close_all_at_end BOOLEAN NOT NULL DEFAULT TRUE,
     portfolio_close_pending BOOLEAN NOT NULL DEFAULT FALSE,
@@ -4494,10 +4614,13 @@ COMMENT ON TABLE logic_portfolio_signal_state IS
 'Состояние portfolio-сигналов: pending=true после open-сигнала на портфель, сбрасывается при portfolio-close/когда нет не-фондовых позиций';
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS slippage_pct NUMERIC(5, 2) NOT NULL DEFAULT 0;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS exec_delay_sec INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS close_all_at_end BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_close_pending BOOLEAN NOT NULL DEFAULT FALSE;
 COMMENT ON COLUMN logic_backtest_runs.close_all_at_end IS
 '#1061: последним актом теста закрыть все открытые позиции (галочка в диалоге запуска, default TRUE)';
+COMMENT ON COLUMN logic_backtest_runs.exec_delay_sec IS
+'#1083: исполнение сделок теста через N секунд после закрытия сигнального бара (вместо случайного ±% проскальзывания); UI default 30';
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS logic_id INTEGER REFERENCES logics(id) ON DELETE CASCADE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS date_from DATE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS date_to DATE;

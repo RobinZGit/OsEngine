@@ -2415,7 +2415,7 @@ async function finishCancelled(pool, runId, logicId, balance, processed, total) 
 }
 
 async function startBacktest(
-  pool, logicId, dateFrom, dateTo, optGrid = null, slippagePct = 0, closeAllAtEnd = true
+  pool, logicId, dateFrom, dateTo, optGrid = null, execDelaySec = 0, closeAllAtEnd = true
 ) {
   const arms =
     optGrid && Array.isArray(optGrid.arms) && optGrid.arms.length > 0
@@ -2436,7 +2436,7 @@ async function startBacktest(
     `
     INSERT INTO logic_backtest_runs (
       logic_id, date_from, date_to, status, progress_pct, phase_message, started_at,
-      slippage_pct, close_all_at_end,
+      exec_delay_sec, close_all_at_end,
       opt_grid_config, opt_grid_arms
     )
     VALUES (
@@ -2456,7 +2456,7 @@ async function startBacktest(
       dateTo,
       arms ? JSON.stringify(arms) : null,
       config ? JSON.stringify(config) : null,
-      slippagePct ?? 0,
+      execDelaySec ?? 0,
       closeAllAtEnd !== false,
     ]
   );
@@ -2500,7 +2500,7 @@ async function getBacktestStatus(pool, logicId, runId) {
       test_balance::float8 AS test_balance,
       financial_result::float8 AS financial_result,
       cancel_requested, error_message, started_at, finished_at, created_at,
-      slippage_pct::float8 AS slippage_pct,
+      exec_delay_sec::float8 AS exec_delay_sec,
       close_all_at_end,
       (opt_grid_arms IS NOT NULL AND jsonb_typeof(opt_grid_arms) = 'array'
         AND jsonb_array_length(opt_grid_arms) > 0) AS opt_grid_enabled,

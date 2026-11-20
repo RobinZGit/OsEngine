@@ -541,6 +541,12 @@
                         [title]="portfolioShadowBadgeTitle(row)"
                       >{{ portfolioShadowBadgeText(row) }}</span>
                     }
+                    @if (delayAlertFor(row.id); as delay) {
+                      <span
+                        class="logic-delay-badge"
+                        [title]="delay.text + ' · средняя ' + delay.avg.toFixed(1) + ' сек, максимум ' + delay.max.toFixed(1) + ' сек'"
+                      >⏱ задержка {{ delay.avg.toFixed(1) }} с · {{ delay.count }}</span>
+                    }
                     @if (isBacktestRunning(row.id)) {
                       <span
                         class="logic-test-progress-wrap"

@@ -1,8 +1,9 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { forkJoin } from 'rxjs';
+import { catchError, forkJoin, of } from 'rxjs';
 import {
+  DelayAlertRow,
   ErrorLevel,
   ErrorLogRow,
   MonitoringService,
@@ -42,6 +43,10 @@ export class MonitoringComponent implements OnInit, OnDestroy {
   pingRunning = false;
   pingResult: PingResult | null = null;
   pingError: string | null = null;
+  /** #1083: логики с большой задержкой исполнения. */
+  delayAlerts: DelayAlertRow[] = [];
+  readonly delayThresholdSec = 30;
+  readonly delayWindowHours = 24;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -128,9 +133,11 @@ export class MonitoringComponent implements OnInit, OnDestroy {
       errors: this.monitoring.getErrors({ limit: LIST_LIMIT }),
       stats: this.monitoring.getStats(this.chartMinutes),
       summary: this.monitoring.getSummary(),
+      delay: this.monitoring.getDelayAlerts().pipe(catchError(() => of(null))),
     }).subscribe({
-      next: ({ errors, stats, summary }) => {
+      next: ({ errors, stats, summary, delay }) => {
         this.errors = errors.rows ?? [];
+        this.delayAlerts = delay?.rows ?? [];
         this.chartPoints = (stats.rows ?? []).map((r) => ({
           t: Date.parse(r.ts),
           count: Number(r.count) || 0,

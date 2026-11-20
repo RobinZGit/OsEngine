@@ -18,13 +18,13 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import {
-
+  averageExecDelaySec,
   costMethodLabel,
-
+  EXEC_DELAY_ALERT_SEC,
+  EXEC_DELAY_WARNING_TEXT,
   LogicTradeLotRow,
-
   LogicTradeRow,
-
+  tradeExecDelaySec,
   tradeOperationHint,
 
   tradeOperationLabel,
@@ -122,8 +122,11 @@ export interface BacktestRunStatus {
 
   financial_result: number | null;
 
-  /** Проскальзывание теста (%): 0 = выкл., иначе цена каждой сделки сдвигается случайно от -N% до +N%. */
+  /** legacy: случайное ±% проскальзывание (больше не используется в UI). */
   slippage_pct?: number | null;
+
+  /** #1083: задержка исполнения теста в секундах от закрытия сигнального бара. */
+  exec_delay_sec?: number | null;
 
   /** #1061: последним актом прогона было закрытие всех позиций. */
   close_all_at_end?: boolean;
@@ -254,7 +257,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
   @Output() startBacktest = new EventEmitter<{
     date_from: string;
     date_to: string;
-    slippage_pct: number;
+    exec_delay_sec: number;
     close_all_at_end: boolean;
     opt_grid?: { config: { params: OptGridParamRow[] }; arms: ReturnType<typeof buildOptGridArms> } | null;
   }>();
@@ -301,6 +304,9 @@ export class LogicPositionsPanelComponent implements OnChanges {
   /** Live-only rejected orders block (collapsed by default). */
   expandedRejected = false;
 
+  /** #1083: раскрытие блока задержек исполнения. */
+  showDelayPanel = false;
+
   /** Default open so upgrade users see the block without hunting. */
   expandedPortfolioEquity = true;
 
@@ -314,10 +320,10 @@ export class LogicPositionsPanelComponent implements OnChanges {
 
   periodTo = '';
 
-  /** Проскальзывание выключено по умолчанию. При включении: 0.2% = случайный сдвиг цены сделки от -0.2% до +0.2%. */
-  slippageEnabled = false;
+  /** #1083: задержка исполнения теста включена по умолчанию — 30 сек от закрытия бара. */
+  execDelayEnabled = true;
 
-  slippagePct = 0.2;
+  execDelaySec = 30;
 
   /** #1061: по окончании теста закрыть все позиции — включено по умолчанию. */
   closeAllAtEnd = true;
@@ -417,6 +423,55 @@ export class LogicPositionsPanelComponent implements OnChanges {
     const a = this.rejectAlert;
     if (!a?.warn || !a.message) return false;
     return this.rejectFingerprint(a) !== this.dismissedRejectKey;
+  }
+
+  /** #1083: средняя задержка исполнения по сделкам панели. */
+  get avgExecDelaySec(): number | null {
+    return averageExecDelaySec(this.trades);
+  }
+
+  /** #1083: максимальная измеримая задержка. */
+  get maxExecDelaySec(): number | null {
+    const values = (this.trades ?? [])
+      .map((t) => tradeExecDelaySec(t))
+      .filter((v): v is number => v != null && Number.isFinite(v));
+    return values.length ? Math.max(...values) : null;
+  }
+
+  get delayWarn(): boolean {
+    const avg = this.avgExecDelaySec;
+    return avg != null && avg > EXEC_DELAY_ALERT_SEC;
+  }
+
+  get delayWarningText(): string {
+    return EXEC_DELAY_WARNING_TEXT;
+  }
+
+  formatDelay(value: number | null): string {
+    return value == null || !Number.isFinite(value) ? '—' : `${value.toFixed(1)} с`;
+  }
+
+  delayOverCount(): number {
+    return (this.trades ?? []).filter((t) => {
+      const d = tradeExecDelaySec(t);
+      return d != null && d > EXEC_DELAY_ALERT_SEC;
+    }).length;
+  }
+
+  tradeExecDelay(tr: LogicTradeRow): number | null {
+    return tradeExecDelaySec(tr);
+  }
+
+  delayCellClass(tr: LogicTradeRow): string {
+    const d = tradeExecDelaySec(tr);
+    return d != null && d > EXEC_DELAY_ALERT_SEC ? 'trade-delay-bad' : '';
+  }
+
+  toggleDelayPanel(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    this.showDelayPanel = !this.showDelayPanel;
+    this.cdr.markForCheck();
   }
 
   /** Full token banner + summary chip. */
@@ -1477,7 +1532,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
     this.startBacktest.emit({
       date_from: this.periodFrom,
       date_to: this.periodTo,
-      slippage_pct: this.slippageEnabled ? this.slippagePct : 0,
+      exec_delay_sec: this.execDelayEnabled ? Math.max(0, Math.round(this.execDelaySec)) : 0,
       close_all_at_end: this.closeAllAtEnd,
       opt_grid,
     });

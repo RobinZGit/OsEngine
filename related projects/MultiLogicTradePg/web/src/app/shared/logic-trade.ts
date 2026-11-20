@@ -19,6 +19,8 @@ export interface LogicTradeRow {
   price: number;
   bar_dt: string;
   executed_at: string;
+  /** #1083: задержка исполнения от закрытия сигнального бара, сек. */
+  exec_delay_sec?: number | null;
   is_simulated: boolean;
   is_fictitious?: boolean;
   is_shadow: boolean;
@@ -40,6 +42,68 @@ export interface LogicTradeRow {
   side_name: string;
   action_name: string;
   timeframe_tf: string;
+}
+
+/** #1083: порог, после которого задержка исполнения считается большой. */
+export const EXEC_DELAY_ALERT_SEC = 30;
+
+/** Текст предупреждения, выводимый рядом со средней задержкой. */
+export const EXEC_DELAY_WARNING_TEXT =
+  'превышает 30 секунд внимание внимание большая задержка исполнения';
+
+function timeframeSeconds(tf: unknown): number {
+  const m = String(tf ?? '').match(/(\d+)\s*[smh]?/i);
+  if (!m) return 300;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return 300;
+  return /h/i.test(String(tf)) ? n * 3600 : /s/i.test(String(tf)) ? n : n * 60;
+}
+
+function parseTradeDt(value: unknown): number | null {
+  if (!value) return null;
+  const ms = Date.parse(String(value).replace(' ', 'T'));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * #1083: задержка исполнения сделки в секундах.
+ * Источник — БД (триггер logic_trades_exec_delay_trg); для старых строк
+ * считаем из executed_at − (bar_dt + timeframe.sec). EOD/forced-close и
+ * невыровненные бары исключаем: там bar_dt пишется текущим временем.
+ */
+export function tradeExecDelaySec(
+  trade: Pick<
+    LogicTradeRow,
+    | 'exec_delay_sec'
+    | 'bar_dt'
+    | 'executed_at'
+    | 'timeframe_tf'
+    | 'signal_formula'
+    | 'trade_reason'
+  >
+): number | null {
+  if (trade.exec_delay_sec != null && Number.isFinite(Number(trade.exec_delay_sec))) {
+    return Number(trade.exec_delay_sec);
+  }
+  const reason = `${trade.signal_formula ?? ''} ${trade.trade_reason ?? ''}`;
+  if (/(eod\.close|close_all|force|stop_loss|take_profit)/i.test(reason)) return null;
+  const barMs = parseTradeDt(trade.bar_dt);
+  const execMs = parseTradeDt(trade.executed_at);
+  if (barMs == null || execMs == null) return null;
+  const bar = new Date(barMs);
+  if (bar.getSeconds() !== 0) return null;
+  const delay = (execMs - barMs) / 1000 - timeframeSeconds(trade.timeframe_tf);
+  if (!Number.isFinite(delay) || delay < 0) return null;
+  return delay;
+}
+
+/** Средняя задержка по сделкам (null, если измерить нечего). */
+export function averageExecDelaySec(trades: LogicTradeRow[]): number | null {
+  const values = (Array.isArray(trades) ? trades : [])
+    .map((t) => tradeExecDelaySec(t))
+    .filter((v): v is number => v != null && Number.isFinite(v));
+  if (values.length === 0) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
 export interface LogicTradeLotRow {

@@ -48,6 +48,7 @@ describe('MonitoringComponent (#989)', () => {
     getErrors: jasmine.Spy;
     getStats: jasmine.Spy;
     getSummary: jasmine.Spy;
+    getDelayAlerts: jasmine.Spy;
     ping: jasmine.Spy;
     notifyRefresh: jasmine.Spy;
   };
@@ -60,6 +61,9 @@ describe('MonitoringComponent (#989)', () => {
       getErrors: jasmine.createSpy('getErrors').and.callFake(() => of({ rows: errors })),
       getStats: jasmine.createSpy('getStats').and.callFake(() => of(stats)),
       getSummary: jasmine.createSpy('getSummary').and.callFake(() => of(summaryData)),
+      getDelayAlerts: jasmine
+        .createSpy('getDelayAlerts')
+        .and.callFake(() => of({ threshold_sec: 30, window_hours: 24, rows: [] })),
       ping: jasmine.createSpy('ping'),
       notifyRefresh: jasmine.createSpy('notifyRefresh'),
     };

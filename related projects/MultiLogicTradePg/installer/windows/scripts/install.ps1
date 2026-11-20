@@ -656,6 +656,17 @@ try {
             }
             Write-Step "Dropping public functions/procedures (data tables kept)"
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $dropSql)
+
+            # #1083/#1084: на уже установленной БД колонки exec_delay_sec и
+            # триггерные функции могут отсутствовать. Применяем идемпотентную
+            # миграцию до 01, иначе 01 может прерваться раньше ALTER TABLE и
+            # API упадёт с «column exec_delay_sec does not exist».
+            $migrationSql = Join-Path $InstallDir "sql\upgrade_1083_exec_delay.sql"
+            if (-not (Test-Path $migrationSql)) {
+                throw ("Missing {0} (required for upgrade migration)." -f $migrationSql)
+            }
+            Write-Step "Applying #1083/#1084 upgrade migration (exec_delay_sec, T-Bank fill price)"
+            Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $migrationSql)
         }
 
         Write-Step "Deploying database 01 -> ensure_seed -> 02"

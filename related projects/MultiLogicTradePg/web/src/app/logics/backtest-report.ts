@@ -4,8 +4,12 @@
  */
 import { LogicRow } from '../models/logic.model';
 import {
+  EXEC_DELAY_ALERT_SEC,
+  EXEC_DELAY_WARNING_TEXT,
   LogicTradeLotRow,
   LogicTradeRow,
+  averageExecDelaySec,
+  tradeExecDelaySec,
   tradeOperationLabel,
 } from '../shared/logic-trade';
 import { asDateOnly, formatDateRangeLabel } from '../shared/date-format';
@@ -59,6 +63,8 @@ export interface ReportTradeLedgerRow {
   /** Бар/исполнение/создание — основная колонка сортировки и отображения. */
   time: string;
   executedAt: string | null;
+  /** #1083: задержка исполнения от закрытия сигнального бара, сек. */
+  execDelaySec: number | null;
   security: string;
   side: string;
   action: string;
@@ -194,6 +200,12 @@ export interface BacktestReportModel {
   equitySvg: string;
   /** #1062: ступенчатый график открытий/закрытий по часам (SVG или empty-chart). */
   hourlyOpenCloseSvg: string;
+  /** #1083: график средней задержки исполнения по часам. */
+  hourlyExecDelaySvg: string;
+  /** #1083: графики по дням недели (открытия/закрытия/убыточные/задержка). */
+  weekdayChartsSvg: string;
+  /** #1083: средняя задержка исполнения за период, сек. */
+  avgExecDelaySec: number | null;
   topWins: ClosedDeal[];
   topLosses: ClosedDeal[];
   dealCount: number;
@@ -678,6 +690,244 @@ export function hourlyOpenCloseSvg(trades: LogicTradeRow[]): string {
   out.push('<div class="muted" style="font-size:11px;margin-top:4px">Ось X: часы 0–24, шаг 5 минут. Одинаковый масштаб по Y для всех графиков.</div>');
   out.push('</div>');
   return out.join('\n');
+}
+
+/** #1083: средняя задержка по часам (0..23) — только измеримые сделки. */
+export function hourlyExecDelayValues(trades: LogicTradeRow[]): number[] {
+  const sum = new Array(24).fill(0);
+  const count = new Array(24).fill(0);
+  for (const t of trades ?? []) {
+    if (!t || t.is_shadow || (t.opt_lane && String(t.opt_lane) !== '')) continue;
+    if (t.status !== 'filled' && t.status !== 'submitted') continue;
+    const delay = tradeExecDelaySec(t);
+    if (delay == null) continue;
+    const m = String(t.bar_dt || t.executed_at || '').match(/(\d{2}):(\d{2})/);
+    if (!m) continue;
+    const hour = Number(m[1]);
+    if (hour > 23) continue;
+    sum[hour] += delay;
+    count[hour] += 1;
+  }
+  return sum.map((v, i) => (count[i] > 0 ? v / count[i] : 0));
+}
+
+const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+function weekdayIndex(value: string | null | undefined): number | null {
+  const ms = parseDt(value);
+  if (ms == null) return null;
+  const d = new Date(ms).getDay();
+  return d === 0 ? 6 : d - 1;
+}
+
+/** #1083: открытия, приведшие к убыточным закрытиям (лоты или FIFO-фолбэк). */
+function losingOpenTradeIds(
+  trades: LogicTradeRow[],
+  tradeLots?: Map<number, LogicTradeLotRow[]>
+): Set<number> {
+  const ids = new Set<number>();
+  const closeRows = (trades ?? []).filter(
+    (t) =>
+      t?.side_name === 'Close' &&
+      Number(t.financial_result) < 0 &&
+      (t.status === 'filled' || t.status === 'submitted') &&
+      !t.is_shadow &&
+      !t.opt_lane
+  );
+  const openById = new Map<number, LogicTradeRow>();
+  const queues = new Map<string, LogicTradeRow[]>();
+  for (const t of trades ?? []) {
+    if (t?.side_name !== 'Open' || t.status !== 'filled' && t.status !== 'submitted') continue;
+    if (t.is_shadow || t.opt_lane) continue;
+    openById.set(Number(t.id), t);
+    const key = `${t.security_id}:${t.action_name}`;
+    const q = queues.get(key) ?? [];
+    q.push(t);
+    queues.set(key, q);
+  }
+  for (const close of closeRows) {
+    const lots = (tradeLots?.get(Number(close.id)) ?? []).filter(
+      (l) => Number(l.financial_result) < 0
+    );
+    for (const l of lots) {
+      const oid = Number(l.open_trade_id);
+      if (oid > 0) ids.add(oid);
+    }
+    if (lots.length === 0) {
+      const key = `${close.security_id}:${close.action_name}`;
+      const q = queues.get(key) ?? [];
+      let need = Number(close.quantity) || 0;
+      for (const open of q) {
+        if (need <= 1e-9) break;
+        if (ids.has(Number(open.id))) continue;
+        ids.add(Number(open.id));
+        need -= Number(open.quantity) || 0;
+      }
+    }
+  }
+  return ids;
+}
+
+/** #1083: графики по дням недели — счётчики и средняя задержка. */
+export function weekdayStats(
+  trades: LogicTradeRow[],
+  tradeLots?: Map<number, LogicTradeLotRow[]>
+): {
+  open: number[];
+  close: number[];
+  openLoss: number[];
+  closeLoss: number[];
+  delaySum: number[];
+  delayCount: number[];
+} {
+  const open = new Array(7).fill(0);
+  const close = new Array(7).fill(0);
+  const openLoss = new Array(7).fill(0);
+  const closeLoss = new Array(7).fill(0);
+  const delaySum = new Array(7).fill(0);
+  const delayCount = new Array(7).fill(0);
+  const lossOpenIds = losingOpenTradeIds(trades, tradeLots);
+  for (const t of trades ?? []) {
+    if (!t || t.is_shadow || (t.opt_lane && String(t.opt_lane) !== '')) continue;
+    if (t.status !== 'filled' && t.status !== 'submitted') continue;
+    const idx = weekdayIndex(t.bar_dt || t.executed_at);
+    if (idx == null) continue;
+    const side = String(t.side_name || '').toLowerCase();
+    const pnl = Number(t.financial_result);
+    if (side === 'open') {
+      open[idx] += 1;
+      if (lossOpenIds.has(Number(t.id))) openLoss[idx] += 1;
+    } else if (side === 'close') {
+      close[idx] += 1;
+      if (Number.isFinite(pnl) && pnl < 0) closeLoss[idx] += 1;
+    }
+    const delay = tradeExecDelaySec(t);
+    if (delay != null) {
+      delaySum[idx] += delay;
+      delayCount[idx] += 1;
+    }
+  }
+  return { open, close, openLoss, closeLoss, delaySum, delayCount };
+}
+
+function delayBarsSvg(
+  values: number[],
+  labels: string[],
+  title: string,
+  color: string,
+  aria: string,
+  maxValue: number
+): string {
+  const w = 720;
+  const h = 165;
+  const left = 46;
+  const right = 12;
+  const top = 12;
+  const bottom = 28;
+  const maxY = Math.max(maxValue, EXEC_DELAY_ALERT_SEC, 1) * 1.15;
+  const Y = (v: number): number => top + (1 - v / maxY) * (h - top - bottom);
+  const parts: string[] = [];
+  parts.push(`<div style="margin:10px 0 2px;font-size:12px;font-weight:600;color:#334155">${esc(title)}</div>`);
+  parts.push(`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${esc(aria)}">`);
+  for (const t of [0, Math.round(maxY / 2), Math.round(maxY)]) {
+    const gy = Y(t);
+    parts.push(`<line x1="${left}" y1="${gy.toFixed(1)}" x2="${w - right}" y2="${gy.toFixed(1)}" stroke="#e2e8f0"/>`);
+    parts.push(`<text x="${left - 6}" y="${(gy + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#64748b">${t}</text>`);
+  }
+  const thresholdY = Y(EXEC_DELAY_ALERT_SEC);
+  parts.push(`<line x1="${left}" y1="${thresholdY.toFixed(1)}" x2="${w - right}" y2="${thresholdY.toFixed(1)}" stroke="#b91c1c" stroke-dasharray="4 3"/>`);
+  parts.push(`<text x="${w - right}" y="${(thresholdY - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="#b91c1c">${EXEC_DELAY_ALERT_SEC} сек</text>`);
+  const step = (w - left - right) / Math.max(1, values.length);
+  const barW = Math.max(3, step * 0.72);
+  values.forEach((v, i) => {
+    const x = left + i * step + (step - barW) / 2;
+    const y = Y(v);
+    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(h - bottom - y).toFixed(1)}" fill="${v > EXEC_DELAY_ALERT_SEC ? '#b91c1c' : color}" opacity="0.85"><title>${esc(labels[i])}: ${fmtNum(v, 1)} сек</title></rect>`);
+    parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${h - bottom + 13}" text-anchor="middle" font-size="9" fill="#64748b">${esc(labels[i])}</text>`);
+  });
+  parts.push('</svg>');
+  return parts.join('\n');
+}
+
+function countBarsSvg(
+  values: number[],
+  labels: string[],
+  title: string,
+  color: string,
+  aria: string,
+  maxValue: number
+): string {
+  const w = 720;
+  const h = 150;
+  const left = 42;
+  const right = 12;
+  const top = 12;
+  const bottom = 28;
+  const maxY = Math.max(1, maxValue);
+  const Y = (v: number): number => top + (1 - v / maxY) * (h - top - bottom);
+  const parts: string[] = [];
+  parts.push(`<div style="margin:10px 0 2px;font-size:12px;font-weight:600;color:#334155">${esc(title)}</div>`);
+  parts.push(`<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" role="img" aria-label="${esc(aria)}">`);
+  for (const t of [0, Math.round(maxY / 2), maxY]) {
+    const gy = Y(t);
+    parts.push(`<line x1="${left}" y1="${gy.toFixed(1)}" x2="${w - right}" y2="${gy.toFixed(1)}" stroke="#e2e8f0"/>`);
+    parts.push(`<text x="${left - 6}" y="${(gy + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#64748b">${t}</text>`);
+  }
+  const step = (w - left - right) / Math.max(1, values.length);
+  const barW = Math.max(6, step * 0.5);
+  values.forEach((v, i) => {
+    const x = left + i * step + (step - barW) / 2;
+    const y = Y(v);
+    parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(h - bottom - y).toFixed(1)}" fill="${color}" opacity="0.85"><title>${esc(labels[i])}: ${v}</title></rect>`);
+    parts.push(`<text x="${(x + barW / 2).toFixed(1)}" y="${h - bottom + 13}" text-anchor="middle" font-size="9" fill="#64748b">${esc(labels[i])}</text>`);
+  });
+  parts.push('</svg>');
+  return parts.join('\n');
+}
+
+/** #1083: график средней задержки исполнения по часам. */
+export function hourlyExecDelaySvg(trades: LogicTradeRow[]): string {
+  const values = hourlyExecDelayValues(trades);
+  if (values.every((v) => v === 0)) {
+    return '<div class="empty-chart">Нет измеримых задержек исполнения по часам</div>';
+  }
+  return `<div class="hourly-charts-stack">${delayBarsSvg(
+    values,
+    Array.from({ length: 24 }, (_, i) => String(i)),
+    'Средняя задержка исполнения по часам, сек',
+    '#0891b2',
+    'Средняя задержка исполнения по часам',
+    Math.max(...values)
+  )}<div class="muted" style="font-size:11px;margin-top:4px">Красная линия — порог 30 секунд. Задержка считается от закрытия сигнального бара.</div></div>`;
+}
+
+/** #1083: блок из пяти графиков по дням недели. */
+export function weekdayChartsSvg(
+  trades: LogicTradeRow[],
+  tradeLots?: Map<number, LogicTradeLotRow[]>
+): string {
+  const st = weekdayStats(trades, tradeLots);
+  const delay = st.delaySum.map((v, i) => (st.delayCount[i] > 0 ? v / st.delayCount[i] : 0));
+  const countMax = Math.max(1, ...st.open, ...st.close, ...st.openLoss, ...st.closeLoss);
+  const out: string[] = ['<div class="hourly-charts-stack">'];
+  out.push(countBarsSvg(st.open, WEEKDAY_LABELS, 'Открытия по дням недели', '#16a34a', 'Открытия по дням недели', countMax));
+  out.push(countBarsSvg(st.close, WEEKDAY_LABELS, 'Закрытия по дням недели', '#2563eb', 'Закрытия по дням недели', countMax));
+  out.push(countBarsSvg(st.openLoss, WEEKDAY_LABELS, 'Убыточные открытия по дням недели', '#dc2626', 'Убыточные открытия по дням недели', countMax));
+  out.push(countBarsSvg(st.closeLoss, WEEKDAY_LABELS, 'Убыточные закрытия по дням недели', '#b91c1c', 'Убыточные закрытия по дням недели', countMax));
+  out.push(delayBarsSvg(delay, WEEKDAY_LABELS, 'Средняя задержка исполнения по дням недели, сек', '#0891b2', 'Средняя задержка исполнения по дням недели', Math.max(...delay, 0)));
+  out.push('</div>');
+  return out.join('\n');
+}
+
+/** #1083: карточка средней задержки с предупреждением при >30 сек. */
+export function execDelayCardHtml(avgSec: number | null): string {
+  if (avgSec == null || !Number.isFinite(avgSec)) {
+    return '<div class="card"><div class="lbl">Средняя задержка</div><div class="val muted">—</div></div>';
+  }
+  const warn = avgSec > EXEC_DELAY_ALERT_SEC;
+  return `<div class="card" title="executed_at − закрытие сигнального бара (bar_dt + таймфрейм)"><div class="lbl">Средняя задержка исполнения</div><div class="val ${warn ? 'neg' : ''}">${esc(fmtNum(avgSec, 1))} сек${
+    warn ? `<span class="delay-warning"> (${esc(EXEC_DELAY_WARNING_TEXT)})</span>` : ''
+  }</div></div>`;
 }
 
 
@@ -1939,6 +2189,9 @@ export function buildBacktestReportModel(
     short: computeSideStats(shortDeals, initial, rate, false, num(logic.commission_pct)),
     equitySvg: equitySparklineSvg(trades, opts.backtestRun?.date_from),
     hourlyOpenCloseSvg: hourlyOpenCloseSvg(trades),
+    hourlyExecDelaySvg: hourlyExecDelaySvg(trades),
+    weekdayChartsSvg: weekdayChartsSvg(trades, opts.tradeLots),
+    avgExecDelaySec: averageExecDelaySec(trades),
     topWins: sortedByPnl.filter((d) => d.pnl > 0).slice(0, 8),
     topLosses: sortedByPnl.filter((d) => d.pnl < 0).slice(-8).reverse(),
     dealCount: allDeals.length,
@@ -2056,6 +2309,7 @@ export function buildReportTradeLedger(
         id,
         time: String(t.bar_dt || t.executed_at || t.created_at || ''),
         executedAt: t.executed_at ? String(t.executed_at) : null,
+        execDelaySec: tradeExecDelaySec(t),
         security: t.security_prefix || t.security_name || `#${t.security_id}`,
         side: String(t.side_name || ''),
         action: t.action_name === 'Short' ? 'Short' : 'Long',
@@ -2089,14 +2343,14 @@ function tradeDt(value: unknown): string {
 function allTradesSectionHtml(rows: ReportTradeLedgerRow[]): string {
   const head = `<thead><tr>
     <th>#</th><th>Время</th><th>Бумага</th><th>Операция</th><th>Кол-во</th>
-    <th>Цена</th><th>Сумма</th><th>Комиссия</th><th>П\\У</th>
+    <th>Цена</th><th>Сумма</th><th>Комиссия</th><th>П\\У</th><th>Задержка</th>
     <th>Причина</th><th>Статус</th><th>Сигнал / примечание</th>
   </tr></thead>`;
   if (rows.length === 0) {
     return `<section>
       <h2>Все сделки</h2>
       <div class="trades-all-wrap"><table class="trades-all">${head}<tbody>
-        <tr><td colspan="12" class="muted">Нет сделок</td></tr>
+        <tr><td colspan="13" class="muted">Нет сделок</td></tr>
       </tbody></table></div>
     </section>`;
   }
@@ -2128,6 +2382,9 @@ function allTradesSectionHtml(rows: ReportTradeLedgerRow[]): string {
         <td class="num ${pnlCls}">${
           r.financialResult != null ? esc(fmtMoney(r.financialResult)) : '—'
         }</td>
+        <td class="num ${r.execDelaySec != null && r.execDelaySec > EXEC_DELAY_ALERT_SEC ? 'neg' : ''}" title="От закрытия сигнального бара">${
+          r.execDelaySec != null ? `${esc(fmtNum(r.execDelaySec, 1))} с` : '—'
+        }</td>
         <td>${esc(r.reason || '—')}</td>
         <td>${esc(r.status || '—')}${
           r.brokerOrderId ? ` · ${esc(r.brokerOrderId)}` : ''
@@ -2153,7 +2410,7 @@ function allTradesSectionHtml(rows: ReportTradeLedgerRow[]): string {
             <td class="num">${esc(fmtMoney(num(lot.open_amount) + num(lot.close_amount)))}</td>
             <td class="num">${esc(fmtMoney(openComm + closeComm))}</td>
             <td class="num ${fin >= 0 ? 'pos' : 'neg'}">${esc(fmtMoney(fin))}</td>
-            <td colspan="3" class="muted">комиссия открытия ${esc(
+            <td colspan="4" class="muted">комиссия открытия ${esc(
               fmtMoney(openComm)
             )} + закрытия ${esc(fmtMoney(closeComm))}; закрытие ${esc(
               tradeDt(lot.close_executed_at)
@@ -2407,12 +2664,12 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       font-size: 0.78rem;
       vertical-align: middle;
     }
-    .wrap { max-width: 980px; margin: 0 auto; padding: 1.25rem 1.25rem 2.5rem; }
+    .wrap { width: 100%; max-width: none; margin: 0; padding: 1.25rem 1.25rem 2.5rem; }
     .cards {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 0.75rem;
-      margin: -2rem 0 1.25rem;
+      margin: 1rem 0 1.25rem;
     }
     .card {
       background: var(--panel);
@@ -2425,6 +2682,7 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
     .card .val { font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
     .card .val.pos { color: var(--pos); }
     .card .val.neg { color: var(--neg); }
+    .card .delay-warning { display: block; margin-top: 0.3rem; font-size: 0.68rem; line-height: 1.25; font-weight: 700; color: var(--neg); }
     section {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -2613,6 +2871,7 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       ${annualPctCardHtml(a.netPnlPct, model.dateFrom, model.dateTo)}
       <div class="card"><div class="lbl">Profit Factor</div><div class="val">${esc(pf(a))}</div></div>
       <div class="card"><div class="lbl">Макс. просадка</div><div class="val neg">${esc(a.maxDrawdownPct != null ? fmtPct(a.maxDrawdownPct) : '—')}</div></div>
+      ${execDelayCardHtml(model.avgExecDelaySec)}
       <div class="card"><div class="lbl">Прибыльных %</div><div class="val">${esc(fmtPct(a.winPct))}</div></div>
       <div class="card"><div class="lbl">Sharpe</div><div class="val">${esc(fmtNum(a.sharpe, 3))}</div></div>
       <div class="card"><div class="lbl">Recovery</div><div class="val">${esc(fmtNum(a.recovery, 3))}</div></div>
@@ -2646,6 +2905,13 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
     <section>
       <h2>Открытия и закрытия по часам</h2>
       <div class="chart">${model.hourlyOpenCloseSvg}</div>
+      <h3>Средняя задержка исполнения по часам</h3>
+      <div class="chart">${model.hourlyExecDelaySvg}</div>
+    </section>
+
+    <section>
+      <h2>По дням недели</h2>
+      <div class="chart">${model.weekdayChartsSvg}</div>
     </section>
 
     <section>

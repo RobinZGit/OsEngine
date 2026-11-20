@@ -64,6 +64,38 @@
     </section>
   }
 
+  @if (delayAlerts.length > 0) {
+    <section class="mon-delay-alerts" role="status">
+      <div class="mon-delay-title">
+        ⚠ Большая задержка исполнения
+        <small>· средняя &gt; {{ delayThresholdSec }} сек за {{ delayWindowHours }} ч · {{ delayAlerts.length }} логик</small>
+      </div>
+      <table class="mon-delay-table">
+        <thead>
+          <tr>
+            <th>Логика</th>
+            <th>Средняя</th>
+            <th>Максимум</th>
+            <th>Медленных сделок</th>
+            <th>Последняя</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of delayAlerts; track row.logic_id) {
+            <tr>
+              <td><strong>#{{ row.logic_id }}</strong> {{ row.logic_name }}</td>
+              <td class="mon-delay-value">{{ row.avg_delay_sec | number:'1.1-1' }} с</td>
+              <td>{{ row.max_delay_sec | number:'1.1-1' }} с</td>
+              <td>{{ row.slow_count }} / {{ row.trade_count }}</td>
+              <td>{{ row.last_at }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <div class="mon-delay-hint">превышает 30 секунд внимание внимание большая задержка исполнения</div>
+    </section>
+  }
+
   <section class="monitoring-chart">
     <div class="mon-chart-title">
       Отказы за последний час

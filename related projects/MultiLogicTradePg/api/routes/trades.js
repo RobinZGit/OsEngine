@@ -280,6 +280,60 @@ app.get('/api/logic-trades/reject-alert', async (req, res) => {
 });
 
 /**
+ * #1083: логики с большой задержкой исполнения в мониторинге.
+ * Query: window_hours (по умолчанию 24), threshold_sec (по умолчанию 30).
+ */
+app.get('/api/logic-trades/delay-alerts', async (req, res) => {
+  const windowHoursRaw = Number(req.query.window_hours);
+  const windowHours = Number.isFinite(windowHoursRaw)
+    ? Math.min(720, Math.max(1, Math.round(windowHoursRaw)))
+    : 24;
+  const thresholdRaw = Number(req.query.threshold_sec);
+  const thresholdSec = Number.isFinite(thresholdRaw)
+    ? Math.min(3600, Math.max(1, thresholdRaw))
+    : 30;
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         lt.logic_id,
+         MAX(l.name) AS logic_name,
+         COUNT(*)::int AS trade_count,
+         COUNT(*) FILTER (WHERE lt.exec_delay_sec > $2)::int AS slow_count,
+         ROUND(AVG(lt.exec_delay_sec)::numeric, 1)::float8 AS avg_delay_sec,
+         ROUND(MAX(lt.exec_delay_sec)::numeric, 1)::float8 AS max_delay_sec,
+         to_char(MAX(lt.executed_at), 'YYYY-MM-DD HH24:MI:SS') AS last_at
+       FROM logic_trades lt
+       JOIN logics l ON l.id = lt.logic_id
+       WHERE lt.is_test = FALSE
+         AND lt.exec_delay_sec IS NOT NULL
+         AND lt.status IN ('filled', 'submitted')
+         AND lt.executed_at >= NOW() - make_interval(hours => $1)
+       GROUP BY lt.logic_id
+       HAVING AVG(lt.exec_delay_sec) > $2
+       ORDER BY avg_delay_sec DESC
+       LIMIT 100`,
+      [windowHours, thresholdSec]
+    );
+    res.json({
+      threshold_sec: thresholdSec,
+      window_hours: windowHours,
+      rows: rows.map((r) => ({
+        logic_id: Number(r.logic_id),
+        logic_name: r.logic_name ?? `#${r.logic_id}`,
+        trade_count: Number(r.trade_count) || 0,
+        slow_count: Number(r.slow_count) || 0,
+        avg_delay_sec: Number(r.avg_delay_sec),
+        max_delay_sec: Number(r.max_delay_sec),
+        last_at: r.last_at ?? null,
+      })),
+    });
+  } catch (err) {
+    console.error('GET /api/logic-trades/delay-alerts', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Full trade dump for analysis (open/close/shadow/rejected/etc. + lots).
  * Query: logic_id, is_test=0|1, optional run_id (test: omit = latest run if any).
  */

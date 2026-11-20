@@ -98,9 +98,10 @@ app.post('/api/logic-backtest/start', async (req, res) => {
       req.body?.opt_grid && typeof req.body.opt_grid === 'object'
         ? req.body.opt_grid
         : null;
-    const slippagePct = Number(req.body?.slippage_pct);
-    const slippage = Number.isFinite(slippagePct)
-      ? Math.min(100, Math.max(0, slippagePct))
+    // #1083: задержка исполнения теста в секундах (0..3600, по умолчанию 0).
+    const execDelayRaw = Number(req.body?.exec_delay_sec);
+    const execDelaySec = Number.isFinite(execDelayRaw)
+      ? Math.min(3600, Math.max(0, Math.round(execDelayRaw)))
       : 0;
     // #1061: галочка «По окончании теста закрыть все позиции» — включена по умолчанию.
     const closeAllAtEnd = req.body?.close_all_at_end !== false;
@@ -110,7 +111,7 @@ app.post('/api/logic-backtest/start', async (req, res) => {
       dateFrom,
       dateTo,
       optGrid,
-      slippage,
+      execDelaySec,
       closeAllAtEnd
     );
     res.status(202).json({ ok: true, run_id: runId });

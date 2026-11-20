@@ -5558,6 +5558,10 @@ COMMENT ON PROCEDURE logic_apply_indicator_params_from_signals(INTEGER, INTEGER)
 
 
 
+
+
+
+
 -- Р”РёСЃРїРµС‚С‡РµСЂ РјР°СЃСЃРёРІРЅРѕРіРѕ СЂР°СЃС‡С‘С‚Р° РїРѕ РєРѕРґСѓ РёРЅРґРёРєР°С‚РѕСЂР°
 CREATE OR REPLACE FUNCTION calc_indicator_series_array(
     p_indicator_code VARCHAR,
@@ -8197,7 +8201,7 @@ BEGIN
                                     NULL;
                             END;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -8292,7 +8296,7 @@ BEGIN
                                     NULL;
                             END;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -11154,7 +11158,7 @@ BEGIN
                                     NULL;
                             END;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -11190,7 +11194,7 @@ BEGIN
                         IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
                             v_price := (v_sold_row->>'price')::NUMERIC;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -11329,7 +11333,7 @@ BEGIN
                                     NULL;
                             END;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -11364,7 +11368,7 @@ BEGIN
                         IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
                             v_price := (v_sold_row->>'price')::NUMERIC;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -18247,7 +18251,7 @@ BEGIN
                         IF v_c > 0 THEN
                             v_commission := v_c;
                         END IF;
-                        v_up := tbank_order_unit_price(v_order);
+                        v_up := logic_order_fill_unit_price(v_order);
                         IF (v_commission <= 0 OR v_up IS NULL) AND v_broker_order_id IS NOT NULL THEN
                             BEGIN
                                 v_state := tbank_get_order_state(
@@ -18262,7 +18266,7 @@ BEGIN
                                     v_status
                                 );
                                 IF v_up IS NULL THEN
-                                    v_up := tbank_order_unit_price(v_state);
+                                    v_up := logic_order_fill_unit_price(v_state);
                                 END IF;
                             EXCEPTION
                                 WHEN OTHERS THEN
@@ -21370,6 +21374,12 @@ LANGUAGE sql STABLE AS $$
     ) q;
 $$;
 
+-- #1083: старая 16-аргументовая версия заменяется новой (p_exec_ts с DEFAULT).
+-- CALL с 16 аргументами по-прежнему работает за счёт значения по умолчанию.
+DROP FUNCTION IF EXISTS logic_backtest_insert_trade(
+    BIGINT, INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, INTEGER,
+    TEXT, TEXT, INTEGER, NUMERIC, TIMESTAMP, BOOLEAN, TEXT, NUMERIC, TEXT
+);
 CREATE OR REPLACE FUNCTION logic_backtest_insert_trade(
     p_run_id BIGINT,
     p_logic_id INTEGER,
@@ -21387,6 +21397,7 @@ CREATE OR REPLACE FUNCTION logic_backtest_insert_trade(
     p_trade_reason TEXT,
     p_balance NUMERIC,
     p_position_event TEXT DEFAULT NULL,
+    p_exec_ts TIMESTAMP DEFAULT NULL,
     OUT o_trade_id BIGINT,
     OUT o_new_balance NUMERIC
 )
@@ -21420,7 +21431,7 @@ BEGIN
     VALUES (
         p_logic_id, p_account_id, p_security_id, p_timeframe_id,
         p_side_id, p_action_id, v_position_event, p_signal_kind, p_formula,
-        p_quantity, p_price, p_bar_dt, p_bar_dt, TRUE, FALSE,
+        p_quantity, p_price, p_bar_dt, COALESCE(p_exec_ts, p_bar_dt), TRUE, FALSE,
         p_is_shadow, TRUE, p_run_id, p_trade_reason, 'filled', ''
     )
     ON CONFLICT (logic_id, security_id, position_event, action_id, bar_dt, is_test, is_shadow, opt_lane)
@@ -22666,37 +22677,85 @@ BEGIN
 END;
 $$;
 
--- Хелпер: исполнение сигнального филла с учётом проскальзывания.
--- slippage_pct (%) задаёт МАКСИМАЛЬНЫЙ случайный сдвиг цены сделки от базовой:
--- цена = round(p_base * (1 + uni(-X..+X)/100), 6), где X = p_slippage_pct.
--- Равномерный сдвиг применяется к КАЖДОМУ филлу и идёт в обе стороны (от -X% до +X%);
--- 0% / NULL = базовая цена, проскальзывание выключено.
+-- #1083: момент исполнения теста = закрытие сигнального бара + задержка.
+-- В prices.dt — метка ОТКРЫТИЯ бара, поэтому закрытие = bar_dt + timeframe.sec.
+-- p_exec_delay_sec = 0 → исполнение в момент закрытия бара (старое поведение).
+CREATE OR REPLACE FUNCTION logic_backtest_exec_ts(
+    p_timeframe_id INTEGER,
+    p_bar_dt TIMESTAMP,
+    p_exec_delay_sec NUMERIC
+)
+RETURNS TIMESTAMP
+LANGUAGE sql STABLE AS $$
+    SELECT p_bar_dt
+        + (COALESCE((SELECT sec FROM timeframes WHERE id = p_timeframe_id), 300)
+           + GREATEST(0, COALESCE(p_exec_delay_sec, 0))::INTEGER) * INTERVAL '1 second';
+$$;
+
+COMMENT ON FUNCTION logic_backtest_exec_ts(INTEGER, TIMESTAMP, NUMERIC) IS
+'#1083: executed_at теста = bar_dt + timeframe.sec + exec_delay_sec';
+
+-- #1083: исполнение сигнального филла с задержкой от закрытия бара.
+-- p_base — цена закрытия сигнального бара (fallback). При задержке > 0 цена
+-- берётся из close M1-бара в момент исполнения; если M1 нет — из open_price
+-- следующего бара того же ТФ; последний fallback — p_base.
+-- DROP нужен для переименования входного параметра (p_slippage_pct → p_exec_delay_sec):
+-- CREATE OR REPLACE не позволяет менять имена аргументов.
+DROP FUNCTION IF EXISTS logic_backtest_fill_at(BIGINT, INTEGER, INTEGER, TIMESTAMP, NUMERIC, NUMERIC);
 CREATE OR REPLACE FUNCTION logic_backtest_fill_at(
     p_run_id BIGINT,
     p_security_id INTEGER,
     p_timeframe_id INTEGER,
     p_bar_dt TIMESTAMP,
     p_base NUMERIC,
-    p_slippage_pct NUMERIC
+    p_exec_delay_sec NUMERIC
 )
 RETURNS NUMERIC
 LANGUAGE plpgsql VOLATILE AS $$
 DECLARE
-    v_shift_pct NUMERIC;
+    v_exec_ts TIMESTAMP;
+    v_m1_id INTEGER;
+    v_price NUMERIC;
 BEGIN
-    IF COALESCE(p_slippage_pct, 0) <= 0 OR p_base IS NULL THEN
+    IF p_base IS NULL THEN
+        RETURN NULL;
+    END IF;
+    IF COALESCE(p_exec_delay_sec, 0) <= 0 THEN
         RETURN p_base;
     END IF;
 
-    -- Равномерный случайный сдвиг цены: от -p_slippage_pct% до +p_slippage_pct%.
-    v_shift_pct := (random() * 2 - 1) * COALESCE(p_slippage_pct, 0);
+    v_exec_ts := logic_backtest_exec_ts(p_timeframe_id, p_bar_dt, p_exec_delay_sec);
 
-    RETURN round(p_base * (1 + v_shift_pct / 100.0), 6);
+    SELECT id INTO v_m1_id FROM timeframes WHERE tf = 'M1' LIMIT 1;
+    IF v_m1_id IS NOT NULL THEN
+        SELECT close_price INTO v_price
+        FROM prices
+        WHERE security_id = p_security_id
+          AND timeframe_id = v_m1_id
+          AND dt = date_trunc('minute', v_exec_ts)
+        LIMIT 1;
+        IF v_price IS NOT NULL AND v_price > 0 THEN
+            RETURN round(v_price, 6);
+        END IF;
+    END IF;
+
+    SELECT open_price INTO v_price
+    FROM prices
+    WHERE security_id = p_security_id
+      AND timeframe_id = p_timeframe_id
+      AND dt > p_bar_dt
+    ORDER BY dt
+    LIMIT 1;
+    IF v_price IS NOT NULL AND v_price > 0 THEN
+        RETURN round(v_price, 6);
+    END IF;
+
+    RETURN p_base;
 END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_fill_at(BIGINT, INTEGER, INTEGER, TIMESTAMP, NUMERIC, NUMERIC) IS
-'Филл сигнальной сделки с проскальзыванием: цена случайно сдвигается равномерно от -slippage_pct%% до +slippage_pct%% от базовой (каждый филл, обе стороны)';
+'#1083: исполнение через N сек после закрытия бара: close M1 в момент исполнения, иначе open следующего бара ТФ, иначе цена сигнала';
 
 CREATE OR REPLACE FUNCTION logic_backtest_process_signals(
     p_run_id BIGINT,
@@ -22749,12 +22808,15 @@ DECLARE
     v_spent_notional NUMERIC := 0;
     v_room NUMERIC;
     v_order_notional NUMERIC;
-    v_slippage_pct NUMERIC;
+    v_exec_delay_sec NUMERIC;
+    v_exec_ts TIMESTAMP;
+    -- ТФ, от закрытия бара которого считается задержка (может отличаться от ТФ логики).
+    v_exec_tf_id INTEGER;
     v_portfolio_did_close BOOLEAN := FALSE;
     v_portfolio_out_bal NUMERIC;
 BEGIN
-    -- Проскальзывание: slippage_pct из logic_backtest_runs применяется в момент сделки.
-    SELECT COALESCE(slippage_pct, 0) INTO v_slippage_pct
+    -- #1083: задержка исполнения из logic_backtest_runs (0 = исполнение по сигналу).
+    SELECT COALESCE(exec_delay_sec, 0) INTO v_exec_delay_sec
     FROM logic_backtest_runs WHERE id = p_run_id;
 
     SELECT id INTO v_side_open_id FROM sides WHERE name = 'Open' LIMIT 1;
@@ -22905,6 +22967,8 @@ BEGIN
             v_signal_kind := NULL;
             v_pp := NULL;
             v_bar_dt := NULL;
+            v_exec_ts := NULL;
+            v_exec_tf_id := p_tf_id;
 
             FOR v_sig IN
                 SELECT lis.id, lis.position_event, lis.position_side, lis.signal_kind, lis.formula, lis.indicator_id
@@ -22958,9 +23022,13 @@ BEGIN
                             ),
                             v_eval.close_price
                         ),
-                        v_slippage_pct
+                        v_exec_delay_sec
                     );
                     v_bar_dt := v_eval.bar_dt;
+                    v_exec_tf_id := v_pt.tf_id;
+                    v_exec_ts := logic_backtest_exec_ts(
+                        v_pt.tf_id, v_pt.bar_dt, v_exec_delay_sec
+                    );
                 END IF;
                 v_formulas := CASE
                     WHEN v_formulas IS NULL THEN v_sig.formula
@@ -23062,10 +23130,10 @@ BEGIN
             SELECT *
             INTO v_trade_id, p_balance
             FROM logic_backtest_insert_trade(
-                p_run_id, p_logic_id, p_account_id, v_sec.security_id, p_tf_id,
+                p_run_id, p_logic_id, p_account_id, v_sec.security_id, v_exec_tf_id,
                 v_side_id, v_action_id, v_signal_kind, v_formulas,
                 v_quantity, v_pp, v_bar_dt, v_is_shadow, v_reason,
-                p_balance, v_grp.position_event
+                p_balance, v_grp.position_event, v_exec_ts
             );
 
             IF v_trade_id IS NOT NULL AND v_is_open_event
@@ -25305,6 +25373,10 @@ $$;
 COMMENT ON FUNCTION logic_park_excess_cash(INTEGER) IS
 'Каждая закрытая свеча TF: если equity > порога — BUY на min(кэш, избыток−уже_в_фонде); фонд не продаём; real→T-Bank, fake/без FIGI→sim';
 -- @end logic_cash_fund_park_http
+
+
+
+
 
 
 
@@ -27783,6 +27855,41 @@ $$;
 COMMENT ON FUNCTION tbank_order_unit_price(JSONB) IS
 'Р¦РµРЅР° Р·Р° РµРґРёРЅРёС†Сѓ РёР· T-Bank: averagePositionPrice в†’ initialSecurityPrice в†’ stages в†’ executed/lots';
 
+-- #1084: безопасная цена исполнения T-Bank «за штуку» (не зависит от tbank_order_unit_price).
+CREATE OR REPLACE FUNCTION logic_order_fill_unit_price(p_order JSONB)
+RETURNS NUMERIC LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v NUMERIC;
+    v_lots NUMERIC;
+    v_total NUMERIC;
+BEGIN
+    IF p_order IS NULL THEN RETURN NULL; END IF;
+    v := parse_tbank_quotation(
+        COALESCE(p_order->'averagePositionPrice', p_order->'average_position_price'));
+    IF v IS NOT NULL AND v > 0 THEN RETURN round(v, 6); END IF;
+    v := parse_tbank_quotation(
+        COALESCE(p_order->'initialSecurityPrice', p_order->'initial_security_price'));
+    IF v IS NOT NULL AND v > 0 THEN RETURN round(v, 6); END IF;
+    v := parse_tbank_quotation(p_order->'stages'->0->'price');
+    IF v IS NOT NULL AND v > 0 THEN RETURN round(v, 6); END IF;
+    v_lots := COALESCE(
+        NULLIF(regexp_replace(
+            COALESCE(p_order->>'lotsExecuted', p_order->>'lots_executed', '0'),
+            '[^0-9.\-]', '', 'g'
+        ), ''), '0')::numeric;
+    v_total := parse_tbank_quotation(
+        COALESCE(p_order->'executedOrderPrice', p_order->'executed_order_price'));
+    IF v_total IS NOT NULL AND v_total > 0 THEN
+        IF v_lots > 1 THEN RETURN round(v_total / v_lots, 6); END IF;
+        RETURN round(v_total, 6);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+COMMENT ON FUNCTION logic_order_fill_unit_price(JSONB) IS
+'#1084: безопасная цена T-Bank за штуку; не зависит от tbank_order_unit_price (которой может не быть в БД)';
+
 CREATE OR REPLACE FUNCTION tbank_get_order_state(
     p_account_id INTEGER,
     p_order_id VARCHAR
@@ -27864,7 +27971,7 @@ BEGIN
         BEGIN
             v_order := tbank_get_order_state(v_tr.account_id, v_tr.broker_order_id);
             v_comm := tbank_order_commission(v_order);
-            v_price := tbank_order_unit_price(v_order);
+            v_price := logic_order_fill_unit_price(v_order);
 
             IF v_comm > 0 OR (v_price IS NOT NULL AND v_price > 0) THEN
                 UPDATE logic_trades
@@ -27987,7 +28094,7 @@ BEGIN
         BEGIN
             v_order := tbank_get_order_state(v_tr.account_id, v_tr.broker_order_id);
             v_comm := tbank_order_commission(v_order);
-            v_unit := tbank_order_unit_price(v_order);
+            v_unit := logic_order_fill_unit_price(v_order);
 
             -- Р¤Р°РєС‚РёС‡РµСЃРєРё РёСЃРїРѕР»РЅРµРЅРЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ = Р»РѕС‚С‹ Г— СЂР°Р·РјРµСЂ Р»РѕС‚Р° (Сѓ С‚РµСЂРјРёРЅР°Р»Р° quantity РІ С€С‚СѓРєР°С…).
             v_lots := COALESCE(

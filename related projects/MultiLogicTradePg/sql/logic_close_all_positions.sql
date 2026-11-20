@@ -307,7 +307,7 @@ BEGIN
                                     NULL;
                             END;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -343,7 +343,7 @@ BEGIN
                         IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
                             v_price := (v_sold_row->>'price')::NUMERIC;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -482,7 +482,7 @@ BEGIN
                                     NULL;
                             END;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;
@@ -517,7 +517,7 @@ BEGIN
                         IF NULLIF(v_sold_row->>'price', '')::NUMERIC > 0 THEN
                             v_price := (v_sold_row->>'price')::NUMERIC;
                         END IF;
-                        v_fill_price := tbank_order_unit_price(v_order);
+                        v_fill_price := logic_order_fill_unit_price(v_order);
                         IF v_fill_price IS NOT NULL AND v_fill_price > 0 THEN
                             v_price := v_fill_price;
                         END IF;

@@ -828,7 +828,8 @@ export class LogicsService {
     logic_id: number;
     date_from: string;
     date_to: string;
-    slippage_pct?: number;
+    /** #1083: задержка исполнения теста в секундах (0 = без задержки). */
+    exec_delay_sec?: number;
     close_all_at_end?: boolean;
     opt_grid?: {
       config?: unknown;

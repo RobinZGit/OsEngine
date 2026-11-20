@@ -11,27 +11,27 @@
           <span>По</span>
           <input type="date" [(ngModel)]="periodTo" />
         </label>
-        <label class="slippage-row">
+        <label class="slippage-row exec-delay-row">
           <span class="slippage-check">
             <input
               type="checkbox"
-              id="slippageEnabled"
-              [(ngModel)]="slippageEnabled"
+              id="execDelayEnabled"
+              [(ngModel)]="execDelayEnabled"
             />
-            <span for="slippageEnabled">Проскальзывание</span>
+            <span for="execDelayEnabled">Задержка исполнения</span>
           </span>
           <span class="slippage-value">
             <input
               type="number"
               class="slippage-pct-input"
-              [disabled]="!slippageEnabled"
+              [disabled]="!execDelayEnabled"
               min="0"
-              max="100"
-              step="0.1"
-              [(ngModel)]="slippagePct"
-              title="Максимальный случайный сдвиг цены сделки (±%). Пример: 0.2 = цена от -0.2% до +0.2%."
+              max="3600"
+              step="1"
+              [(ngModel)]="execDelaySec"
+              title="Сделка исполняется через N секунд после закрытия сигнального бара. Цена — M1 на момент исполнения, иначе open следующего бара. По умолчанию 30 сек."
             />
-            <span>%</span>
+            <span>сек</span>
           </span>
         </label>
         <label class="backtest-close-row" title="Последним актом теста станет закрытие всех открытых позиций">
@@ -153,12 +153,12 @@
           <span class="positions-period-label">{{ periodLabel }}</span>
         }
 
-        @if (isTest && !isBacktestRunning && (backtestRun?.slippage_pct ?? 0) > 0) {
+        @if (isTest && !isBacktestRunning && (backtestRun?.exec_delay_sec ?? 0) > 0) {
           <span
             class="positions-slippage-chip"
-            [title]="'Сделки теста исполняются со случайным сдвигом цены до ±' + backtestRun?.slippage_pct + '% от цены сигнала (проскальзывание).'"
+            [title]="'Сделки теста исполняются через ' + backtestRun?.exec_delay_sec + ' сек после закрытия сигнального бара.'"
           >
-            проск. {{ backtestRun?.slippage_pct }}%
+            задержка {{ backtestRun?.exec_delay_sec }} сек
           </span>
         }
 
@@ -303,6 +303,15 @@
               <span>отказы ×{{ rejectAlert?.rejected_count }}</span>
             </span>
           }
+          <button
+            type="button"
+            class="btn-delay-alert"
+            [class.btn-delay-danger]="delayWarn"
+            [title]="delayWarn ? delayWarningText : 'Показать задержки исполнения сделок'"
+            (click)="toggleDelayPanel($event)"
+          >
+            ⏱ задержки {{ formatDelay(avgExecDelaySec) }}
+          </button>
           @if (logicRow.is_enabled && tbankTokenAlert && showTokenWarning()) {
             <button
               type="button"
@@ -361,6 +370,27 @@
         >
           ×
         </button>
+      </div>
+    }
+
+    @if (!isTest && delayWarn) {
+      <div class="trades-delay-banner" role="status">
+        <span aria-hidden="true">⚠</span>
+        <span>
+          Большая задержка исполнения: средняя {{ formatDelay(avgExecDelaySec) }} ({{ delayWarningText }});
+          максимум {{ formatDelay(maxExecDelaySec) }}.
+        </span>
+        <button type="button" class="delay-banner-link" (click)="toggleDelayPanel($event)">
+          {{ showDelayPanel ? 'Скрыть' : 'Показать' }}
+        </button>
+      </div>
+    }
+    @if (showDelayPanel) {
+      <div class="trades-delay-panel" role="status">
+        <div><strong>Средняя задержка:</strong> {{ formatDelay(avgExecDelaySec) }}</div>
+        <div><strong>Максимальная:</strong> {{ formatDelay(maxExecDelaySec) }}</div>
+        <div><strong>Сделок с задержкой &gt; 30 сек:</strong> {{ delayOverCount() }}</div>
+        <p class="delay-panel-hint">Задержка считается от закрытия сигнального бара до executed_at. EOD/принудительные закрытия не учитываются.</p>
       </div>
     }
 
@@ -439,6 +469,7 @@
                 <th>Остаток</th>
                 <th>Цена</th>
                 <th>Комиссия</th>
+                <th>Задержка</th>
                 <th>Причина</th>
                 <th>Статус</th>
               </tr>
@@ -477,6 +508,9 @@
                   <td>{{ tr.remaining_qty ?? tr.quantity }}</td>
                   <td>{{ tr.price }}</td>
                   <td>{{ formatMoney(tr.commission) }}</td>
+                  <td [class]="delayCellClass(tr)" [title]="delayWarn ? delayWarningText : 'От закрытия сигнального бара'">
+                    {{ formatDelay(tradeExecDelay(tr)) }}
+                  </td>
                   <td class="trade-reason-cell" [title]="tr.trade_reason || ''">{{ tr.trade_reason || '—' }}</td>
                   <td class="trade-status-cell" [title]="tr.note || tradeStatusDisplay(tr.status, tr.note)">
                     {{ tradeStatusDisplay(tr.status, tr.note) }}
@@ -484,7 +518,7 @@
                 </tr>
                 @if (openTradeHasPartialCloses(tr) && isTradeRowExpanded(tr.id)) {
                   <tr class="trade-lots-detail-row">
-                    <td colspan="11">
+                    <td colspan="12">
                       <div class="trade-lots-panel">
                         <p class="trade-lots-panel-title">Уже закрыто пакетами (частично)</p>
                         @if (isLotsLoading(tr.id)) {
@@ -524,7 +558,7 @@
                   </tr>
                 }
               } @empty {
-                <tr><td colspan="11" class="empty">Нет открытых сделок</td></tr>
+                <tr><td colspan="12" class="empty">Нет открытых сделок</td></tr>
               }
             </tbody>
           </table>
@@ -556,6 +590,7 @@
                 <th>Цена</th>
                 <th>Комиссия</th>
                 <th>Фин. результат</th>
+                <th>Задержка</th>
                 <th>Причина</th>
                 <th>Статус</th>
               </tr>
@@ -597,6 +632,9 @@
                       {{ formatPnl(tr.financial_result) }}
                     </span>
                   </td>
+                  <td [class]="delayCellClass(tr)" [title]="delayWarn ? delayWarningText : 'От закрытия сигнального бара'">
+                    {{ formatDelay(tradeExecDelay(tr)) }}
+                  </td>
                   <td class="trade-reason-cell" [title]="tr.trade_reason || ''">{{ tr.trade_reason || '—' }}</td>
                   <td class="trade-status-cell" [title]="tr.note || tradeStatusDisplay(tr.status, tr.note)">
                     {{ tradeStatusDisplay(tr.status, tr.note) }}
@@ -604,7 +642,7 @@
                 </tr>
                 @if (isTradeRowExpanded(tr.id)) {
                   <tr class="trade-lots-detail-row">
-                    <td colspan="11">
+                    <td colspan="12">
                       <div class="trade-lots-panel">
                         <p class="trade-lots-panel-title">Пакеты закрытия</p>
                         @if (isLotsLoading(tr.id)) {
@@ -646,7 +684,7 @@
                   </tr>
                 }
               } @empty {
-                <tr><td colspan="11" class="empty">Нет сделок закрытия</td></tr>
+                <tr><td colspan="12" class="empty">Нет сделок закрытия</td></tr>
               }
             </tbody>
           </table>

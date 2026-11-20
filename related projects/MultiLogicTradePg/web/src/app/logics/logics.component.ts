@@ -63,7 +63,11 @@ import {
   valueUnitLabel,
 } from '../shared/logic-stop';
 import {
+  averageExecDelaySec,
   costMethodLabel,
+  EXEC_DELAY_ALERT_SEC,
+  EXEC_DELAY_WARNING_TEXT,
+  tradeExecDelaySec,
   tradeOperationHint,
   tradeOperationLabel,
   tradeStatusLabel,
@@ -352,7 +356,7 @@ export class LogicsComponent implements OnInit, OnDestroy {
     period: {
       date_from: string;
       date_to: string;
-      slippage_pct?: number;
+      exec_delay_sec?: number;
       close_all_at_end?: boolean;
       opt_grid?: {
         config?: unknown;
@@ -3192,6 +3196,27 @@ export class LogicsComponent implements OnInit, OnDestroy {
     return this.logicTradesTest.get(Number(logicId)) ?? [];
   }
 
+  /** #1083: алерт большой задержки исполнения в строке логики (боевые сделки). */
+  delayAlertFor(logicId: number): {
+    avg: number;
+    max: number;
+    count: number;
+    text: string;
+  } | null {
+    const trades = this.tradesFor(logicId);
+    const avg = averageExecDelaySec(trades);
+    if (avg == null || avg <= EXEC_DELAY_ALERT_SEC) return null;
+    const values = trades
+      .map((t) => tradeExecDelaySec(t))
+      .filter((v): v is number => v != null && Number.isFinite(v));
+    return {
+      avg,
+      max: values.length ? Math.max(...values) : avg,
+      count: values.filter((v) => v > EXEC_DELAY_ALERT_SEC).length,
+      text: EXEC_DELAY_WARNING_TEXT,
+    };
+  }
+
   rejectAlertFor(logicId: number): {
     warn: boolean;
     rejected_count: number;
@@ -5162,7 +5187,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     period: {
       date_from: string;
       date_to: string;
-      slippage_pct?: number;
+      exec_delay_sec?: number;
       close_all_at_end?: boolean;
       opt_grid?: {
         config?: unknown;
@@ -5191,7 +5216,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     period: {
       date_from: string;
       date_to: string;
-      slippage_pct?: number;
+      exec_delay_sec?: number;
       close_all_at_end?: boolean;
       opt_grid?: {
         config?: unknown;
@@ -5204,7 +5229,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
         logic_id: logicId,
         date_from: period.date_from,
         date_to: period.date_to,
-        slippage_pct: period.slippage_pct ?? 0,
+        exec_delay_sec: period.exec_delay_sec ?? 0,
         close_all_at_end: period.close_all_at_end !== false,
         opt_grid: period.opt_grid ?? null,
       })

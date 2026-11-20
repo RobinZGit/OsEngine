@@ -2584,7 +2584,7 @@ BEGIN
                         IF v_c > 0 THEN
                             v_commission := v_c;
                         END IF;
-                        v_up := tbank_order_unit_price(v_order);
+                        v_up := logic_order_fill_unit_price(v_order);
                         IF (v_commission <= 0 OR v_up IS NULL) AND v_broker_order_id IS NOT NULL THEN
                             BEGIN
                                 v_state := tbank_get_order_state(
@@ -2599,7 +2599,7 @@ BEGIN
                                     v_status
                                 );
                                 IF v_up IS NULL THEN
-                                    v_up := tbank_order_unit_price(v_state);
+                                    v_up := logic_order_fill_unit_price(v_state);
                                 END IF;
                             EXCEPTION
                                 WHEN OTHERS THEN

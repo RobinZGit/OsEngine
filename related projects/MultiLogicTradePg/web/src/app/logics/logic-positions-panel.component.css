@@ -919,6 +919,97 @@
   cursor: not-allowed;
 }
 
+/* #1083: задержка исполнения — заметная кнопка и подсветка. */
+.btn-delay-alert {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 2.4rem;
+  padding: 0.45rem 1rem;
+  border: 2px solid #0e7490;
+  border-radius: 8px;
+  background: #ecfeff;
+  color: #0e7490;
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(15, 118, 110, 0.2);
+}
+
+.btn-delay-alert:hover {
+  background: #cffafe;
+}
+
+.btn-delay-alert.btn-delay-danger {
+  border-color: #b91c1c;
+  background: #fef2f2;
+  color: #b91c1c;
+  box-shadow: 0 1px 4px rgba(185, 28, 28, 0.28);
+  animation: delay-pulse 1.8s ease-in-out infinite;
+}
+
+.btn-delay-alert.btn-delay-danger:hover {
+  background: #fee2e2;
+}
+
+@keyframes delay-pulse {
+  0%, 100% { box-shadow: 0 1px 4px rgba(185, 28, 28, 0.28); }
+  50% { box-shadow: 0 0 0 5px rgba(185, 28, 28, 0.14); }
+}
+
+.trades-delay-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #fca5a5;
+  border-left: 4px solid #b91c1c;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.trades-delay-panel {
+  margin: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #a5f3fc;
+  border-left: 4px solid #0891b2;
+  border-radius: 6px;
+  background: #ecfeff;
+  color: #155e75;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.delay-banner-link {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #b91c1c;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.delay-panel-hint {
+  margin: 0.4rem 0 0;
+  color: #0e7490;
+  font-size: 0.78rem;
+}
+
+.positions-panel-outer .trade-delay-bad {
+  color: #b91c1c !important;
+  font-weight: 700;
+  background: #fef2f2;
+}
+
 .opt-grid-dialog-scroll {
   max-height: min(420px, 50vh);
   overflow: auto;
