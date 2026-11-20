@@ -2597,7 +2597,7 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
   <header class="hero">
     <div class="hero-top">
       <div>
-        <h1>Отчёт тестирования ${statusBit}</h1>
+        <h1>${model.reportMode === 'live' ? 'Отчёт по реальной торговле' : 'Отчёт тестирования'} ${statusBit}</h1>
         <div class="sub">${esc(model.logicName)} · #${model.logicId} · период ${esc(model.periodLabel)}</div>
         <div class="sub">Сформирован ${esc(model.generatedAt)} · метрики как в OsEngine Journal → Статистика</div>
       </div>

@@ -558,6 +558,8 @@ describe('backtest-report live balance and full logic config (#1081)', () => {
     expect(model.reportMode).toBe('live');
 
     const html = renderBacktestReportHtml(model);
+    expect(html).toContain('<h1>Отчёт по реальной торговле');
+    expect(html).not.toContain('<h1>Отчёт тестирования');
     expect(html).toContain('Остаток счёта');
     expect(html).toContain('Остаток счёта (current_balance)');
     expect(html).not.toContain('Нач. баланс');
@@ -589,6 +591,9 @@ describe('backtest-report live balance and full logic config (#1081)', () => {
     expect(model.params.initialBalance).toBe(250000);
     expect(model.params.balanceSource).toBe(
       'Старт теста (test_initial_balance)'
+    );
+    expect(renderBacktestReportHtml(model)).toContain(
+      '<h1>Отчёт тестирования'
     );
   });
 });
