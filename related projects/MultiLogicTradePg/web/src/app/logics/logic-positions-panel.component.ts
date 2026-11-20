@@ -37,7 +37,12 @@ import {
 
 } from '../shared/logic-trade';
 
-import { LogicRow, LogicSecurityRow } from '../models/logic.model';
+import {
+  LogicIndicatorSignalRow,
+  LogicRow,
+  LogicSecurityRow,
+  LogicStopRow,
+} from '../models/logic.model';
 
 import {
   BacktestPaperRow,
@@ -1232,11 +1237,42 @@ export class LogicPositionsPanelComponent implements OnChanges {
         // Блоки по бумагам опциональны — отчёт обязателен к открытию (#855).
         console.warn('Пер-бумажные блоки отчёта не загружены: %O', err);
       }
+      // #1081: полный блок сигналов/стопов/параметров в отчёте теста.
+      let logicConfig: {
+        signals: LogicIndicatorSignalRow[];
+        stops: LogicStopRow[];
+        paramsMap: Record<string, string>;
+      } | null = null;
+      try {
+        const [signals, stops, params] = await Promise.all([
+          lastValueFrom(
+            this.logicsService.getLogicIndicatorSignals(this.logicRow.id)
+          ),
+          lastValueFrom(this.logicsService.getLogicStops(this.logicRow.id)),
+          lastValueFrom(this.logicsService.getLogicParams(this.logicRow.id)),
+        ]);
+        logicConfig = {
+          signals,
+          stops,
+          paramsMap: Object.fromEntries(
+            (params.params || []).map((p) => [
+              p.param_key,
+              String(p.param_value ?? ''),
+            ])
+          ),
+        };
+      } catch (err) {
+        console.warn('Конфигурация логики для отчёта не загружена: %O', err);
+      }
       const model = buildBacktestReportModel(this.logicRow, this.trades, {
         backtestRun: this.backtestRun,
         tradeLots: this.tradeLots,
         paramHistory,
         paperCharts,
+        signals: logicConfig?.signals,
+        stops: logicConfig?.stops,
+        paramsMap: logicConfig?.paramsMap,
+        configProvided: !!logicConfig,
       });
       const html = renderBacktestReportHtml(model);
       const title = `Отчёт теста — ${model.logicName}`;

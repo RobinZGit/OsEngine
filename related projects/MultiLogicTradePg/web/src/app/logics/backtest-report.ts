@@ -10,6 +10,16 @@ import {
 } from '../shared/logic-trade';
 import { asDateOnly, formatDateRangeLabel } from '../shared/date-format';
 import {
+  positionEventLabel,
+  positionSideLabel,
+  signalKindLabel,
+} from '../shared/signal-formula';
+import {
+  ruleKindLabel,
+  scopeTypeLabel,
+  valueUnitLabel,
+} from '../shared/logic-stop';
+import {
   ChartEquityPoint,
   ChartShadedRange,
   ChartStopMarker,
@@ -115,6 +125,29 @@ export interface ParamHistoryEvent {
   winner_finres?: number | null;
 }
 
+/** #1081: сигнал логики в отчёте (из GET /api/logic-trades/export → logic.signals). */
+export interface ReportLogicSignal {
+  indicator_code?: string | null;
+  indicator_name?: string | null;
+  position_event?: string | null;
+  position_side?: string | null;
+  signal_kind?: string | null;
+  signal_acts_on?: string | null;
+  formula?: string | null;
+  display_order?: number | null;
+  is_active?: boolean | null;
+}
+
+/** #1081: стоп/тейк-профит логики в отчёте. */
+export interface ReportLogicStop {
+  rule_kind?: string | null;
+  scope_type?: string | null;
+  value?: number | string | null;
+  value_unit?: string | null;
+  display_order?: number | null;
+  is_active?: boolean | null;
+}
+
 export interface BacktestReportModel {
   generatedAt: string;
   logicName: string;
@@ -138,7 +171,19 @@ export interface BacktestReportModel {
     cashFundCode: string;
     accountType: string;
     accountName: string;
+    /** #1081: откуда взят стартовый остаток (для live — остаток счёта). */
+    balanceSource: string;
   };
+  /** #1081: test = старт бэктеста, live = живой остаток счёта логики. */
+  reportMode: 'test' | 'live';
+  /** #1081: конфигурация логики реально загружена (иначе блок не вводит в заблуждение). */
+  configProvided: boolean;
+  /** #1081: все сигналы логики с индикаторами и формулами. */
+  signals: ReportLogicSignal[];
+  /** #1081: стопы и тейк-профиты логики. */
+  stops: ReportLogicStop[];
+  /** #1081: все параметры/галочки из logic_params. */
+  flags: Record<string, string>;
   /** Снимок и/или promote баз OPT / параметров формул. */
   paramHistory: ParamHistoryEvent[];
   /** Пер-бумажные блоки: график (свечи/линия), индикаторы, сделки, FIFO-лоты (#848). */
@@ -1553,6 +1598,141 @@ function formatParamChange(ev: ParamHistoryEvent): string {
   return optLine || baseLine;
 }
 
+/** #1081: человекочитаемые подписи для всех параметров логики. */
+function paramLabel(key: string): string {
+  const labels: Record<string, string> = {
+    timeframe: 'Таймфрейм',
+    position_size_base: 'База размера позиции',
+    position_size_pct: '% позиции',
+    max_open_positions: 'Макс. позиций',
+    max_order_amount: 'Лимит одной заявки',
+    initial_balance: 'Начальный остаток боя',
+    current_balance: 'Текущий остаток счёта',
+    test_initial_balance: 'Старт теста',
+    commission_pct: 'Комиссия %',
+    cost_method: 'Метод учёта',
+    base_annual_rate_pct: 'Базовая ставка %',
+    cash_fund_code: 'Денежный фонд',
+    cash_fund_threshold: 'Порог фонда',
+    inversion: 'Инверсия',
+    warmup_pretest: 'Предварительный тест',
+    close_positions_eod: 'Закрывать в конце дня',
+    use_non_trading_periods: 'Учитывать неторговые периоды',
+    non_trading_periods_mode: 'Режим торговых периодов',
+    order_execution: 'Исполнение заявок',
+    auto_optimize: 'Автооптимизация',
+    opt_eval_candles: 'Окно OPT (свечи)',
+  };
+  return labels[key] || key;
+}
+
+function flagRu(value: string): string {
+  const s = String(value ?? '').trim();
+  if (/^(true|1|yes|on|да)$/i.test(s)) return 'вкл';
+  if (/^(false|0|no|off|нет)$/i.test(s)) return 'выкл';
+  return s || '—';
+}
+
+function signalActsOnLabel(value: unknown): string {
+  switch (String(value || 'security')) {
+    case 'base_asset':
+      return 'База';
+    case 'contango':
+      return 'Ряд (фьючерс − база)';
+    case 'portfolio':
+      return 'Портфель';
+    default:
+      return 'Бумага';
+  }
+}
+
+/** #1081: полный блок «Параметры логики» — сигналы, стопы и все параметры. */
+function logicConfigSectionHtml(model: BacktestReportModel): string {
+  const p = model.params;
+  const signals = [...(model.signals || [])].sort(
+    (a, b) => num(a.display_order) - num(b.display_order)
+  );
+  const stops = [...(model.stops || [])].sort(
+    (a, b) => num(a.display_order) - num(b.display_order)
+  );
+  const flagKeys = Object.keys(model.flags || {}).sort();
+
+  const signalRows = !model.configProvided
+    ? '<tr><td colspan="7" class="muted">Конфигурация логики не загружена</td></tr>'
+    : signals.length === 0
+      ? '<tr><td colspan="7" class="muted">Сигналы не найдены</td></tr>'
+      : signals
+          .map(
+            (s) => `<tr>
+        <td>${esc(String(s.indicator_code || s.indicator_name || '—'))}</td>
+        <td>${esc(positionEventLabel(s.position_event as never))}</td>
+        <td>${esc(positionSideLabel(s.position_side as never))}</td>
+        <td>${esc(signalKindLabel(s.signal_kind as never))}</td>
+        <td>${esc(signalActsOnLabel(s.signal_acts_on))}</td>
+        <td class="formula">${esc(s.formula || '')}</td>
+        <td>${s.is_active ? 'вкл' : 'выкл'}</td>
+      </tr>`
+          )
+          .join('');
+
+  const stopRows = !model.configProvided
+    ? '<tr><td colspan="4" class="muted">Конфигурация логики не загружена</td></tr>'
+    : stops.length === 0
+      ? '<tr><td colspan="4" class="muted">Стопы и тейк-профиты не заданы</td></tr>'
+      : stops
+          .map(
+            (s) => `<tr>
+        <td>${esc(ruleKindLabel(s.rule_kind as never))}</td>
+        <td>${esc(scopeTypeLabel(s.scope_type as never, s.rule_kind as never))}</td>
+        <td class="num">${esc(fmtNum(num(s.value), 4))} ${esc(
+          valueUnitLabel(s.value_unit as never)
+        )}</td>
+        <td>${s.is_active ? 'вкл' : 'выкл'}</td>
+      </tr>`
+          )
+          .join('');
+
+  const flagRows = flagKeys.length
+    ? flagKeys
+        .map(
+          (k) =>
+            `<div><dt>${esc(paramLabel(k))}</dt><dd>${esc(
+              flagRu(model.flags[k])
+            )}</dd></div>`
+        )
+        .join('')
+    : '<div><dt class="muted">Нет данных</dt><dd class="muted">—</dd></div>';
+
+  return `<section>
+    <h2>Параметры логики</h2>
+    <dl class="params">
+      <div><dt>Таймфрейм</dt><dd>${esc(p.timeframe)}</dd></div>
+      <div><dt>% позиции</dt><dd>${esc(fmtNum(p.positionSizePct, 2))}</dd></div>
+      <div><dt>Макс. позиций</dt><dd>${esc(fmtNum(p.maxOpenPositions, 0))}</dd></div>
+      <div><dt>${model.reportMode === 'live' ? 'Остаток счёта' : 'Нач. баланс'}</dt><dd>${esc(fmtMoney(p.initialBalance))}</dd></div>
+      <div><dt>Источник остатка</dt><dd>${esc(p.balanceSource)}</dd></div>
+      <div><dt>Комиссия %</dt><dd>${esc(fmtNum(p.commissionPct, 4))}</dd></div>
+      <div><dt>Учёт</dt><dd>${esc(p.costMethod)}</dd></div>
+      <div><dt>Баз. ставка %</dt><dd>${esc(fmtNum(p.baseAnnualRatePct, 2))}</dd></div>
+      <div><dt>Инверсия</dt><dd>${p.inversion ? 'да' : 'нет'}</dd></div>
+      <div><dt>Ден. фонд</dt><dd>${esc(p.cashFundCode)}</dd></div>
+      <div><dt>Счёт</dt><dd>${esc(p.accountName)} (${esc(p.accountType)})</dd></div>
+    </dl>
+    <h3>Сигналы (${signals.length})</h3>
+    <table class="deals config-table">
+      <thead><tr><th>Индикатор</th><th>Событие</th><th>Сторона</th><th>Тип</th><th>Действие</th><th>Формула</th><th>Вкл</th></tr></thead>
+      <tbody>${signalRows}</tbody>
+    </table>
+    <h3>Стопы и тейк-профиты (${stops.length})</h3>
+    <table class="deals config-table">
+      <thead><tr><th>Правило</th><th>Область</th><th>Значение</th><th>Вкл</th></tr></thead>
+      <tbody>${stopRows}</tbody>
+    </table>
+    <h3>Все параметры и галочки (${flagKeys.length})</h3>
+    <dl class="params params-wide">${flagRows}</dl>
+  </section>`;
+}
+
 function paramHistorySectionHtml(history: ParamHistoryEvent[]): string {
   const rows = (history || []).map((ev) => {
     const when = ev.bar_dt || ev.created_at || '—';
@@ -1590,7 +1770,7 @@ function paramHistorySectionHtml(history: ParamHistoryEvent[]): string {
   if (!rows.length) {
     return `<section>
       <h2>Параметры сигналов / OPT</h2>
-      <p class="muted">Нет данных по параметрам формул.</p>
+      <p class="muted">История OPT не зафиксирована. Текущие сигналы, стопы и все параметры логики — в блоке «Параметры логики» выше.</p>
     </section>`;
   }
 
@@ -1621,6 +1801,52 @@ export function backtestStartBalance(logic: LogicRow): number {
   return 1_000_000;
 }
 
+/**
+ * #1081: стартовый остаток для отчёта по реальной торговле.
+ * Источник — живой остаток логики/счёта (`current_balance`, он же terminal_cash
+ * для fake и cash T-Bank для real), затем заданный пользователем `initial_balance`.
+ * Тестовый `test_initial_balance` и магический 1 000 000 здесь НЕ участвуют.
+ */
+function liveBalanceNumber(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** #1081: остаток живой логики вместе с подписью источника (для отчёта). */
+function liveBalanceWithSource(
+  logic: LogicRow,
+  accountBalance?: number | string | null
+): { value: number; source: string } {
+  const fromExport = liveBalanceNumber(accountBalance);
+  if (fromExport != null) {
+    return { value: fromExport, source: 'Остаток счёта (current_balance)' };
+  }
+  const mirror = liveBalanceNumber(logic.current_balance);
+  if (mirror != null) {
+    return { value: mirror, source: 'Остаток счёта (current_balance)' };
+  }
+  const baseline = liveBalanceNumber(logic.initial_balance);
+  if (baseline != null && baseline > 0) {
+    return {
+      value: baseline,
+      source: 'Стартовый остаток логики (initial_balance)',
+    };
+  }
+  // Для демо-счёта 1 000 000 — это и есть стартовый остаток счёта, а не тест.
+  return {
+    value: String(logic.account_type || '').toLowerCase() === 'fake' ? 1_000_000 : 0,
+    source: 'Остаток счёта недоступен',
+  };
+}
+
+export function liveStartBalance(
+  logic: LogicRow,
+  accountBalance?: number | string | null
+): number {
+  return liveBalanceWithSource(logic, accountBalance).value;
+}
+
 export function buildBacktestReportModel(
   logic: LogicRow,
   trades: LogicTradeRow[],
@@ -1630,9 +1856,30 @@ export function buildBacktestReportModel(
     paramHistory?: ParamHistoryEvent[] | null;
     /** Пер-бумажные графики (#848). */
     paperCharts?: PaperReportChart[];
+    /** #1081: live-отчёт берёт остаток счёта, а не старт теста. */
+    reportMode?: 'test' | 'live';
+    /** #1081: живой остаток из export/trading_params (current_balance). */
+    liveAccountBalance?: number | string | null;
+    /** #1081: конфигурация логики для полного блока сигналов/стопов/параметров. */
+    signals?: ReportLogicSignal[];
+    stops?: ReportLogicStop[];
+    paramsMap?: Record<string, unknown>;
+    configProvided?: boolean;
   } = {}
 ): BacktestReportModel {
-  const initial = backtestStartBalance(logic);
+  const reportMode = opts.reportMode ?? 'test';
+  const liveBalance =
+    reportMode === 'live'
+      ? liveBalanceWithSource(logic, opts.liveAccountBalance)
+      : null;
+  const initial = liveBalance
+    ? liveBalance.value
+    : backtestStartBalance(logic);
+  const balanceSource = liveBalance
+    ? liveBalance.source
+    : num(logic.test_initial_balance, 0) > 0
+      ? 'Старт теста (test_initial_balance)'
+      : 'Старт логики (initial_balance)';
   const rate = num(logic.base_annual_rate_pct, 7);
   const deals = collectClosedDeals(trades, opts.tradeLots);
   const allDeals = filterSide(deals, 'all');
@@ -1672,7 +1919,19 @@ export function buildBacktestReportModel(
       cashFundCode: String(logic.cash_fund_code || '').trim() || '—',
       accountType: logic.account_type,
       accountName: logic.account_name || logic.account_code || '—',
+      balanceSource,
     },
+    reportMode,
+    configProvided:
+      opts.configProvided ??
+      (opts.signals != null || opts.stops != null || opts.paramsMap != null),
+    signals: Array.isArray(opts.signals) ? opts.signals : [],
+    stops: Array.isArray(opts.stops) ? opts.stops : [],
+    flags: Object.fromEntries(
+      Object.entries(opts.paramsMap ?? {})
+        .filter(([, v]) => v != null && String(v).trim() !== '')
+        .map(([k, v]) => [k, String(v)])
+    ),
     paramHistory: Array.isArray(opts.paramHistory) ? opts.paramHistory : [],
     paperCharts: Array.isArray(opts.paperCharts) ? opts.paperCharts : [],
     all: computeSideStats(allDeals, initial, rate, true, num(logic.commission_pct)),
@@ -2279,6 +2538,10 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
     table.deals th, table.deals td { padding: 0.35rem 0.45rem; border-bottom: 1px solid var(--line); }
     table.deals th { text-align: left; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
     table.param-hist td.formulas { font-family: ui-monospace, Consolas, monospace; font-size: 0.72rem; word-break: break-all; }
+    section h3 { margin: 1.1rem 0 0.5rem; font-size: 0.9rem; font-weight: 700; }
+    .params-wide { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .params-wide dd { word-break: break-all; }
+    table.config-table td.formula { font-family: ui-monospace, Consolas, monospace; font-size: 0.72rem; word-break: break-all; max-width: 380px; }
     .trades-all-wrap { max-height: 520px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
     table.trades-all { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
     table.trades-all th, table.trades-all td { padding: 0.3rem 0.42rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
@@ -2357,21 +2620,7 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
       ${breakevenCardHtml(a, model.params.commissionPct)}
     </div>
 
-    <section>
-      <h2>Параметры логики</h2>
-      <dl class="params">
-        <div><dt>Таймфрейм</dt><dd>${esc(model.params.timeframe)}</dd></div>
-        <div><dt>% позиции</dt><dd>${esc(fmtNum(model.params.positionSizePct, 2))}</dd></div>
-        <div><dt>Макс. позиций</dt><dd>${esc(fmtNum(model.params.maxOpenPositions, 0))}</dd></div>
-        <div><dt>Нач. баланс</dt><dd>${esc(fmtMoney(model.params.initialBalance))}</dd></div>
-        <div><dt>Комиссия %</dt><dd>${esc(fmtNum(model.params.commissionPct, 4))}</dd></div>
-        <div><dt>Учёт</dt><dd>${esc(model.params.costMethod)}</dd></div>
-        <div><dt>Баз. ставка %</dt><dd>${esc(fmtNum(model.params.baseAnnualRatePct, 2))}</dd></div>
-        <div><dt>Инверсия</dt><dd>${model.params.inversion ? 'да' : 'нет'}</dd></div>
-        <div><dt>Ден. фонд</dt><dd>${esc(model.params.cashFundCode)}</dd></div>
-        <div><dt>Счёт</dt><dd>${esc(model.params.accountName)} (${esc(model.params.accountType)})</dd></div>
-      </dl>
-    </section>
+    ${logicConfigSectionHtml(model)}
 
     ${paramHistorySectionHtml(model.paramHistory)}
 

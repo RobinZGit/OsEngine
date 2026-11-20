@@ -10,6 +10,7 @@ import {
   computeSideStats,
   hourlyOpenCloseCounts,
   hourlyOpenCloseSvg,
+  liveStartBalance,
   renderBacktestReportHtml,
   sanitizeReportFilenamePart,
   type BacktestReportModel,
@@ -451,5 +452,143 @@ describe('backtest-report metrics', () => {
     expect(html).toContain('tr-lot');
     expect(html).toContain('комиссия открытия');
     expect(html).toContain('откр. #1');
+  });
+});
+
+describe('backtest-report live balance and full logic config (#1081)', () => {
+  function liveLogic(): Record<string, unknown> {
+    return {
+      id: 10134,
+      name: 'DONCHIAN-OC M5 REAL',
+      account_type: 'real',
+      account_name: 'Токен 1 10326 19.06',
+      // Реальный счёт: живой остаток и пользовательский старт боя.
+      current_balance: 98765.43,
+      initial_balance: 90000,
+      // Тестовый миллион не должен попадать в live-отчёт.
+      test_initial_balance: 1000000,
+      timeframe: 'M5',
+      position_size_pct: 30,
+      max_open_positions: 10,
+      commission_pct: 0.03,
+      base_annual_rate_pct: 20,
+    };
+  }
+
+  it('liveStartBalance prefers the real account balance and ignores test_initial_balance', () => {
+    const logic = liveLogic();
+    expect(liveStartBalance(logic as never, 12345.67)).toBe(12345.67);
+    expect(liveStartBalance(logic as never)).toBe(98765.43);
+    expect(liveStartBalance(logic as never, null)).toBe(98765.43);
+    // Нет живого остатка — берём пользовательский старт, но не тестовый миллион.
+    expect(
+      liveStartBalance({ ...logic, current_balance: null } as never, null)
+    ).toBe(90000);
+    expect(
+      liveStartBalance(
+        {
+          ...logic,
+          current_balance: null,
+          initial_balance: null,
+        } as never,
+        null
+      )
+    ).toBe(0);
+    // Для демо 1 000 000 — это старт счёта, а не тест.
+    expect(
+      liveStartBalance(
+        {
+          ...logic,
+          account_type: 'fake',
+          current_balance: null,
+          initial_balance: null,
+        } as never,
+        null
+      )
+    ).toBe(1000000);
+  });
+
+  it('live report uses account balance and renders all signals, stops and params', () => {
+    const model = buildBacktestReportModel(liveLogic() as never, [], {
+      reportMode: 'live',
+      liveAccountBalance: 12345.67,
+      signals: [
+        {
+          indicator_code: 'Donchian',
+          position_event: 'open',
+          position_side: 'short',
+          signal_kind: 'counter',
+          signal_acts_on: 'contango',
+          formula: 'Price > DonchianHi(20)',
+          display_order: 1,
+          is_active: true,
+        },
+        {
+          indicator_code: 'ATR',
+          position_event: 'close',
+          position_side: 'long',
+          signal_kind: 'trend',
+          signal_acts_on: 'base_asset',
+          formula: 'ATR(14) > 2',
+          display_order: 2,
+          is_active: true,
+        },
+      ],
+      stops: [
+        {
+          rule_kind: 'stop_loss',
+          scope_type: 'portfolio',
+          value: 3.5,
+          value_unit: 'percent',
+          display_order: 1,
+          is_active: true,
+        },
+      ],
+      paramsMap: {
+        current_balance: '12345.67',
+        warmup_pretest: 'true',
+        close_positions_eod: 'false',
+        custom_logic_flag: '42',
+      },
+      configProvided: true,
+    });
+
+    expect(model.params.initialBalance).toBe(12345.67);
+    expect(model.params.balanceSource).toBe('Остаток счёта (current_balance)');
+    expect(model.reportMode).toBe('live');
+
+    const html = renderBacktestReportHtml(model);
+    expect(html).toContain('Остаток счёта');
+    expect(html).toContain('Остаток счёта (current_balance)');
+    expect(html).not.toContain('Нач. баланс');
+    // Полный блок сигналов: индикатор, Long/Short, тренд/контртренд, действие, формула.
+    expect(html).toContain('<th>Индикатор</th>');
+    expect(html).toContain('Donchian');
+    expect(html).toContain('ATR');
+    expect(html).toContain('Long');
+    expect(html).toContain('Short');
+    expect(html).toContain('Против');
+    expect(html).toContain('По течению');
+    expect(html).toContain('Ряд (фьючерс − база)');
+    expect(html).toContain('Price &gt; DonchianHi(20)');
+    expect(html).toContain('Сигналы (2)');
+    expect(html).toContain('Стопы и тейк-профиты (1)');
+    // Все параметры, включая нестандартные галочки.
+    expect(html).toContain('Все параметры и галочки (4)');
+    expect(html).toContain('custom_logic_flag');
+    expect(html).toContain('Предварительный тест');
+    expect(html).toContain('вкл');
+    expect(html).not.toContain('Нет данных по параметрам формул.');
+  });
+
+  it('test report keeps test_initial_balance as start balance', () => {
+    const model = buildBacktestReportModel(
+      { ...liveLogic(), test_initial_balance: 250000 } as never,
+      []
+    );
+    expect(model.params.initialBalance).toBe(250000);
+    expect(model.params.balanceSource).toBe(
+      'Старт теста (test_initial_balance)'
+    );
   });
 });

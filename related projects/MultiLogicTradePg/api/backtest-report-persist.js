@@ -142,10 +142,13 @@ async function persistBacktestReport(pool, runId, opts = {}) {
   let reportParamsMap = {};
   try {
     const { rows: sigRows } = await pool.query(
-      `SELECT position_event, position_side, signal_kind, formula, is_active
-         FROM logic_indicator_signals
-        WHERE logic_id = $1
-        ORDER BY display_order, id`,
+      `SELECT lis.position_event, lis.position_side, lis.signal_kind,
+              COALESCE(lis.signal_acts_on, 'security') AS signal_acts_on,
+              lis.formula, lis.is_active, i.code AS indicator_code
+         FROM logic_indicator_signals lis
+         JOIN indicators i ON i.id = lis.indicator_id
+        WHERE lis.logic_id = $1
+        ORDER BY lis.display_order, lis.id`,
       [run.logic_id]
     );
     reportSignals = sigRows;

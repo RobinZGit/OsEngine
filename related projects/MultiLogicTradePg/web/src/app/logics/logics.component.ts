@@ -92,6 +92,8 @@ import {
   buildBacktestReportModel,
   openBacktestReportWindow,
   renderBacktestReportHtml,
+  ReportLogicSignal,
+  ReportLogicStop,
 } from './backtest-report';
 
 const POLL_INTERVAL_MS = 2000;
@@ -1850,9 +1852,22 @@ export class LogicsComponent implements OnInit, OnDestroy {
       const dateFrom = dates[0] ?? null;
       const dateTo = dates[dates.length - 1] ?? null;
 
-      // Для реального отчёта берём живой начальный баланс, а не тестовый.
-      const logicForReport: LogicRow = { ...row, test_initial_balance: null };
-      const model = buildBacktestReportModel(logicForReport, trades, {
+      // #1081: в live-отчёте стартовый остаток — живой остаток счёта логики
+      // (current_balance: T-Bank cash / terminal_cash), а не тестовый миллион.
+      const paramsMap: Record<string, string> = {};
+      for (const p of dump.logic?.params ?? []) {
+        if (p?.param_key) paramsMap[p.param_key] = String(p.param_value ?? '');
+      }
+      const liveAccountBalance =
+        row.current_balance ??
+        (dump.trading_params?.['current_balance'] as
+          | number
+          | string
+          | null
+          | undefined) ??
+        paramsMap['current_balance'] ??
+        null;
+      const model = buildBacktestReportModel(row, trades, {
         backtestRun: {
           date_from: dateFrom,
           date_to: dateTo,
@@ -1860,6 +1875,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
           progress_pct: 100,
         },
         tradeLots,
+        reportMode: 'live',
+        liveAccountBalance,
+        signals: (dump.logic?.signals ?? []) as ReportLogicSignal[],
+        stops: (dump.logic?.stops ?? []) as ReportLogicStop[],
+        paramsMap,
+        configProvided: !!dump.logic,
       });
       const html = renderBacktestReportHtml(model);
       const title = `Отчёт (реальная торговля) — ${model.logicName}`;

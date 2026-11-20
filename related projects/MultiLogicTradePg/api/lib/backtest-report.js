@@ -495,7 +495,7 @@ function paramHistorySectionHtml(history) {
   if (!rows.length) {
     return `<section>
       <h2>Параметры сигналов / OPT</h2>
-      <p class="muted">Нет данных по параметрам формул.</p>
+      <p class="muted">История OPT не зафиксирована. Текущие сигналы, стопы и все параметры логики — в блоке «Логика: параметры, сигналы и стопы» выше.</p>
     </section>`;
   }
 
@@ -586,10 +586,25 @@ function signalKindRu(kind) {
   return String(kind) === 'counter' ? 'контртренд' : 'тренд';
 }
 
-function signalSideRu(event, side) {
-  const ev = String(event) === 'close' ? 'выход' : 'вход';
-  const sd = String(side) === 'short' ? 'шорт' : 'лонг';
-  return `${ev} / ${sd}`;
+function signalEventRu(event) {
+  return String(event) === 'close' ? 'Закрытие' : 'Открытие';
+}
+
+function positionSideRu(side) {
+  return String(side) === 'short' ? 'Short' : 'Long';
+}
+
+function signalActsOnRu(value) {
+  switch (String(value || 'security')) {
+    case 'base_asset':
+      return 'База';
+    case 'contango':
+      return 'Ряд (фьючерс − база)';
+    case 'portfolio':
+      return 'Портфель';
+    default:
+      return 'Бумага';
+  }
 }
 
 function stopRuleRu(rule) {
@@ -636,14 +651,17 @@ function logicConfigSectionHtml(model) {
     ? rows
         .map(
           (s) => `<tr>
-        <td>${esc(signalSideRu(s.position_event, s.position_side))}</td>
+        <td>${esc(s.indicator_code || '—')}</td>
+        <td>${esc(signalEventRu(s.position_event))}</td>
+        <td>${esc(positionSideRu(s.position_side))}</td>
         <td>${esc(signalKindRu(s.signal_kind))}</td>
-        <td><code>${esc(s.formula || '')}</code></td>
+        <td>${esc(signalActsOnRu(s.signal_acts_on))}</td>
+        <td class="formula"><code>${esc(s.formula || '')}</code></td>
         <td>${s.is_active ? 'вкл' : 'выкл'}</td>
       </tr>`
         )
         .join('')
-    : '<tr><td colspan="4">Сигналы не найдены</td></tr>';
+    : '<tr><td colspan="7">Сигналы не найдены</td></tr>';
 
   const stopRows = stops.length
     ? stops
@@ -686,7 +704,7 @@ function logicConfigSectionHtml(model) {
       </dl>
       <h3>Сигналы</h3>
       <table class="deals">
-        <thead><tr><th>Событие / сторона</th><th>Тип</th><th>Формула</th><th>Вкл</th></tr></thead>
+        <thead><tr><th>Индикатор</th><th>Событие</th><th>Сторона</th><th>Тип</th><th>Действие</th><th>Формула</th><th>Вкл</th></tr></thead>
         <tbody>${signalRows}</tbody>
       </table>
       <h3>Стопы и тейк-профиты</h3>
@@ -1078,6 +1096,7 @@ function renderBacktestReportHtml(model) {
     table.deals th, table.deals td { padding:.35rem .45rem; border-bottom:1px solid var(--line); }
     table.deals th { text-align:left; color:var(--muted); font-size:.72rem; text-transform:uppercase; }
     table.param-hist td.formulas { font-family:ui-monospace,Consolas,monospace; font-size:.72rem; word-break:break-all; }
+    table.deals td.formula { font-family:ui-monospace,Consolas,monospace; font-size:.72rem; word-break:break-all; max-width:380px; }
     .trades-all-wrap { max-height:520px; overflow:auto; border:1px solid var(--line); border-radius:8px; }
     table.trades-all { width:100%; border-collapse:collapse; font-size:.76rem; }
     table.trades-all th, table.trades-all td { padding:.3rem .42rem; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
