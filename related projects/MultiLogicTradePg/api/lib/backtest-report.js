@@ -577,6 +577,7 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
     topWins: sortedByPnl.filter((d) => d.pnl > 0).slice(0, 8),
     topLosses: sortedByPnl.filter((d) => d.pnl < 0).slice(-8).reverse(),
     dealCount: allDeals.length,
+    allTrades: buildReportTradeLedger(trades, opts.tradeLots),
   };
 }
 
@@ -775,6 +776,151 @@ function annualPctCardHtml(returnPct, dateFrom, dateTo) {
   )}</div></div>`;
 }
 
+/** #1080: подпись операции, как в клиентском shared/logic-trade.ts. */
+function tradeOperationLabel(t) {
+  const opening = t.side_name === 'Open';
+  if (t.action_name === 'Long') return opening ? 'Покупка' : 'Продажа';
+  return opening ? 'Продажа (шорт)' : 'Покупка (закрытие шорта)';
+}
+
+/** #1080: реестр всех сделок, включая отказы, тень и OPT, в хронологическом порядке. */
+function buildReportTradeLedger(trades, tradeLots) {
+  return (Array.isArray(trades) ? trades : [])
+    .map((t) => {
+      const id = Number(t.id) || 0;
+      const lots =
+        t.side_name === 'Close'
+          ? [...(tradeLots?.get(id) ?? [])].sort(
+              (a, b) => Number(a.id) - Number(b.id)
+            )
+          : [];
+      const quantity = num(t.quantity);
+      const price = num(t.price);
+      const finResult =
+        t.financial_result != null && Number.isFinite(Number(t.financial_result))
+          ? Number(t.financial_result)
+          : null;
+      return {
+        id,
+        time: String(t.bar_dt || t.executed_at || t.created_at || ''),
+        executedAt: t.executed_at ? String(t.executed_at) : null,
+        security: t.security_prefix || t.security_name || `#${t.security_id}`,
+        side: String(t.side_name || ''),
+        action: t.action_name === 'Short' ? 'Short' : 'Long',
+        operation: tradeOperationLabel(t),
+        quantity,
+        price,
+        amount: quantity * price,
+        commission: num(t.commission),
+        financialResult: finResult,
+        status: String(t.status || ''),
+        reason: t.trade_reason ?? null,
+        note: t.note ?? null,
+        signalKind: t.signal_kind ?? null,
+        signalFormula: t.signal_formula ?? null,
+        timeframe: t.timeframe_tf ?? null,
+        remainingQty: t.remaining_qty != null ? num(t.remaining_qty) : null,
+        brokerOrderId: t.broker_order_id ?? null,
+        shadow: !!t.is_shadow,
+        optLane: t.opt_lane || null,
+        lots,
+      };
+    })
+    .sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
+}
+
+function tradeDt(value) {
+  const s = String(value ?? '').replace('T', ' ');
+  return s ? s.slice(0, 19) : '—';
+}
+
+function allTradesSectionHtml(rows) {
+  const head = `<thead><tr>
+    <th>#</th><th>Время</th><th>Бумага</th><th>Операция</th><th>Кол-во</th>
+    <th>Цена</th><th>Сумма</th><th>Комиссия</th><th>П\\У</th>
+    <th>Причина</th><th>Статус</th><th>Сигнал / примечание</th>
+  </tr></thead>`;
+  if (!rows.length) {
+    return `<section>
+      <h2>Все сделки</h2>
+      <div class="trades-all-wrap"><table class="trades-all">${head}<tbody>
+        <tr><td colspan="12" class="muted">Нет сделок</td></tr>
+      </tbody></table></div>
+    </section>`;
+  }
+  const body = rows
+    .map((r) => {
+      const flags = [];
+      if (r.shadow) flags.push('shadow');
+      if (r.optLane) flags.push(`OPT:${r.optLane}`);
+      if (r.side === 'Open' && r.remainingQty != null) {
+        flags.push(`ост. ${fmtNum(r.remainingQty, 2)}`);
+      }
+      const meta = [r.timeframe, r.signalKind, r.signalFormula, r.note]
+        .filter((x) => x != null && String(x).trim() !== '')
+        .map((x) => String(x).trim())
+        .concat(flags);
+      const pnlCls =
+        r.financialResult == null ? 'muted' : r.financialResult >= 0 ? 'pos' : 'neg';
+      const main = `<tr class="tr-main${r.side === 'Close' ? ' tr-close' : ''}">
+        <td class="num">${esc(String(r.id))}</td>
+        <td class="num" title="Исполнено: ${esc(tradeDt(r.executedAt))}">${esc(
+          tradeDt(r.time)
+        )}${r.executedAt && String(r.executedAt) !== r.time ? `<span class="muted"> / исп. ${esc(tradeDt(r.executedAt))}</span>` : ''}</td>
+        <td>${esc(r.security)}</td>
+        <td title="${esc(r.operation)}">${esc(r.side)} · ${esc(r.action)}</td>
+        <td class="num">${esc(fmtNum(r.quantity, 4))}</td>
+        <td class="num">${esc(fmtNum(r.price, 4))}</td>
+        <td class="num">${esc(fmtMoney(r.amount))}</td>
+        <td class="num">${esc(fmtMoney(r.commission))}</td>
+        <td class="num ${pnlCls}">${
+          r.financialResult != null ? esc(fmtMoney(r.financialResult)) : '—'
+        }</td>
+        <td>${esc(r.reason || '—')}</td>
+        <td>${esc(r.status || '—')}${
+          r.brokerOrderId ? ` · ${esc(r.brokerOrderId)}` : ''
+        }</td>
+        <td class="muted">${esc(meta.join(' · ') || '—')}</td>
+      </tr>`;
+      const lots = r.lots
+        .map((lot) => {
+          const openComm = num(lot.open_commission);
+          const closeComm = num(lot.close_commission);
+          const fin = num(lot.financial_result);
+          return `<tr class="tr-lot">
+            <td class="num">↳ ${esc(String(lot.id))}</td>
+            <td class="num">${esc(tradeDt(lot.open_executed_at || lot.open_bar_dt))}</td>
+            <td>лот ${esc(lot.action_name || r.action)} · ${esc(
+              lot.cost_method || 'FIFO'
+            )}</td>
+            <td class="num">откр. #${esc(String(lot.open_trade_id ?? '—'))}</td>
+            <td class="num">${esc(fmtNum(num(lot.quantity), 4))}</td>
+            <td class="num">${esc(fmtNum(num(lot.open_price), 4))} → ${esc(
+              fmtNum(num(lot.close_price), 4)
+            )}</td>
+            <td class="num">${esc(
+              fmtMoney(num(lot.open_amount) + num(lot.close_amount))
+            )}</td>
+            <td class="num">${esc(fmtMoney(openComm + closeComm))}</td>
+            <td class="num ${fin >= 0 ? 'pos' : 'neg'}">${esc(fmtMoney(fin))}</td>
+            <td colspan="3" class="muted">комиссия открытия ${esc(
+              fmtMoney(openComm)
+            )} + закрытия ${esc(fmtMoney(closeComm))}; закрытие ${esc(
+              tradeDt(lot.close_executed_at)
+            )}</td>
+          </tr>`;
+        })
+        .join('');
+      return main + lots;
+    })
+    .join('');
+  return `<section>
+    <h2>Все сделки (${rows.length})</h2>
+    <div class="trades-all-wrap"><table class="trades-all">${head}<tbody>${body}</tbody></table></div>
+    <p class="paper-hint">Хронология всех строк таблицы сделок: открытия, закрытия и отклонённые заявки. У закрытий раскрыты пакеты лотов с комиссиями открытия и закрытия.</p>
+  </section>`;
+}
+
 function dealRows(deals) {
   if (deals.length === 0) {
     return `<tr><td colspan="6" class="muted">Нет сделок</td></tr>`;
@@ -932,6 +1078,14 @@ function renderBacktestReportHtml(model) {
     table.deals th, table.deals td { padding:.35rem .45rem; border-bottom:1px solid var(--line); }
     table.deals th { text-align:left; color:var(--muted); font-size:.72rem; text-transform:uppercase; }
     table.param-hist td.formulas { font-family:ui-monospace,Consolas,monospace; font-size:.72rem; word-break:break-all; }
+    .trades-all-wrap { max-height:520px; overflow:auto; border:1px solid var(--line); border-radius:8px; }
+    table.trades-all { width:100%; border-collapse:collapse; font-size:.76rem; }
+    table.trades-all th, table.trades-all td { padding:.3rem .42rem; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    table.trades-all th { color:var(--muted); font-size:.7rem; text-transform:uppercase; position:sticky; top:0; background:var(--panel); z-index:1; }
+    table.trades-all td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    table.trades-all tr.tr-close td { background:#fcfcfd; }
+    table.trades-all tr.tr-lot td { background:#fafafa; color:#475569; font-size:.72rem; }
+    table.trades-all .pos { color:var(--pos); font-weight:600; } table.trades-all .neg { color:var(--neg); font-weight:600; }
     .muted { color:var(--muted); }
     .foot { margin-top:1.25rem; font-size:.78rem; color:var(--muted); text-align:center; }
     .report-tools { display:flex; justify-content:flex-end; margin-bottom:1rem; gap:.5rem; }
@@ -1027,6 +1181,7 @@ function renderBacktestReportHtml(model) {
       </table>
     </section>
     ${paperChartsModule.paperChartsSectionHtml(model.paperCharts)}
+    ${allTradesSectionHtml(model.allTrades)}
     <p class="foot">MultiLogic Trade · архив отчёта теста · PostgreSQL</p>
   </div>
   <script>
@@ -1063,6 +1218,7 @@ module.exports = {
   renderBacktestReportHtml,
   buildBacktestReportDownloadName,
   collectClosedDeals,
+  buildReportTradeLedger,
   computeSideStats,
   hourlyOpenCloseCounts,
   hourlyOpenCloseSvg,

@@ -3,11 +3,14 @@ import {
   annualPctCardHtml,
   backtestStartBalance,
   buildBacktestReportDownloadName,
+  buildBacktestReportModel,
   buildPaperReportCloseRows,
+  buildReportTradeLedger,
   collectClosedDeals,
   computeSideStats,
   hourlyOpenCloseCounts,
   hourlyOpenCloseSvg,
+  renderBacktestReportHtml,
   sanitizeReportFilenamePart,
   type BacktestReportModel,
   type ClosedDeal,
@@ -343,5 +346,110 @@ describe('backtest-report metrics', () => {
     expect(svg).toContain('#dc2626');
     expect(svg).toContain('>24</text>');
     expect(hourlyOpenCloseSvg([])).toContain('Нет сделок открытия/закрытия');
+  });
+
+  it('#1080: ledger keeps all statuses, sorts by time and attaches close lots', () => {
+    const open = {
+      ...closeTrade({ id: 1, financial_result: null as unknown as number, action_name: 'Long', bar_dt: '2026-01-10 10:00:00', executed_at: '2026-01-10 10:00:00' }),
+      side_name: 'Open',
+    } as LogicTradeRow;
+    const close = {
+      ...closeTrade({ id: 2, financial_result: 50, action_name: 'Long', bar_dt: '2026-01-10 11:00:00', executed_at: '2026-01-10 11:00:00' }),
+      quantity: 10,
+      price: 110,
+      commission: 3,
+      trade_reason: 'take_profit',
+    } as LogicTradeRow;
+    const rejected = {
+      ...closeTrade({ id: 3, financial_result: null as unknown as number, action_name: 'Short', bar_dt: '2026-01-10 12:00:00', executed_at: '2026-01-10 12:00:00' }),
+      side_name: 'Open',
+      status: 'rejected' as const,
+      note: 'нет денег',
+    } as LogicTradeRow;
+    const lots = new Map<number, LogicTradeLotRow[]>([
+      [
+        2,
+        [
+          {
+            id: 91,
+            logic_id: 1,
+            close_trade_id: 2,
+            open_trade_id: 1,
+            action_id: 1,
+            cost_method: 'FIFO',
+            quantity: 10,
+            close_amount: 1100,
+            open_amount: 1000,
+            close_commission: 3,
+            open_commission: 2,
+            financial_result: 45,
+            action_name: 'Long',
+            open_executed_at: '2026-01-10 10:00:00',
+            open_bar_dt: '2026-01-10 10:00:00',
+            open_price: 100,
+            close_executed_at: '2026-01-10 11:00:00',
+            close_price: 110,
+          },
+        ],
+      ],
+    ]);
+
+    const rows = buildReportTradeLedger([close, rejected, open], lots);
+    expect(rows.map((r) => r.id)).toEqual([1, 2, 3]);
+    expect(rows[0].side).toBe('Open');
+    expect(rows[1].amount).toBeCloseTo(1100, 5);
+    expect(rows[1].commission).toBe(3);
+    expect(rows[1].reason).toBe('take_profit');
+    expect(rows[1].lots.length).toBe(1);
+    expect(rows[2].status).toBe('rejected');
+    expect(rows[2].financialResult).toBeNull();
+    expect(rows[0].lots.length).toBe(0);
+  });
+
+  it('#1080: both report modes include all-trades block with lot commissions', () => {
+    const open = {
+      ...closeTrade({ id: 1, financial_result: null as unknown as number, action_name: 'Long', bar_dt: '2026-01-10 10:00:00', executed_at: '2026-01-10 10:00:00' }),
+      side_name: 'Open',
+    } as LogicTradeRow;
+    const close = closeTrade({ id: 2, financial_result: 50, action_name: 'Long', bar_dt: '2026-01-10 11:00:00', executed_at: '2026-01-10 11:00:00' });
+    const lots = new Map<number, LogicTradeLotRow[]>([
+      [
+        2,
+        [
+          {
+            id: 91,
+            logic_id: 1,
+            close_trade_id: 2,
+            open_trade_id: 1,
+            action_id: 1,
+            cost_method: 'FIFO',
+            quantity: 1,
+            close_amount: 100,
+            open_amount: 50,
+            close_commission: 3,
+            open_commission: 2,
+            financial_result: 45,
+            action_name: 'Long',
+            open_executed_at: '2026-01-10 10:00:00',
+            open_bar_dt: '2026-01-10 10:00:00',
+            open_price: 50,
+            close_executed_at: '2026-01-10 11:00:00',
+            close_price: 100,
+          },
+        ],
+      ],
+    ]);
+    const model = buildBacktestReportModel(
+      { id: 7, name: 'Логика' } as never,
+      [open, close],
+      { tradeLots: lots }
+    );
+    expect(model.allTrades.length).toBe(2);
+    const html = renderBacktestReportHtml(model);
+    expect(html).toContain('Все сделки (2)');
+    expect(html).toContain('Сигнал / примечание');
+    expect(html).toContain('tr-lot');
+    expect(html).toContain('комиссия открытия');
+    expect(html).toContain('откр. #1');
   });
 });

@@ -194,14 +194,29 @@ async function persistBacktestReport(pool, runId, opts = {}) {
     const { rows: lotRows } = await pool.query(
       `
       SELECT
+        l.id,
         l.close_trade_id,
+        l.open_trade_id,
+        l.quantity::float8 AS quantity,
+        l.close_amount::float8 AS close_amount,
+        l.open_amount::float8 AS open_amount,
+        l.close_commission::float8 AS close_commission,
+        l.open_commission::float8 AS open_commission,
+        l.financial_result::float8 AS financial_result,
+        l.cost_method,
+        ac.name AS action_name,
         to_char(ot.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS open_executed_at,
         to_char(ot.bar_dt, 'YYYY-MM-DD HH24:MI:SS') AS open_bar_dt,
-        ot.price::float8 AS open_price
+        ot.price::float8 AS open_price,
+        to_char(ct.executed_at, 'YYYY-MM-DD HH24:MI:SS') AS close_executed_at,
+        ct.price::float8 AS close_price
       FROM logic_trade_lots l
+      LEFT JOIN actions ac ON ac.id = l.action_id
+      LEFT JOIN logic_trades ct ON ct.id = l.close_trade_id
       LEFT JOIN logic_trades ot ON ot.id = l.open_trade_id
       WHERE l.logic_id = $1
         AND l.close_trade_id = ANY($2::bigint[])
+      ORDER BY l.id ASC
       `,
       [run.logic_id, tradeIds]
     );
