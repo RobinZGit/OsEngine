@@ -1,7 +1,28 @@
 .dialog-wide {
-  max-width: 42rem;
+  max-width: 56rem;
+  width: min(96vw, 56rem);
   max-height: calc(100vh - 2rem);
   overflow: auto;
+}
+
+.mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.25rem;
+}
+
+.mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.js-area {
+  min-height: 22rem;
+  line-height: 1.4;
+  tab-size: 2;
 }
 
 .desc-area {

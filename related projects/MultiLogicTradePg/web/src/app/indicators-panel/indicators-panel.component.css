@@ -386,3 +386,30 @@ th.col-rating.sortable {
   color: #4b5563;
   font-size: 0.78rem;
 }
+
+
+.col-type {
+  width: 9.5rem;
+  white-space: nowrap;
+}
+
+.type-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.type-badge.type-user {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-color: #bfdbfe;
+}
+
+.type-badge.type-system {
+  color: #374151;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}

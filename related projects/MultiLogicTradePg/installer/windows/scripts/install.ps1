@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Post-install script for the MultiLogicTradePg Windows installer.
@@ -667,6 +667,13 @@ try {
             }
             Write-Step "Applying #1083/#1084 upgrade migration (exec_delay_sec, T-Bank fill price)"
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $migrationSql)
+
+            $jsIndicatorsMigration = Join-Path $InstallDir "sql\upgrade_user_js_indicators.sql"
+            if (-not (Test-Path $jsIndicatorsMigration)) {
+                throw ("Missing {0} (required for user JS indicators upgrade migration)." -f $jsIndicatorsMigration)
+            }
+            Write-Step "Applying user JS indicators upgrade migration (indicators.js_code, calc_kind)"
+            Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $jsIndicatorsMigration)
         }
 
         Write-Step "Deploying database 01 -> ensure_seed -> 02"
@@ -688,6 +695,11 @@ try {
             if (Test-Path $sqlContango) {
                 Write-Step "Ensuring contango base securities (CNY/USD/gold/silver spot)"
                 Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sqlContango)
+            }
+            $sqlJsExamples = Join-Path $InstallDir "sql\ensure_user_js_example_indicators.sql"
+            if (Test-Path $sqlJsExamples) {
+                Write-Step "Ensuring example user JS indicators (PRICE_DIR, LOCAL_EXTREMUM)"
+                Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $sqlJsExamples)
             }
             $optCount = Invoke-PsqlScalar $Psql "multilogictrade" "SELECT COUNT(*) FROM logics WHERE name = 'LinReg Fade Optimized';"
             if ($optCount -ne "1") {

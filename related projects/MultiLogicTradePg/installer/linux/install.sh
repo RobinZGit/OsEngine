@@ -432,6 +432,12 @@ deploy_schema() {
     fi
     step "Applying #1083/#1084 upgrade migration (exec_delay_sec, T-Bank fill price)"
     psql_q multilogictrade -f "$PREFIX/sql/upgrade_1083_exec_delay.sql"
+    if [[ ! -f "$PREFIX/sql/upgrade_user_js_indicators.sql" ]]; then
+      echo "Missing $PREFIX/sql/upgrade_user_js_indicators.sql (required for user JS indicators upgrade migration)." >&2
+      exit 1
+    fi
+    step "Applying user JS indicators upgrade migration (indicators.js_code, calc_kind)"
+    psql_q multilogictrade -f "$PREFIX/sql/upgrade_user_js_indicators.sql"
   fi
   step "Deploying database 01 -> ensure_seed -> 02"
   if [[ ! -f "$PREFIX/01_multilogictrade_tables_and_data.sql" ]]; then
@@ -452,6 +458,10 @@ deploy_schema() {
   if [[ -f "$PREFIX/sql/ensure_contango_bases.sql" ]]; then
     step "Ensuring contango base securities (CNY/USD/gold/silver spot)"
     psql_q multilogictrade -f "$PREFIX/sql/ensure_contango_bases.sql"
+  fi
+  if [[ -f "$PREFIX/sql/ensure_user_js_example_indicators.sql" ]]; then
+    step "Ensuring example user JS indicators (PRICE_DIR, LOCAL_EXTREMUM)"
+    psql_q multilogictrade -f "$PREFIX/sql/ensure_user_js_example_indicators.sql"
   fi
   local opt_count
   opt_count="$(psql_scalar multilogictrade "SELECT COUNT(*) FROM logics WHERE name = 'LinReg Fade Optimized';")"

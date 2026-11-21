@@ -114,17 +114,21 @@ function timeframeSeconds(tf) {
 
 function tradeExecDelaySec(t) {
   if (!t) return null;
-  if (t.exec_delay_sec != null && Number.isFinite(Number(t.exec_delay_sec))) {
-    return Number(t.exec_delay_sec);
-  }
   const reason = `${t.signal_formula ?? ''} ${t.trade_reason ?? ''}`;
   if (/(eod\.close|close_all|force|stop_loss|take_profit)/i.test(reason)) return null;
   const barMs = parseDt(t.bar_dt);
   const execMs = parseDt(t.executed_at);
-  if (barMs == null || execMs == null) return null;
-  if (new Date(barMs).getSeconds() !== 0) return null;
-  const delay = (execMs - barMs) / 1000 - timeframeSeconds(t.timeframe_tf);
-  return Number.isFinite(delay) && delay >= 0 ? delay : null;
+  if (barMs != null && execMs != null) {
+    if (new Date(barMs).getSeconds() === 0) {
+      const delay = (execMs - barMs) / 1000 - timeframeSeconds(t.timeframe_tf);
+      if (Number.isFinite(delay) && delay >= 0) return delay;
+    }
+  }
+  // fallback: сохранённое фактическое значение из БД (если времена недоступны)
+  if (t.exec_delay_sec != null && Number.isFinite(Number(t.exec_delay_sec))) {
+    return Number(t.exec_delay_sec);
+  }
+  return null;
 }
 
 function averageExecDelaySec(trades) {

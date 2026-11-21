@@ -38,6 +38,7 @@
           <tr>
             <th>Код</th>
             <th>Название</th>
+            <th class="col-type">Тип</th>
             <th>Описание</th>
             <th class="col-rating sortable" (click)="toggleRatingSort()" title="Рейтинг: средний % годовых до лучшей точки. Цвет = величина рейтинга. Нажмите для сортировки.">
               Рейтинг
@@ -75,6 +76,14 @@
                 @if (row.formula) {
                   <span class="formula-hint" [title]="row.formula">{{ row.formula }}</span>
                 }
+                @if (row.is_custom && row.calc_kind === 'js') {
+                  <span class="formula-hint" title="Пользовательский JS-индикатор">JS</span>
+                }
+              </td>
+              <td class="col-type">
+                <span class="type-badge" [class.type-user]="row.is_custom" [class.type-system]="!row.is_custom">
+                  {{ row.is_custom ? 'Пользовательский' : 'Системный' }}
+                </span>
               </td>
               <td class="desc-cell" [title]="row.description || ''">{{ descriptionPreview(row.description) }}</td>
               <td class="col-rating" [style]="ratingStyle(row)" [title]="ratingTooltip(row)">{{ ratingText(row) }}</td>
@@ -113,7 +122,7 @@
             </tr>
             @if (isExpanded(row)) {
               <tr class="detail-row">
-                <td colspan="5">
+                <td colspan="6">
                   @if (hasRating(row)) {
                     <div class="detail-title">
                       Состав рейтинга
@@ -179,7 +188,7 @@
               </tr>
             }
           } @empty {
-            <tr><td colspan="5" class="empty">Нет индикаторов</td></tr>
+            <tr><td colspan="6" class="empty">Нет индикаторов</td></tr>
           }
         </tbody>
       </table>

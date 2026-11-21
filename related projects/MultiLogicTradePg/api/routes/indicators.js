@@ -1,3 +1,4 @@
+const { calculateJsIndicator, syncJsIndicator } = require('../lib/js-indicator');
 /**
  * Indicators, series, values, calculate.
  */
@@ -181,6 +182,8 @@ app.get('/api/indicators', async (req, res) => {
         i.name,
         i.script,
         i.formula,
+        i.js_code,
+        i.calc_kind,
         i.is_custom,
         i.description,
         i.category,
@@ -241,7 +244,7 @@ app.get('/api/indicators', async (req, res) => {
       FROM indicators i
       LEFT JOIN indicator_value_types vt ON vt.indicator_id = i.id
       LEFT JOIN indicator_rating r ON r.indicator_id = i.id
-      WHERE ($1::boolean = FALSE OR (BTRIM(COALESCE(i.script, '')) <> '' OR BTRIM(COALESCE(i.formula, '')) <> ''))
+      WHERE ($1::boolean = FALSE OR (BTRIM(COALESCE(i.script, '')) <> '' OR BTRIM(COALESCE(i.formula, '')) <> '' OR BTRIM(COALESCE(i.js_code, '')) <> ''))
       GROUP BY i.id, r.indicator_id
       ORDER BY i.code
     `,
@@ -532,36 +535,43 @@ app.post('/api/indicators', async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const { rows: formulaOk } = await client.query(
-      'SELECT poly_is_formula($1) AS ok',
-      [parsed.formula]
-    );
-    if (!formulaOk[0]?.ok) {
-      res.status(400).json({
-        error: 'Формула должна быть многочленной (pp, sma, @RSI, …), не calc_*',
-      });
-      return;
+    const isJs = parsed.calc_kind === 'js';
+    if (!isJs) {
+      const { rows: formulaOk } = await client.query(
+        'SELECT poly_is_formula($1) AS ok',
+        [parsed.formula]
+      );
+      if (!formulaOk[0]?.ok) {
+        res.status(400).json({
+          error: 'Формула должна быть многочленной (pp, sma, @RSI, …), не calc_*',
+        });
+        return;
+      }
     }
     await client.query('BEGIN');
     const { rows: inserted } = await client.query(
-      `INSERT INTO indicators (code, name, description, category, formula, is_custom, is_active)
-       VALUES ($1, $2, $3, $4, $5, TRUE, $6)
+      `INSERT INTO indicators (code, name, description, category, formula, js_code, calc_kind, script, is_custom, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9)
        RETURNING id`,
       [
         parsed.code,
         parsed.name,
         parsed.description,
         parsed.category,
-        parsed.formula,
+        isJs ? null : parsed.formula,
+        isJs ? parsed.js_code : null,
+        isJs ? 'js' : 'poly_formula',
+        null,
         parsed.is_active,
       ]
     );
     const indicatorId = inserted[0].id;
+    const seriesDesc = isJs ? (parsed.js_code || '') : (parsed.formula || '');
     await client.query(
       `INSERT INTO indicator_value_types
          (indicator_id, code, name, value_type, is_threshold, threshold_value, description, display_order)
        VALUES ($1, 'VALUE', $2, 'float', FALSE, NULL, $3, 1)`,
-      [indicatorId, parsed.name, parsed.formula]
+      [indicatorId, parsed.name, seriesDesc]
     );
     await client.query('COMMIT');
     const full = await fetchIndicatorById(client, indicatorId);
@@ -573,7 +583,6 @@ app.post('/api/indicators', async (req, res) => {
     client.release();
   }
 });
-
 app.put('/api/indicators/:id', async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) {
@@ -587,7 +596,7 @@ app.put('/api/indicators/:id', async (req, res) => {
   }
   try {
     const { rows: existing } = await pool.query(
-      'SELECT id, is_custom FROM indicators WHERE id = $1',
+      'SELECT id, is_custom, calc_kind FROM indicators WHERE id = $1',
       [id]
     );
     if (existing.length === 0) {
@@ -595,22 +604,44 @@ app.put('/api/indicators/:id', async (req, res) => {
       return;
     }
     const isCustom = Boolean(existing[0].is_custom);
-    if (parsed.formula !== undefined && isCustom) {
-      const { rows: formulaOk } = await pool.query(
-        'SELECT poly_is_formula($1) AS ok',
-        [parsed.formula]
-      );
-      if (!parsed.formula || !formulaOk[0]?.ok) {
-        res.status(400).json({
-          error: 'Формула должна быть многочленной (pp, sma, @RSI, …), не calc_*',
-        });
+    const currentKind = existing[0].calc_kind || (isCustom ? 'poly_formula' : 'sql_script');
+    const targetKind = parsed.calc_kind || currentKind;
+
+    if (isCustom && targetKind === 'js') {
+      const jsCode = parsed.js_code !== undefined ? parsed.js_code : null;
+      if (!jsCode || !String(jsCode).trim()) {
+        res.status(400).json({ error: 'Укажите JS-код индикатора' });
         return;
       }
-    }
-    if (isCustom) {
       await pool.query(
         `UPDATE indicators
-         SET name = $1, description = $2, category = $3, formula = $4, is_active = $5
+         SET name = $1, description = $2, category = $3, js_code = $4, formula = NULL, script = NULL, calc_kind = 'js', is_active = $5
+         WHERE id = $6`,
+        [
+          parsed.name,
+          parsed.description,
+          parsed.category,
+          String(jsCode).trim(),
+          parsed.is_active,
+          id,
+        ]
+      );
+    } else if (isCustom) {
+      if (parsed.formula !== undefined) {
+        const { rows: formulaOk } = await pool.query(
+          'SELECT poly_is_formula($1) AS ok',
+          [parsed.formula]
+        );
+        if (!parsed.formula || !formulaOk[0]?.ok) {
+          res.status(400).json({
+            error: 'Формула должна быть многочленной (pp, sma, @RSI, …), не calc_*',
+          });
+          return;
+        }
+      }
+      await pool.query(
+        `UPDATE indicators
+         SET name = $1, description = $2, category = $3, formula = $4, js_code = NULL, calc_kind = 'poly_formula', is_active = $5
          WHERE id = $6`,
         [
           parsed.name,
@@ -642,7 +673,6 @@ app.put('/api/indicators/:id', async (req, res) => {
     handleDbError(res, err, 'PUT /api/indicators/:id');
   }
 });
-
 app.get('/api/security-indicator-series', async (req, res) => {
   const securityId = parseId(req.query.security_id);
   if (!securityId) {
@@ -854,6 +884,8 @@ app.post('/api/security-indicator-series/sync', async (req, res) => {
   const pointCount = parseId(req.body?.point_count);
   const incremental = req.body?.incremental !== false;
   const runAsync = req.body?.async === true;
+  const params = (req.body?.params && typeof req.body.params === 'object') ? req.body.params : {};
+  const seriesCode = req.body?.series ? String(req.body.series) : null;
   if (!securityId || !timeframeId) {
     res.status(400).json({ error: 'Укажите security_id и timeframe_id' });
     return;
@@ -876,19 +908,71 @@ app.post('/api/security-indicator-series/sync', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    await client.query(`SET statement_timeout = '120000'`);
+    await client.query(`SET statement_timeout = '300000'`);
+    await client.query(`SET lock_timeout = '15000'`);
+
     if (indicatorId) {
+      const { rows } = await client.query(
+        'SELECT id, calc_kind, js_code FROM indicators WHERE id = $1',
+        [indicatorId]
+      );
+      const ind = rows[0];
+      if (!ind) {
+        res.status(404).json({ error: 'Индикатор не найден' });
+        return;
+      }
+      const isJs = ind.calc_kind === 'js' || (ind.js_code && String(ind.js_code).trim());
+      if (isJs) {
+        const result = await syncJsIndicator(client, {
+          indicatorId,
+          securityId,
+          timeframeId,
+          endDt,
+          pointCount,
+          incremental,
+          params,
+          seriesCode,
+        });
+        res.json({ ok: true, ...result });
+        return;
+      }
       await client.query(
         'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4::timestamp, $5, $6)',
         [securityId, indicatorId, timeframeId, endDt, pointCount, incremental]
       );
-    } else {
-      await client.query(
-        'CALL sync_security_indicator_series_all($1, $2, $3::timestamp, $4, $5)',
-        [securityId, timeframeId, endDt, pointCount, incremental]
-      );
+      res.json({ ok: true, mode: 'sql' });
+      return;
     }
-    res.json({ ok: true });
+
+    await client.query(
+      'CALL sync_security_indicator_series_all($1, $2, $3::timestamp, $4, $5)',
+      [securityId, timeframeId, endDt, pointCount, incremental]
+    );
+
+    const { rows: jsIndicators } = await client.query(
+      `SELECT id, code FROM indicators
+       WHERE is_active = TRUE
+         AND (calc_kind = 'js' OR (js_code IS NOT NULL AND BTRIM(js_code) <> ''))
+       ORDER BY id`
+    );
+    const jsResults = [];
+    for (const row of jsIndicators) {
+      try {
+        const r = await syncJsIndicator(client, {
+          indicatorId: row.id,
+          securityId,
+          timeframeId,
+          endDt,
+          pointCount,
+          incremental,
+        });
+        jsResults.push(r);
+      } catch (e) {
+        jsResults.push({ ok: false, indicator_id: row.id, code: row.code, error: e.message });
+      }
+    }
+
+    res.json({ ok: true, mode: 'sql+js', js_synced: jsResults.length, js: jsResults });
   } catch (err) {
     console.error('POST /api/security-indicator-series/sync', err);
     res.status(500).json({ error: err.message });
@@ -904,6 +988,8 @@ app.post('/api/indicators/calculate', async (req, res) => {
   const dateFrom = req.body?.date_from ? String(req.body.date_from) : null;
   const dateTo = req.body?.date_to ? String(req.body.date_to) : null;
   const overwrite = req.body?.overwrite === true;
+  const params = (req.body?.params && typeof req.body.params === 'object') ? req.body.params : {};
+  const series = req.body?.series ? String(req.body.series) : 'VALUE';
   if (!securityId || !timeframeId || !indicatorId || !dateFrom || !dateTo) {
     res.status(400).json({
       error: 'Укажите security_id, timeframe_id, indicator_id, date_from, date_to',
@@ -912,16 +998,42 @@ app.post('/api/indicators/calculate', async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    await client.query(`SET statement_timeout = '120000'`);
+    await client.query(`SET statement_timeout = '300000'`);
     await client.query(`SET lock_timeout = '15000'`);
+
+    const { rows: indRows } = await client.query(
+      'SELECT id, code, calc_kind, js_code FROM indicators WHERE id = $1',
+      [indicatorId]
+    );
+    const ind = indRows[0];
+    if (!ind) {
+      res.status(404).json({ error: 'Индикатор не найден' });
+      return;
+    }
+
+    if (ind.calc_kind === 'js' || (ind.js_code && String(ind.js_code).trim())) {
+      const result = await calculateJsIndicator(client, {
+        indicatorId,
+        securityId,
+        timeframeId,
+        dateFrom: dateFrom.length <= 10 ? dateFrom + ' 00:00:00' : dateFrom,
+        dateTo: dateTo.length <= 10 ? dateTo + ' 23:59:59' : dateTo,
+        params,
+        seriesCode: series,
+        overwrite,
+      });
+      res.json({ ok: true, mode: 'js', ...result });
+      return;
+    }
+
     await client.query(
       `CALL calculate_indicator($1, $2, $3, $4::date, $5::date, $6)`,
       [securityId, timeframeId, indicatorId, dateFrom, dateTo, overwrite]
     );
-    res.json({ ok: true });
+    res.json({ ok: true, mode: 'sql' });
   } catch (err) {
     console.error('POST /api/indicators/calculate', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: process.env.NODE_ENV === 'development' ? err.stack : undefined });
   } finally {
     client.release();
   }

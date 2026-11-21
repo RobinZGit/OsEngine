@@ -280,6 +280,34 @@ begin
   Result := FileExists(ExpandConstant('{app}\INSTALL_PROTOCOL.txt'));
 end;
 
+procedure StopRunningAppInstances();
+var
+  ResultCode: Integer;
+  PsArgs: String;
+begin
+  { Free API/UI ports so old running app does not lock files being replaced.
+    Best-effort: ignore failures (ports may be unused, Get-NetTCPConnection may be unavailable). }
+  PsArgs :=
+    '-NoProfile -ExecutionPolicy Bypass -Command "' +
+    'foreach($p in 3000,4200){' +
+    '  try { @(Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction Stop) |' +
+    '    Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object {' +
+    '      try { Stop-Process -Id $_ -Force -ErrorAction Stop } catch {}' +
+    '      try { & taskkill.exe /F /T /PID $_ 2>$null | Out-Null } catch {}' +
+    '    }' +
+    '  } catch {}' +
+    '}; Start-Sleep -Milliseconds 800"';
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), PsArgs, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  NeedsRestart := False;
+  { Stop running MultiLogic Trade (API/Angular) before files are copied/overwritten. }
+  StopRunningAppInstances();
+end;
+
 function InitializeSetup(): Boolean;
 begin
   Result := True;

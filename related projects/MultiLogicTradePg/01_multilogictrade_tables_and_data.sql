@@ -817,18 +817,22 @@ CREATE TABLE IF NOT EXISTS indicators (
     id SERIAL PRIMARY KEY,
     code VARCHAR(20) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
-    -- Шаблон вызова функции расчёта (EXECUTE в PostgreSQL / EXECUTE IMMEDIATE в Oracle).
-    -- Плейсхолдеры :period, :fast_period, :series, :security_id, :timeframe_id, :dt, :indicator_id и др.
-    -- :series — код серии из indicator_value_types (RSI, MACD, UPPER, …).
+    -- Шаблон/тело вычисления (legacy per-bar SQL, EXECUTE в PostgreSQL / EXECUTE IMMEDIATE в Oracle).
+    -- Плейсхолдеры :period, :fast_period, :series, :security_id, :timeframe_id, :dt, :indicator_id и т.п.
+    -- :series — тип ряда из indicator_value_types (RSI, MACD, UPPER, ...).
     script TEXT,
-    -- Многочленная формула для массивного расчёта (sync / calc_poly_formula_array):
+    -- Многочленная формула для синхронного вычисления (sync / calc_poly_formula_array):
     -- pp, sma(pp), pp * (1;-2;1), @RSI, sma() * sma() * sma() и т.д.
     formula TEXT,
     is_custom BOOLEAN NOT NULL DEFAULT FALSE,
-    -- Подробное описание: полное название, расчёт, сигналы, применение (многострочный TEXT).
+    -- Пользовательский JS-код индикатора (calc_kind='js'): function calc(ctx, params) { ... return number|null; }
+    js_code TEXT,
+    -- Способ вычисления: poly_formula | sql_script | js
+    calc_kind VARCHAR(20) NOT NULL DEFAULT 'poly_formula',
+    -- Подробное описание: алгоритм вычисления, интерпретация, сигналы, параметры (многострочный TEXT).
     description TEXT,
     category VARCHAR(50),
-    -- Шаблоны follow/fade и профиль двоичности сигнала (logic_indicator_signals).
+    -- Шаблоны follow/fade по профилю точности сигнала (logic_indicator_signals).
     sig_trend_def TEXT,
     sig_ct_def TEXT,
     sig_profile VARCHAR(20),
@@ -841,6 +845,8 @@ ALTER TABLE indicators ADD COLUMN IF NOT EXISTS name VARCHAR(100);
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS script TEXT;
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS formula TEXT;
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS is_custom BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS js_code TEXT;
+ALTER TABLE indicators ADD COLUMN IF NOT EXISTS calc_kind VARCHAR(20);
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS category VARCHAR(50);
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_trend_def TEXT;
@@ -848,6 +854,18 @@ ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_ct_def TEXT;
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS sig_profile VARCHAR(20);
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE indicators ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- Нормализация calc_kind для существующих записей (идемпотентно).
+UPDATE indicators
+SET calc_kind = CASE
+    WHEN COALESCE(NULLIF(btrim(js_code), ''), NULL) IS NOT NULL THEN 'js'
+    WHEN COALESCE(is_custom, FALSE) = TRUE AND COALESCE(NULLIF(btrim(formula), ''), NULL) IS NOT NULL THEN 'poly_formula'
+    WHEN COALESCE(NULLIF(btrim(script), ''), NULL) IS NOT NULL AND COALESCE(NULLIF(btrim(formula), ''), NULL) IS NULL THEN 'sql_script'
+    ELSE 'poly_formula'
+END
+WHERE calc_kind IS NULL OR btrim(calc_kind) = '';
+
+ALTER TABLE indicators ALTER COLUMN calc_kind SET DEFAULT 'poly_formula';
 
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 
@@ -862,6 +880,12 @@ COMMENT ON COLUMN indicators.formula IS
 
 COMMENT ON COLUMN indicators.is_custom IS
 'TRUE — пользовательская/составная формула (подсветка в списке индикаторов).';
+
+COMMENT ON COLUMN indicators.js_code IS
+'Пользовательский JS-код (calc_kind=js): function calc(ctx, params) { ... } -> number|null (серия VALUE).';
+
+COMMENT ON COLUMN indicators.calc_kind IS
+'Способ вычисления: poly_formula | sql_script | js.';
 
 COMMENT ON COLUMN indicators.description IS
 'Справочное описание: полное наименование, расчёт, типичные сигналы и область применения.';

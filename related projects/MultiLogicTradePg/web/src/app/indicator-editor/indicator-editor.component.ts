@@ -20,6 +20,39 @@ import {
   INDICATOR_FORMULA_HINT,
 } from '../shared/indicator-formula-help';
 
+type EditorCalcMode = 'formula' | 'js';
+
+export const JS_INDICATOR_TEMPLATE = `function calc(ctx, params) {
+  // ctx.bars({ count, timeframe?, ... }) -> объект цен p:
+  //   p.n                 - число баров
+  //   p.dt                - массив дат/времени баров
+  //   p.open, p.high, p.low, p.close, p.volume - массивы OHLCV
+  //   p.o, p.h, p.l, p.c, p.v, p.t            - алиасы массивов
+  //   p.last / p.prev     - последний и предыдущий бар (объекты)
+  //
+  // params - произвольные параметры из @CODE(...) в формуле сигнала,
+  //   например: params.period / params.bars (число свечей), params.tf (таймфрейм) и др.
+  //   Пример вызова в сигнале: @MY_IND(period=20, tf='H1') > 0
+
+  const count = Number(params.period ?? params.bars ?? params.count ?? 14);
+  const p = ctx.bars({ count, timeframe: params.tf });
+
+  if (!p || p.n < 2) return 0;
+
+  // Пример: простая средняя цены закрытия (SMA)
+  let sum = 0;
+  for (let i = 0; i < p.n; i++) {
+    sum += Number(p.close[i]);
+  }
+  const avg = sum / p.n;
+  // return avg; // пример результата
+
+  // здесь пишите код
+
+  return 0; // по умолчанию 0 (верните число или null)
+}
+`;
+
 @Component({
   selector: 'app-indicator-editor',
   standalone: true,
@@ -37,6 +70,7 @@ export class IndicatorEditorComponent implements OnChanges {
   @Output() saved = new EventEmitter<void>();
 
   readonly formulaHint = INDICATOR_FORMULA_HINT;
+  readonly jsTemplate = JS_INDICATOR_TEMPLATE;
   formulaHelpDetail = '';
 
   code = '';
@@ -45,6 +79,8 @@ export class IndicatorEditorComponent implements OnChanges {
   category = '';
   script = '';
   formula = '';
+  jsCode = '';
+  calcMode: EditorCalcMode = 'formula';
   isActive = true;
   seriesSummary = '';
   formulaHelpOpen = false;
@@ -61,10 +97,7 @@ export class IndicatorEditorComponent implements OnChanges {
       this.initForm();
       this.loadFormulaHelp();
     }
-    if (
-      this.open &&
-      (changes['indicator'] || changes['createMode'])
-    ) {
+    if (this.open && (changes['indicator'] || changes['createMode'])) {
       this.initForm();
     }
   }
@@ -75,6 +108,18 @@ export class IndicatorEditorComponent implements OnChanges {
 
   get isCustom(): boolean {
     return this.isCreate || Boolean(this.indicator?.is_custom);
+  }
+
+  get isJsMode(): boolean {
+    if (this.isCreate) return this.calcMode === 'js';
+    if (this.isCustom) {
+      return (
+        this.calcMode === 'js' ||
+        this.indicator?.calc_kind === 'js' ||
+        Boolean(this.indicator?.js_code)
+      );
+    }
+    return false;
   }
 
   get title(): string {
@@ -88,6 +133,14 @@ export class IndicatorEditorComponent implements OnChanges {
 
   toggleFormulaHelp(): void {
     this.formulaHelpOpen = !this.formulaHelpOpen;
+  }
+
+  setCalcMode(mode: EditorCalcMode): void {
+    this.calcMode = mode;
+    this.error = null;
+    if (mode === 'js' && !this.jsCode.trim()) {
+      this.jsCode = this.jsTemplate;
+    }
   }
 
   save(): void {
@@ -111,29 +164,39 @@ export class IndicatorEditorComponent implements OnChanges {
   }
 
   private saveCreate(): void {
+    const isJs = this.calcMode === 'js';
     const payload: IndicatorCreatePayload = {
       code: this.code.trim().toUpperCase(),
       name: this.name.trim(),
       description: this.description.trim() || null,
       category: this.category.trim() || null,
-      formula: this.formula.trim(),
+      formula: isJs ? null : this.formula.trim(),
+      js_code: isJs ? this.jsCode.trim() : null,
+      calc_kind: isJs ? 'js' : 'poly_formula',
       is_active: this.isActive,
     };
     if (!payload.code) {
-      this.error = 'Заполните код индикатора';
+      this.error = 'Укажите код индикатора';
       return;
     }
     if (!/^[A-Z][A-Z0-9_]{0,19}$/.test(payload.code)) {
-      this.error = 'Код: латиница A–Z, цифры и _, до 20 символов, начинается с буквы';
+      this.error = 'Код: латиница A-Z, цифры и _, до 20 символов, начинается с буквы';
       return;
     }
     if (!payload.name) {
-      this.error = 'Заполните название';
+      this.error = 'Укажите название';
       return;
     }
-    if (!payload.formula) {
-      this.error = 'Заполните формулу';
-      return;
+    if (isJs) {
+      if (!payload.js_code) {
+        this.error = 'Укажите JS-код индикатора';
+        return;
+      }
+    } else {
+      if (!payload.formula) {
+        this.error = 'Укажите формулу';
+        return;
+      }
     }
     this.saving = true;
     this.refs.createIndicator(payload).subscribe({
@@ -165,15 +228,33 @@ export class IndicatorEditorComponent implements OnChanges {
       script: this.script.trim() || null,
       is_active: this.isActive,
     };
+
     if (this.isCustom) {
-      payload.formula = this.formula.trim() || null;
-      if (!payload.formula) {
-        this.error = 'Заполните формулу';
-        return;
+      const editingJs =
+        this.calcMode === 'js' ||
+        this.indicator.calc_kind === 'js' ||
+        Boolean(this.indicator.js_code);
+      if (editingJs) {
+        payload.calc_kind = 'js';
+        payload.js_code = this.jsCode.trim() || null;
+        payload.formula = null;
+        if (!payload.js_code) {
+          this.error = 'Укажите JS-код индикатора';
+          return;
+        }
+      } else {
+        payload.calc_kind = 'poly_formula';
+        payload.formula = this.formula.trim() || null;
+        payload.js_code = null;
+        if (!payload.formula) {
+          this.error = 'Укажите формулу';
+          return;
+        }
       }
     }
+
     if (!payload.name) {
-      this.error = 'Заполните название';
+      this.error = 'Укажите название';
       return;
     }
     this.saving = true;
@@ -205,6 +286,8 @@ export class IndicatorEditorComponent implements OnChanges {
       this.category = '';
       this.script = '';
       this.formula = '';
+      this.jsCode = this.jsTemplate;
+      this.calcMode = 'formula';
       this.isActive = true;
       this.seriesSummary = '';
       return;
@@ -216,7 +299,14 @@ export class IndicatorEditorComponent implements OnChanges {
       this.category = this.indicator.category || '';
       this.script = this.indicator.script || '';
       this.formula = this.indicator.formula || '';
+      this.jsCode = this.indicator.js_code || '';
       this.isActive = this.indicator.is_active;
+      const isJs =
+        this.indicator.calc_kind === 'js' || Boolean(this.indicator.js_code);
+      this.calcMode = isJs ? 'js' : 'formula';
+      if (isJs && !this.jsCode.trim()) {
+        this.jsCode = this.jsTemplate;
+      }
       const types = this.indicator.value_types ?? [];
       this.seriesSummary = types.map((t) => t.code).join(', ');
     }

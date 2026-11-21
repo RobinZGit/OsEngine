@@ -163,6 +163,8 @@ export interface IndicatorRow {
   name: string;
   script: string | null;
   formula: string | null;
+  js_code?: string | null;
+  calc_kind?: 'poly_formula' | 'sql_script' | 'js' | string | null;
   is_custom: boolean;
   description: string | null;
   category: string | null;
@@ -171,27 +173,21 @@ export interface IndicatorRow {
   sig_ct_def: string | null;
   /** trend_line | oscillator | channel | zero_line | strength | volume */
   sig_profile?: string | null;
-  /** #994: рейтинг неиспользуемого индикатора (% годовых), null если не считался */
   rating?: number | null;
   best_position_side?: string | null;
   best_signal_kind?: string | null;
   best_time_kind?: string | null;
   samples_count?: number | null;
   computed_at?: string | null;
-  /** #994-доработка: рейтинг с учётом устаревания (линейно угасает за rating_decay_hours) */
   rating_effective?: number | null;
   rating_decay_hours?: number | null;
   rating_avg_annual_pct?: number | null;
   rating_samples_count?: number | null;
-  /** #1005: сколько разрезов (side × kind × time) усреднено в рейтинге. */
   rating_slices_count?: number | null;
   rating_computed_at?: string | null;
-  /** #994-доработка: разбивка рейтинга по таймфреймам (для разворота строки) */
   rating_timeframes?: IndicatorRatingTimeframeRow[];
   value_types: IndicatorValueTypeRow[];
 }
-
-/** #994-доработка: рейтинг индикатора в разрезе одного таймфрейма. */
 export interface IndicatorRatingTimeframeRow {
   timeframe_id: number;
   tf: string | null;
@@ -297,6 +293,8 @@ export interface IndicatorPayload {
   category: string | null;
   script: string | null;
   formula?: string | null;
+  js_code?: string | null;
+  calc_kind?: 'poly_formula' | 'sql_script' | 'js' | string | null;
   is_active: boolean;
 }
 
@@ -305,6 +303,8 @@ export interface IndicatorCreatePayload {
   name: string;
   description: string | null;
   category: string | null;
-  formula: string;
+  formula?: string | null;
+  js_code?: string | null;
+  calc_kind?: 'poly_formula' | 'js' | string;
   is_active: boolean;
 }

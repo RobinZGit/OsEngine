@@ -3,6 +3,7 @@
 const { writeTechLogEvent } = require('./lib/tech-log');
 const { writeErrorLog } = require('./lib/error-log');
 const { schedulePersistBacktestReport } = require('./backtest-report-persist');
+const { syncJsIndicator } = require('./lib/js-indicator');
 
 /**
  * Параллельность подготовки бумаг внутри одного прогона.
@@ -414,6 +415,49 @@ async function fetchActiveIndicatorIds(pool, logicId) {
   return rows.map((r) => r.indicator_id);
 }
 
+async function getIndicatorCalcInfo(pool, indicatorId, cache) {
+  const key = Number(indicatorId);
+  if (cache && cache.has(key)) return cache.get(key);
+  const { rows } = await pool.query(
+    'SELECT id, calc_kind, js_code FROM indicators WHERE id = $1',
+    [indicatorId]
+  );
+  const row = rows[0] || null;
+  const info = row
+    ? {
+        id: row.id,
+        isJs:
+          row.calc_kind === 'js' ||
+          (row.js_code != null && String(row.js_code).trim() !== ''),
+      }
+    : { id: indicatorId, isJs: false };
+  if (cache) cache.set(key, info);
+  return info;
+}
+
+async function syncIndicatorSeriesForBacktest(
+  pool,
+  { securityId, indicatorId, timeframeId, endDt, pointCount, incremental = false },
+  cache
+) {
+  const info = await getIndicatorCalcInfo(pool, indicatorId, cache);
+  if (info.isJs) {
+    return syncJsIndicator(pool, {
+      indicatorId,
+      securityId,
+      timeframeId,
+      endDt,
+      pointCount,
+      incremental,
+    });
+  }
+  await pool.query(
+    'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
+    [securityId, indicatorId, timeframeId, endDt, pointCount, incremental]
+  );
+  return { ok: true, mode: 'sql' };
+}
+
 async function pricesCached(pool, secId, tfId, warmupFrom, dateFrom, dateTo) {
   const { rows } = await pool.query(
     `SELECT backtest_prices_cached($1, $2, $3, $4, $5, 20) AS cached`,
@@ -585,6 +629,7 @@ async function syncMissingIndicatorSeriesForLogic(
   );
   let synced = 0;
   let errors = 0;
+  const jsCache = new Map();
   for (const r of rows) {
     try {
       await pool.query('CALL ensure_security_indicator_series($1, $2)', [
@@ -595,9 +640,17 @@ async function syncMissingIndicatorSeriesForLogic(
         logicId,
         r.security_id,
       ]);
-      await pool.query(
-        'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
-        [r.security_id, r.indicator_id, tfId, endDt, pointCount, false]
+      await syncIndicatorSeriesForBacktest(
+        pool,
+        {
+          securityId: r.security_id,
+          indicatorId: r.indicator_id,
+          timeframeId: tfId,
+          endDt,
+          pointCount,
+          incremental: false,
+        },
+        jsCache
       );
       synced += 1;
     } catch (e) {
@@ -644,6 +697,7 @@ async function forceSyncIndicatorsForLogic(pool, runId, logicId, tfId, endDt, po
   const indicatorIds = await fetchActiveIndicatorIds(pool, logicId);
   let synced = 0;
   let errors = 0;
+  const jsCache = new Map();
   for (const { security_id: secId } of secRows) {
     for (const indicatorId of indicatorIds) {
       try {
@@ -652,9 +706,17 @@ async function forceSyncIndicatorsForLogic(pool, runId, logicId, tfId, endDt, po
           logicId,
           secId,
         ]);
-        await pool.query(
-          'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
-          [secId, indicatorId, tfId, endDt, pointCount, false]
+        await syncIndicatorSeriesForBacktest(
+          pool,
+          {
+            securityId: secId,
+            indicatorId,
+            timeframeId: tfId,
+            endDt,
+            pointCount,
+            incremental: false,
+          },
+          jsCache
         );
         synced += 1;
       } catch (e) {
@@ -1030,6 +1092,7 @@ async function ensureSecurityData(
   let indDone = 0;
   await phase('indicators_start', `Индикаторы: ${secName || secId}`, 0.6);
 
+  const jsCalcCache = new Map();
   /** @type {Map<number, string>} */
   const paramsBefore = new Map();
   for (const indicatorId of indicatorIds) {
@@ -1097,9 +1160,10 @@ async function ensureSecurityData(
       continue;
     }
     try {
-      await pool.query(
-        'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
-        [secId, indicatorId, tfId, endDt, pointCount, false]
+      await syncIndicatorSeriesForBacktest(
+        pool,
+        { securityId: secId, indicatorId, timeframeId: tfId, endDt, pointCount, incremental: false },
+        jsCalcCache
       );
       stats.indSynced += 1;
     } catch (e) {
@@ -1135,9 +1199,10 @@ async function ensureSecurityData(
         continue;
       }
       try {
-        await pool.query(
-          'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
-          [secId, indicatorId, extraTfId, endDt, pointCount, false]
+        await syncIndicatorSeriesForBacktest(
+          pool,
+          { securityId: secId, indicatorId, timeframeId: extraTfId, endDt, pointCount, incremental: false },
+          jsCalcCache
         );
         stats.indSynced += 1;
       } catch (e) {
@@ -1186,9 +1251,10 @@ async function ensureSecurityData(
           logicId,
           evalSecId,
         ]);
-        await pool.query(
-          'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4, $5, $6)',
-          [evalSecId, er.indicator_id, tfId, endDt, pointCount, false]
+        await syncIndicatorSeriesForBacktest(
+          pool,
+          { securityId: evalSecId, indicatorId: er.indicator_id, timeframeId: tfId, endDt, pointCount, incremental: false },
+          jsCalcCache
         );
         stats.indSynced += 1;
         await phase(

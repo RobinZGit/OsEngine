@@ -802,13 +802,35 @@ function parseIndicatorBody(body) {
         ? null
         : String(body.formula).trim();
   }
+  let jsCode;
+  if (body?.js_code !== undefined) {
+    jsCode =
+      body.js_code == null || body.js_code === ''
+        ? null
+        : String(body.js_code).trim();
+  }
+  let calcKind;
+  if (body?.calc_kind !== undefined) {
+    calcKind =
+      body.calc_kind == null || body.calc_kind === ''
+        ? null
+        : String(body.calc_kind).trim();
+  }
   const is_active = body?.is_active === undefined ? true : Boolean(body.is_active);
 
   if (!name) return { error: 'Укажите название индикатора' };
-  if (name.length > 100) return { error: 'Название индикатора не длиннее 100 символов' };
-  if (category && category.length > 50) return { error: 'Категория не длиннее 50 символов' };
+  if (name.length > 100) return { error: 'Название индикатора не должно превышать 100 символов' };
+  if (category && category.length > 50) return { error: 'Категория не должна превышать 50 символов' };
+  if (calcKind && !['poly_formula', 'sql_script', 'js'].includes(calcKind)) {
+    return { error: 'Недопустимый calc_kind (poly_formula | sql_script | js)' };
+  }
+  if (jsCode != null && jsCode.length > 200000) {
+    return { error: 'JS-код индикатора слишком большой (макс. 200000 символов)' };
+  }
   const out = { name, description, category, script, is_active };
   if (formula !== undefined) out.formula = formula;
+  if (jsCode !== undefined) out.js_code = jsCode;
+  if (calcKind !== undefined) out.calc_kind = calcKind;
   return out;
 }
 
@@ -824,21 +846,37 @@ function parseIndicatorCreateBody(body) {
     body?.category == null || body.category === ''
       ? null
       : String(body.category).trim();
+  const calcKindRaw =
+    body?.calc_kind == null || body.calc_kind === ''
+      ? 'poly_formula'
+      : String(body.calc_kind).trim();
+  const calc_kind = calcKindRaw === 'js' ? 'js' : 'poly_formula';
   const formula =
-    typeof body?.formula === 'string' ? body.formula.trim() : '';
+    body?.formula == null || body.formula === ''
+      ? null
+      : String(body.formula).trim();
+  const js_code =
+    body?.js_code == null || body.js_code === ''
+      ? null
+      : String(body.js_code).trim();
   const is_active = body?.is_active === undefined ? true : Boolean(body.is_active);
 
   if (!code) return { error: 'Укажите код индикатора' };
   if (!/^[A-Z][A-Z0-9_]{0,19}$/.test(code)) {
     return {
-      error: 'Код: латиница A–Z, цифры и _, до 20 символов, начинается с буквы',
+      error: 'Код: латиница A-Z, цифры и _, до 20 символов, начинается с буквы',
     };
   }
   if (!name) return { error: 'Укажите название индикатора' };
-  if (name.length > 100) return { error: 'Название индикатора не длиннее 100 символов' };
-  if (category && category.length > 50) return { error: 'Категория не длиннее 50 символов' };
-  if (!formula) return { error: 'Укажите формулу индикатора' };
-  return { code, name, description, category, formula, is_active };
+  if (name.length > 100) return { error: 'Название индикатора не должно превышать 100 символов' };
+  if (category && category.length > 50) return { error: 'Категория не должна превышать 50 символов' };
+  if (calc_kind === 'js') {
+    if (!js_code) return { error: 'Укажите JS-код индикатора' };
+    if (js_code.length > 200000) return { error: 'JS-код индикатора слишком большой (макс. 200000 символов)' };
+  } else {
+    if (!formula) return { error: 'Укажите формулу индикатора' };
+  }
+  return { code, name, description, category, formula, js_code, calc_kind, is_active };
 }
 
 async function runIndicatorSyncBackground({
@@ -849,19 +887,63 @@ async function runIndicatorSyncBackground({
   pointCount,
   incremental,
 }) {
+  const { syncJsIndicator } = require('./js-indicator');
   const client = await dbPool.connect();
   try {
     await client.query(`SET statement_timeout = '300000'`);
     if (indicatorId) {
-      await client.query(
-        'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4::timestamp, $5, $6)',
-        [securityId, indicatorId, timeframeId, endDt, pointCount, incremental]
+      const { rows } = await client.query(
+        'SELECT id, calc_kind, js_code FROM indicators WHERE id = $1',
+        [indicatorId]
       );
+      const ind = rows[0];
+      const isJs = ind && (ind.calc_kind === 'js' || (ind.js_code && String(ind.js_code).trim()));
+      if (isJs) {
+        await syncJsIndicator(client, {
+          indicatorId,
+          securityId,
+          timeframeId,
+          endDt,
+          pointCount,
+          incremental,
+        });
+      } else {
+        await client.query(
+          'CALL sync_security_indicator_series_for_indicator($1, $2, $3, $4::timestamp, $5, $6)',
+          [securityId, indicatorId, timeframeId, endDt, pointCount, incremental]
+        );
+      }
     } else {
       await client.query(
         'CALL sync_security_indicator_series_all($1, $2, $3::timestamp, $4, $5)',
         [securityId, timeframeId, endDt, pointCount, incremental]
       );
+
+      const { rows: jsIndicators } = await client.query(
+        `SELECT id FROM indicators
+         WHERE is_active = TRUE
+           AND (calc_kind = 'js' OR (js_code IS NOT NULL AND BTRIM(js_code) <> ''))
+         ORDER BY id`
+      );
+      for (const row of jsIndicators) {
+        try {
+          await syncJsIndicator(client, {
+            indicatorId: row.id,
+            securityId,
+            timeframeId,
+            endDt,
+            pointCount,
+            incremental,
+          });
+        } catch (e) {
+          console.error('background JS indicator sync failed', {
+            securityId,
+            timeframeId,
+            indicatorId: row.id,
+            error: e.message,
+          });
+        }
+      }
     }
   } catch (err) {
     console.error('background indicator sync failed', {
@@ -884,6 +966,8 @@ async function fetchIndicatorById(db, id) {
       i.name,
       i.script,
       i.formula,
+      i.js_code,
+      i.calc_kind,
       i.is_custom,
       i.description,
       i.category,

@@ -3,7 +3,7 @@
   <dialog class="dialog dialog-wide" open>
     <header class="dialog-header">
       <h2>{{ title }}</h2>
-      <button type="button" class="icon-btn" title="Закрыть" [disabled]="saving" (click)="close()">✕</button>
+      <button type="button" class="icon-btn" title="Закрыть" [disabled]="saving" (click)="close()">×</button>
     </header>
     <div class="dialog-body">
       @if (error) { <p class="error">{{ error }}</p> }
@@ -18,28 +18,31 @@
               [(ngModel)]="code"
               name="code"
               [disabled]="saving"
-              placeholder="MYIND"
+              placeholder="MY_IND"
               class="mono-input"
             />
-            <span class="hint">Латиница, до 20 символов. Будет сохранён в верхнем регистре.</span>
+            <span class="hint">Латиница A–Z, цифры и _, до 20 символов. Нельзя изменить после создания.</span>
           } @else {
             <input type="text" [value]="code" name="code" disabled class="mono-input" />
           }
         </label>
+
         <label class="field">
           <span class="label">Название</span>
           <input type="text" maxlength="100" required [(ngModel)]="name" name="name" [disabled]="saving" />
         </label>
+
         <label class="field">
           <span class="label">Категория</span>
-          <input type="text" maxlength="50" [(ngModel)]="category" name="category" [disabled]="saving" placeholder="trend, momentum, …" />
+          <input type="text" maxlength="50" [(ngModel)]="category" name="category" [disabled]="saving" placeholder="trend, momentum, custom" />
         </label>
+
         <label class="field field-description">
           <span class="label">Описание</span>
-          <span class="hint">Полное наименование, расчёт, сигналы и применение (несколько абзацев).</span>
+          <span class="hint">Кратко: что вычисляет, параметры, интерпретация.</span>
           <textarea
             class="desc-area"
-            rows="10"
+            rows="6"
             [(ngModel)]="description"
             name="description"
             [disabled]="saving"
@@ -48,34 +51,78 @@
 
         @if (isCustom) {
           <div class="field">
-            <div class="field-label-row">
-              <span class="label">Формула</span>
-              <button
-                type="button"
-                class="info-btn"
-                title="Подробнее о синтаксисе формулы"
-                aria-label="Подробнее о синтаксисе формулы"
-                [attr.aria-expanded]="formulaHelpOpen"
-                (click)="toggleFormulaHelp()"
-              >И.</button>
-            </div>
-            <span class="hint">{{ formulaHint }}</span>
-            @if (formulaHelpOpen) {
-              <pre class="formula-help-panel" aria-live="polite">{{ formulaHelpDetail }}</pre>
+            <span class="label">Тип вычисления</span>
+            @if (isCreate) {
+              <div class="mode-switch">
+                <label class="mode-option">
+                  <input type="radio" name="calcMode" [checked]="calcMode === 'formula'" (change)="setCalcMode('formula')" [disabled]="saving" />
+                  <span>Формула</span>
+                </label>
+                <label class="mode-option">
+                  <input type="radio" name="calcMode" [checked]="calcMode === 'js'" (change)="setCalcMode('js')" [disabled]="saving" />
+                  <span>JavaScript (пользовательский)</span>
+                </label>
+              </div>
+            } @else {
+              <input
+                type="text"
+                [value]="isJsMode ? 'JavaScript (пользовательский)' : 'Формула'"
+                disabled
+                name="calcModeReadonly"
+              />
             }
-            <textarea
-              class="mono-area"
-              rows="4"
-              [(ngModel)]="formula"
-              name="formula"
-              [disabled]="saving"
-              placeholder="pp * (1; -2; 1)"
-              required
-            ></textarea>
           </div>
+
+          @if (!isJsMode) {
+            <div class="field">
+              <div class="field-label-row">
+                <span class="label">Формула</span>
+                <button
+                  type="button"
+                  class="info-btn"
+                  title="Справка по синтаксису формул"
+                  aria-label="Справка по синтаксису формул"
+                  [attr.aria-expanded]="formulaHelpOpen"
+                  (click)="toggleFormulaHelp()"
+                >i</button>
+              </div>
+              <span class="hint">{{ formulaHint }}</span>
+              @if (formulaHelpOpen) {
+                <pre class="formula-help-panel" aria-live="polite">{{ formulaHelpDetail }}</pre>
+              }
+              <textarea
+                class="mono-area"
+                rows="4"
+                [(ngModel)]="formula"
+                name="formula"
+                [disabled]="saving"
+                placeholder="pp * (1; -2; 1)"
+              ></textarea>
+            </div>
+          } @else {
+            <div class="field">
+              <span class="label">JavaScript-код индикатора</span>
+              <span class="hint">
+                Болванка с комментариями (можно копировать и править): доступ к ценам через <code>ctx.bars(&#123;count, timeframe?, ...&#125;)</code>,
+                параметры из <code>&#64;CODE(...)</code> приходят в <code>params</code> (например <code>period/bars</code>, <code>tf</code>).
+                В конце верните число или <code>null</code> (по умолчанию 0).
+              </span>
+              <textarea
+                class="mono-area js-area"
+                rows="18"
+                [(ngModel)]="jsCode"
+                name="jsCode"
+                [disabled]="saving"
+                spellcheck="false"
+              ></textarea>
+              <span class="hint">
+                Примечание: вычисление JS-индикаторов в сигналах/бэктесте будет доступно после включения серверного вычислителя и материализации значений (шаги 2–3).
+              </span>
+            </div>
+          }
         } @else {
           <label class="field">
-            <span class="label">Формула (script)</span>
+            <span class="label">Скрипт (SQL, legacy per-bar)</span>
             <textarea
               class="mono-area"
               rows="4"
@@ -84,22 +131,20 @@
               [disabled]="saving"
               placeholder="SELECT calc_ind_rsi(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)"
             ></textarea>
-            <span class="hint">
-              Legacy per-bar шаблон. Плейсхолдеры: :period, :series, :security_id, :timeframe_id, :dt, :indicator_id.
-            </span>
+            <span class="hint">Плейсхолдеры: :period, :series, :security_id, :timeframe_id, :dt, :indicator_id.</span>
           </label>
           @if (formula) {
             <div class="field">
               <div class="field-label-row">
-                <span class="label">Массивная формула</span>
+                <span class="label">Сохранённая формула</span>
                 <button
                   type="button"
                   class="info-btn"
-                  title="Подробнее о синтаксисе формулы"
-                  aria-label="Подробнее о синтаксисе формулы"
+                  title="Справка по синтаксису формул"
+                  aria-label="Справка по синтаксису формул"
                   [attr.aria-expanded]="formulaHelpOpen"
                   (click)="toggleFormulaHelp()"
-                >И.</button>
+                >i</button>
               </div>
               @if (formulaHelpOpen) {
                 <pre class="formula-help-panel" aria-live="polite">{{ formulaHelpDetail }}</pre>
@@ -110,12 +155,14 @@
         }
 
         @if (seriesSummary) {
-          <p class="series-hint"><strong>Серии:</strong> {{ seriesSummary }}</p>
+          <p class="series-hint"><strong>Ряды:</strong> {{ seriesSummary }}</p>
         }
+
         <label class="field field-check">
           <input type="checkbox" [(ngModel)]="isActive" name="isActive" [disabled]="saving" />
           <span>Активен</span>
         </label>
+
         <footer class="dialog-footer">
           <button type="button" class="btn btn-secondary" [disabled]="saving" (click)="close()">Отмена</button>
           <button type="submit" class="btn btn-primary" [disabled]="saving">
