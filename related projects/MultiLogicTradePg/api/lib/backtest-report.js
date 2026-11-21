@@ -327,6 +327,79 @@ function weekdayChartsSvg(trades, tradeLots) {
   return out.join('\n');
 }
 
+function normalizeCloseReasonLabel(tradeReason, signalFormula) {
+  const reason = String(tradeReason ?? '').trim();
+  const formula = String(signalFormula ?? '').trim();
+  if (reason === 'eod.close' || formula === 'backtest:close') return 'EOD / конец периода (backtest:close)';
+  if (/stop.?loss/i.test(reason) || /stop.?loss/i.test(formula)) return `Стоп-лосс${formula ? `: ${formula}` : reason ? `: ${reason}` : ''}`;
+  if (/take.?profit/i.test(reason) || /take.?profit/i.test(formula)) return `Тейк-профит${formula ? `: ${formula}` : reason ? `: ${reason}` : ''}`;
+  if (formula) return `Сигнал: ${formula}`;
+  if (reason) return reason;
+  return '—';
+}
+
+function closeReasonOutcomeStats(trades) {
+  const map = new Map();
+  for (const t of trades) {
+    if (String(t.side_name ?? t.position_event ?? '').toLowerCase() !== 'close') continue;
+    const fr = t.financial_result;
+    const fin = fr == null ? NaN : Number(fr);
+    const hasFin = Number.isFinite(fin);
+    const outcome = !hasFin || fin === 0 ? 'zero' : fin > 0 ? 'win' : 'loss';
+    const outcomeLabel = outcome === 'win' ? 'Угадали' : outcome === 'loss' ? 'Не угадали' : 'Ноль / н/д';
+    const reason = normalizeCloseReasonLabel(t.trade_reason, t.signal_formula);
+    const key = `${reason}\u0000${outcome}`;
+    const row = map.get(key) || { reason, outcome, outcomeLabel, count: 0, finRes: 0, avgFin: 0 };
+    row.count += 1;
+    if (hasFin) row.finRes += fin;
+    map.set(key, row);
+  }
+  const rows = Array.from(map.values()).map((r) => {
+    const finRes = +r.finRes.toFixed(2);
+    return { ...r, finRes, avgFin: r.count ? +(finRes / r.count).toFixed(2) : 0 };
+  });
+  const order = { win: 0, loss: 1, zero: 2 };
+  rows.sort((a, b) => order[a.outcome] - order[b.outcome] || b.count - a.count || a.reason.localeCompare(b.reason, 'ru'));
+  return rows;
+}
+
+function closeReasonOutcomeHtml(trades) {
+  const rows = closeReasonOutcomeStats(trades);
+  if (!rows.length) return '<div class="empty-chart">Нет закрытых сделок для разбивки по причинам</div>';
+  const totals = { win: { count: 0, fin: 0 }, loss: { count: 0, fin: 0 }, zero: { count: 0, fin: 0 } };
+  for (const r of rows) {
+    totals[r.outcome].count += r.count;
+    totals[r.outcome].fin += r.finRes;
+  }
+  const totalCount = rows.reduce((s, r) => s + r.count, 0);
+  const body = rows.map((r) => {
+    const finCls = r.finRes > 0 ? 'pos' : r.finRes < 0 ? 'neg' : '';
+    const pct = totalCount ? ((r.count / totalCount) * 100).toFixed(1) : '0.0';
+    return `<tr>
+      <td>${esc(r.reason)}</td>
+      <td>${esc(r.outcomeLabel)}</td>
+      <td class="num">${r.count}</td>
+      <td class="num">${esc(pct)}%</td>
+      <td class="num ${finCls}">${esc(fmtMoney(r.finRes))}</td>
+      <td class="num ${finCls}">${esc(fmtMoney(r.avgFin))}</td>
+    </tr>`;
+  }).join('');
+  const sumRow = (label, c, fin) => {
+    const cls = fin > 0 ? 'pos' : fin < 0 ? 'neg' : '';
+    const pct = totalCount ? ((c / totalCount) * 100).toFixed(1) : '0.0';
+    return `<tr style="font-weight:600;background:#f8fafc"><td colspan="2">${esc(label)}</td><td class="num">${c}</td><td class="num">${esc(pct)}%</td><td class="num ${cls}">${esc(fmtMoney(fin))}</td><td class="num"></td></tr>`;
+  };
+  return `<div style="overflow-x:auto"><table class="stats">
+    <thead><tr><th>Причина закрытия</th><th>Исход</th><th>Сделок</th><th>Доля</th><th>FinRes</th><th>Средний FinRes</th></tr></thead>
+    <tbody>
+      ${body}
+      ${sumRow('Итого угадали', totals.win.count, +totals.win.fin.toFixed(2))}
+      ${sumRow('Итого не угадали', totals.loss.count, +totals.loss.fin.toFixed(2))}
+      ${totals.zero.count ? sumRow('Итого ноль/н/д', totals.zero.count, +totals.zero.fin.toFixed(2)) : ''}
+    </tbody>
+  </table></div>`;
+}
+
 function execDelayCardHtml(avgSec) {
   if (avgSec == null || !Number.isFinite(avgSec)) {
     return '<div class="card"><div class="lbl">Средняя задержка</div><div class="val muted">—</div></div>';
@@ -815,6 +888,7 @@ function buildBacktestReportModel(logic, trades, opts = {}) {
     hourlyOpenCloseSvg: hourlyOpenCloseSvg(trades),
     hourlyExecDelaySvg: hourlyExecDelaySvg(trades),
     weekdayChartsSvg: weekdayChartsSvg(trades, opts.tradeLots),
+    closeReasonOutcomeHtml: closeReasonOutcomeHtml(trades),
     avgExecDelaySec: averageExecDelaySec(trades),
     topWins: sortedByPnl.filter((d) => d.pnl > 0).slice(0, 8),
     topLosses: sortedByPnl.filter((d) => d.pnl < 0).slice(-8).reverse(),
@@ -1445,6 +1519,11 @@ function renderBacktestReportHtml(model) {
       <div class="chart">${model.weekdayChartsSvg}</div>
     </section>
     <section>
+      <h2>Причины закрытия: угадали / не угадали</h2>
+      <div class="muted" style="margin-bottom:8px">Разбивка закрытых сделок по причине закрытия и финансовому результату.</div>
+      ${model.closeReasonOutcomeHtml}
+    </section>
+    <section>
       <h2>Лучшие сделки</h2>
       <table class="deals">
         <thead><tr><th>Бумага</th><th>Сторона</th><th>Закрытие</th><th>Кол-во</th><th>П\\У</th><th>Удержание</th></tr></thead>
@@ -1505,5 +1584,8 @@ module.exports = {
   hourlyExecDelaySvg,
   weekdayStats,
   weekdayChartsSvg,
+  normalizeCloseReasonLabel,
+  closeReasonOutcomeStats,
+  closeReasonOutcomeHtml,
   execDelayCardHtml,
 };

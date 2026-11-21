@@ -1,0 +1,102 @@
+<div class="viz-backdrop" (click)="close()">
+  <div class="viz-modal" (click)="$event.stopPropagation()">
+    <div class="viz-header">
+      <div class="viz-title-block">
+        <div class="viz-title">Визуализация логики: {{ logic?.name || ('#' + logic?.id) }}</div>
+        <div class="viz-subtitle">
+          Условная бумага · демонстрационный график (рост / падение / боковик / пики / EOD).
+          Срабатывания показаны по настроенным сигналам и стопам логики.
+        </div>
+      </div>
+      <button type="button" class="viz-close" (click)="close()" aria-label="Закрыть">✕</button>
+    </div>
+
+    <div class="viz-controls">
+      <div class="viz-slider-row">
+        <button type="button" class="viz-btn" (click)="toStart()" title="В начало">|◀</button>
+        <button type="button" class="viz-btn" (click)="step(-1)" title="Шаг назад">◀</button>
+        <button type="button" class="viz-btn viz-play" (click)="togglePlay()" [title]="playSpeed > 0 ? 'Пауза' : 'Воспроизвести'">
+          {{ playSpeed > 0 ? '⏸' : '▶' }}
+        </button>
+        <button type="button" class="viz-btn" (click)="step(1)" title="Шаг вперёд">▶</button>
+        <button type="button" class="viz-btn" (click)="toEnd()" title="В конец">▶|</button>
+        <input
+          class="viz-slider"
+          type="range"
+          min="0"
+          [max]="maxIndex"
+          [value]="sliderIndex"
+          (input)="onSliderChange($any($event.target).value)"
+        />
+        <div class="viz-pos">
+          <span>{{ sliderIndex + 1 }} / {{ maxIndex + 1 }}</span>
+          <span class="viz-dt">{{ currentDt() }}</span>
+          <span class="viz-price">{{ currentPrice() }}</span>
+        </div>
+      </div>
+      <div class="viz-legend">
+        <span class="leg leg-long">L+ вход лонг</span>
+        <span class="leg leg-short">S+ вход шорт</span>
+        <span class="leg leg-close">L−/S− выход</span>
+        <span class="leg leg-sl">SL стоп-лосс</span>
+        <span class="leg leg-tp">TP тейк-профит</span>
+        <span class="leg leg-eod">EOD конец дня</span>
+      </div>
+    </div>
+
+    <div class="viz-chart-wrap">
+      <app-price-chart
+        [candles]="visibleCandles"
+        [tradeMarkers]="visibleTradeMarkers"
+        [stopMarkers]="visibleStopMarkers"
+        [focusDt]="focusDt"
+        [title]="'Условная бумага'"
+        [showRecalcButton]="false"
+      ></app-price-chart>
+    </div>
+
+    <div class="viz-bottom">
+      <div class="viz-events">
+        <div class="viz-events-title">События до текущего бара ({{ visibleEvents().length }})</div>
+        <div class="viz-events-list">
+          @for (e of visibleEvents(); track $index) {
+            <div class="viz-event" [ngClass]="eventClass(e)">
+              <span class="ev-badge">{{ eventIcon(e) }}</span>
+              <span class="ev-dt">{{ fmtDt(e.dt) }}</span>
+              <span class="ev-price">{{ e.price.toFixed(2) }}</span>
+              <span class="ev-label" [title]="e.detail">{{ e.label }}</span>
+            </div>
+          }
+          @if (visibleEvents().length === 0) {
+            <div class="viz-empty">Двигайте ползунок, чтобы увидеть срабатывания сигналов и стопов.</div>
+          }
+        </div>
+      </div>
+      <div class="viz-config">
+        <div class="viz-events-title">Конфигурация логики</div>
+        <div class="viz-config-block">
+          <div class="cfg-head">Сигналы ({{ signals.length }})</div>
+          @for (s of signals; track s.id) {
+            <div class="cfg-row" [class.cfg-inactive]="!s.is_active">
+              <span class="cfg-tag">{{ s.position_event === 'open' ? 'Вход' : 'Выход' }} {{ s.position_side === 'long' ? 'L' : 'S' }}</span>
+              <span class="cfg-name">{{ s.indicator_code }}</span>
+              <span class="cfg-formula" [title]="s.formula">{{ s.formula }}</span>
+            </div>
+          }
+          @if (signals.length === 0) { <div class="viz-empty">Нет сигналов</div> }
+        </div>
+        <div class="viz-config-block">
+          <div class="cfg-head">Стопы ({{ stops.length }})</div>
+          @for (s of stops; track s.id) {
+            <div class="cfg-row" [class.cfg-inactive]="!s.is_active">
+              <span class="cfg-tag">{{ s.rule_kind === 'stop_loss' ? 'SL' : 'TP' }}</span>
+              <span class="cfg-name">{{ s.scope_type }}</span>
+              <span class="cfg-formula">{{ s.value }}{{ s.value_unit === 'percent' ? '%' : ' ATR' }}</span>
+            </div>
+          }
+          @if (stops.length === 0) { <div class="viz-empty">Нет стопов</div> }
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

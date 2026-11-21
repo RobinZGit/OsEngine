@@ -432,6 +432,12 @@ deploy_schema() {
     fi
     step "Applying #1083/#1084 upgrade migration (exec_delay_sec, T-Bank fill price)"
     psql_q multilogictrade -f "$PREFIX/sql/upgrade_1083_exec_delay.sql"
+    if [[ ! -f "$PREFIX/sql/upgrade_backtest_run_flags.sql" ]]; then
+      echo "Missing $PREFIX/sql/upgrade_backtest_run_flags.sql (required for backtest run columns upgrade migration)." >&2
+      exit 1
+    fi
+    step "Applying backtest run columns upgrade migration (#1061 close_all_at_end, #1072 portfolio_close_pending)"
+    psql_q multilogictrade -f "$PREFIX/sql/upgrade_backtest_run_flags.sql"
     if [[ ! -f "$PREFIX/sql/upgrade_user_js_indicators.sql" ]]; then
       echo "Missing $PREFIX/sql/upgrade_user_js_indicators.sql (required for user JS indicators upgrade migration)." >&2
       exit 1

@@ -668,6 +668,13 @@ try {
             Write-Step "Applying #1083/#1084 upgrade migration (exec_delay_sec, T-Bank fill price)"
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $migrationSql)
 
+            $backtestRunFlagsMigration = Join-Path $InstallDir "sql\upgrade_backtest_run_flags.sql"
+            if (-not (Test-Path $backtestRunFlagsMigration)) {
+                throw ("Missing {0} (required for backtest run columns upgrade migration)." -f $backtestRunFlagsMigration)
+            }
+            Write-Step "Applying backtest run columns upgrade migration (#1061 close_all_at_end, #1072 portfolio_close_pending)"
+            Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $backtestRunFlagsMigration)
+
             $jsIndicatorsMigration = Join-Path $InstallDir "sql\upgrade_user_js_indicators.sql"
             if (-not (Test-Path $jsIndicatorsMigration)) {
                 throw ("Missing {0} (required for user JS indicators upgrade migration)." -f $jsIndicatorsMigration)

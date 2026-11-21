@@ -81,6 +81,7 @@ import {
   LogicPositionsPanelComponent,
 } from './logic-positions-panel.component';
 import { LogicCombatSignalDetailComponent } from './logic-combat-signal-detail.component';
+import { LogicVisualizationComponent } from './logic-visualization.component';
 import {
   buildImportFailureModel,
   buildImportLocalErrorModel,
@@ -136,6 +137,7 @@ type StopFormDraft = {
     TbankTokenDialogComponent,
     LogicPositionsPanelComponent,
     LogicCombatSignalDetailComponent,
+    LogicVisualizationComponent,
   ],
   templateUrl: './logics.component.html',
   styleUrl: './logics.component.css',
@@ -262,6 +264,12 @@ export class LogicsComponent implements OnInit, OnDestroy {
   copyDialogNote = '';
   copyDialogBusy = false;
   copyDialogError: string | null = null;
+
+  /** Визуализация логики на условном графике. */
+  vizOpen = false;
+  vizLogic: LogicRow | null = null;
+  vizSignals: LogicIndicatorSignalRow[] = [];
+  vizStops: LogicStopRow[] = [];
   /** Онлайн-сводка тестового финреза по логикам (не колонка в БД). */
   testPnlByLogic: Map<
     number,
@@ -1820,6 +1828,37 @@ export class LogicsComponent implements OnInit, OnDestroy {
 
   isLiveReportLoading(logicId: number): boolean {
     return this.liveReportLoadingIds.has(logicId);
+  }
+
+  async openVisualization(row: LogicRow, event: Event): Promise<void> {
+    event.stopPropagation();
+    this.vizLogic = row;
+    this.vizSignals = this.signalsFor(row.id);
+    this.vizStops = this.stopsFor(row.id);
+    this.vizOpen = true;
+    this.cdr.markForCheck();
+    try {
+      const [signals, stops] = await Promise.all([
+        firstValueFrom(this.logicsService.getLogicIndicatorSignals(row.id)),
+        firstValueFrom(this.logicsService.getLogicStops(row.id)),
+      ]);
+      this.logicSignals.set(row.id, signals ?? []);
+      this.logicStops.set(row.id, stops ?? []);
+      if (this.vizOpen && this.vizLogic?.id === row.id) {
+        this.vizSignals = signals ?? [];
+        this.vizStops = stops ?? [];
+        this.cdr.markForCheck();
+      }
+    } catch (err) {
+      console.error('openVisualization load error', err);
+    }
+  }
+
+  closeVisualization(): void {
+    this.vizOpen = false;
+    this.vizLogic = null;
+    this.vizSignals = [];
+    this.vizStops = [];
   }
 
   /** Отчёт по реальной торговле (live, не тест) с начала периода торговли логики. */

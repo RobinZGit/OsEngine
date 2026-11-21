@@ -204,6 +204,8 @@ export interface BacktestReportModel {
   hourlyExecDelaySvg: string;
   /** #1083: графики по дням недели (открытия/закрытия/убыточные/задержка). */
   weekdayChartsSvg: string;
+  /** Разбивка закрытий по причине и исходу (угадали/не угадали). */
+  closeReasonOutcomeHtml: string;
   /** #1083: средняя задержка исполнения за период, сек. */
   avgExecDelaySec: number | null;
   topWins: ClosedDeal[];
@@ -639,8 +641,8 @@ export function hourlyOpenCloseCounts(trades: LogicTradeRow[]): {
   return { open, close, closeProfit, closeLoss, matched };
 }
 
-/** Стек из 4 графиков по часам (5-минутные корзины): открытия, закрытия, закрытия в прибыль, закрытия в убыток.
- *  Одинаковая геометрия/оси/масштаб Y для синхронного сравнения по времени. */
+/** Стек из 4 графиков по часам (5-минутные корзины): открытия, закрытия, закрытия в плюс, закрытия в минус.
+ *  Единый масштаб/шаг/сетка Y для синхронного сравнения по высоте. */
 export function hourlyOpenCloseSvg(trades: LogicTradeRow[]): string {
   const { open, close, closeProfit, closeLoss, matched } = hourlyOpenCloseCounts(trades);
   if (matched === 0) {
@@ -685,14 +687,14 @@ export function hourlyOpenCloseSvg(trades: LogicTradeRow[]): string {
   const out: string[] = ['<div class="hourly-charts-stack">'];
   out.push(one(open, 'Открытия', '#16a34a', 'Открытия по часам'));
   out.push(one(close, 'Закрытия (все)', '#2563eb', 'Закрытия по часам'));
-  out.push(one(closeProfit, 'Закрытия в прибыль', '#15803d', 'Закрытия в прибыль по часам'));
-  out.push(one(closeLoss, 'Закрытия в убыток', '#dc2626', 'Закрытия в убыток по часам'));
-  out.push('<div class="muted" style="font-size:11px;margin-top:4px">Ось X: часы 0–24, шаг 5 минут. Одинаковый масштаб по Y для всех графиков.</div>');
+  out.push(one(closeProfit, 'Закрытия в плюс', '#15803d', 'Закрытия в плюс по часам'));
+  out.push(one(closeLoss, 'Закрытия в минус', '#dc2626', 'Закрытия в минус по часам'));
+  out.push('<div class="muted" style="font-size:11px;margin-top:4px">Ось X: часы 0-24, шаг 5 минут. Единый масштаб по Y для всех графиков.</div>');
   out.push('</div>');
   return out.join('\n');
 }
 
-/** #1083: средняя задержка по часам (0..23) — только измеримые сделки. */
+/** #1083: Средняя задержка по часам (0..23) - только реальные сделки. */
 export function hourlyExecDelayValues(trades: LogicTradeRow[]): number[] {
   const sum = new Array(24).fill(0);
   const count = new Array(24).fill(0);
@@ -885,11 +887,11 @@ function countBarsSvg(
   return parts.join('\n');
 }
 
-/** #1083: график средней задержки исполнения по часам. */
+/** #1083: График средней задержки исполнения по часам. */
 export function hourlyExecDelaySvg(trades: LogicTradeRow[]): string {
   const values = hourlyExecDelayValues(trades);
   if (values.every((v) => v === 0)) {
-    return '<div class="empty-chart">Нет измеримых задержек исполнения по часам</div>';
+    return '<div class="empty-chart">Нет реальных закрытых исполнений по часам</div>';
   }
   return `<div class="hourly-charts-stack">${delayBarsSvg(
     values,
@@ -898,10 +900,10 @@ export function hourlyExecDelaySvg(trades: LogicTradeRow[]): string {
     '#0891b2',
     'Средняя задержка исполнения по часам',
     Math.max(...values)
-  )}<div class="muted" style="font-size:11px;margin-top:4px">Красная линия — порог 30 секунд. Задержка считается от закрытия сигнального бара.</div></div>`;
+  )}<div class="muted" style="font-size:11px;margin-top:4px">Красная линия - порог 30 секунд. Задержка считается от сигнального бара.</div></div>`;
 }
 
-/** #1083: блок из пяти графиков по дням недели. */
+/** #1083: Блок из 5 графиков по дням недели. */
 export function weekdayChartsSvg(
   trades: LogicTradeRow[],
   tradeLots?: Map<number, LogicTradeLotRow[]>
@@ -912,11 +914,93 @@ export function weekdayChartsSvg(
   const out: string[] = ['<div class="hourly-charts-stack">'];
   out.push(countBarsSvg(st.open, WEEKDAY_LABELS, 'Открытия по дням недели', '#16a34a', 'Открытия по дням недели', countMax));
   out.push(countBarsSvg(st.close, WEEKDAY_LABELS, 'Закрытия по дням недели', '#2563eb', 'Закрытия по дням недели', countMax));
-  out.push(countBarsSvg(st.openLoss, WEEKDAY_LABELS, 'Убыточные открытия по дням недели', '#dc2626', 'Убыточные открытия по дням недели', countMax));
-  out.push(countBarsSvg(st.closeLoss, WEEKDAY_LABELS, 'Убыточные закрытия по дням недели', '#b91c1c', 'Убыточные закрытия по дням недели', countMax));
+  out.push(countBarsSvg(st.openLoss, WEEKDAY_LABELS, 'Открытия убыточных по дням недели', '#dc2626', 'Открытия убыточных по дням недели', countMax));
+  out.push(countBarsSvg(st.closeLoss, WEEKDAY_LABELS, 'Закрытия убыточных по дням недели', '#b91c1c', 'Закрытия убыточных по дням недели', countMax));
   out.push(delayBarsSvg(delay, WEEKDAY_LABELS, 'Средняя задержка исполнения по дням недели, сек', '#0891b2', 'Средняя задержка исполнения по дням недели', Math.max(...delay, 0)));
   out.push('</div>');
   return out.join('\n');
+}
+
+export interface CloseReasonOutcomeRow {
+  reason: string;
+  outcome: 'win' | 'loss' | 'zero';
+  outcomeLabel: string;
+  count: number;
+  finRes: number;
+  avgFin: number;
+}
+
+export function normalizeCloseReasonLabel(tradeReason: unknown, signalFormula: unknown): string {
+  const reason = String(tradeReason ?? '').trim();
+  const formula = String(signalFormula ?? '').trim();
+  if (reason === 'eod.close' || formula === 'backtest:close') return 'EOD / конец периода (backtest:close)';
+  if (/stop.?loss/i.test(reason) || /stop.?loss/i.test(formula)) return `Стоп-лосс${formula ? `: ${formula}` : reason ? `: ${reason}` : ''}`;
+  if (/take.?profit/i.test(reason) || /take.?profit/i.test(formula)) return `Тейк-профит${formula ? `: ${formula}` : reason ? `: ${reason}` : ''}`;
+  if (formula) return `Сигнал: ${formula}`;
+  if (reason) return reason;
+  return '—';
+}
+
+export function closeReasonOutcomeStats(trades: LogicTradeRow[]): CloseReasonOutcomeRow[] {
+  const map = new Map<string, CloseReasonOutcomeRow>();
+  for (const t of trades) {
+    if (String(t.side_name ?? (t as any).position_event ?? '').toLowerCase() !== 'close') continue;
+    const fr = t.financial_result;
+    const fin = fr == null ? NaN : Number(fr);
+    const hasFin = Number.isFinite(fin);
+    const outcome: 'win' | 'loss' | 'zero' = !hasFin || fin === 0 ? 'zero' : fin > 0 ? 'win' : 'loss';
+    const outcomeLabel = outcome === 'win' ? 'Угадали' : outcome === 'loss' ? 'Не угадали' : 'Ноль / н/д';
+    const reason = normalizeCloseReasonLabel(t.trade_reason, t.signal_formula);
+    const key = `${reason}\u0000${outcome}`;
+    const row = map.get(key) || { reason, outcome, outcomeLabel, count: 0, finRes: 0, avgFin: 0 };
+    row.count += 1;
+    if (hasFin) row.finRes += fin;
+    map.set(key, row);
+  }
+  const rows = Array.from(map.values()).map((r) => {
+    const finRes = +r.finRes.toFixed(2);
+    return { ...r, finRes, avgFin: r.count ? +(finRes / r.count).toFixed(2) : 0 };
+  });
+  const order = { win: 0, loss: 1, zero: 2 } as const;
+  rows.sort((a, b) => order[a.outcome] - order[b.outcome] || b.count - a.count || a.reason.localeCompare(b.reason, 'ru'));
+  return rows;
+}
+
+export function closeReasonOutcomeHtml(trades: LogicTradeRow[]): string {
+  const rows = closeReasonOutcomeStats(trades);
+  if (!rows.length) return '<div class="empty-chart">Нет закрытых сделок для разбивки по причинам</div>';
+  const totals = { win: { count: 0, fin: 0 }, loss: { count: 0, fin: 0 }, zero: { count: 0, fin: 0 } };
+  for (const r of rows) {
+    totals[r.outcome].count += r.count;
+    totals[r.outcome].fin += r.finRes;
+  }
+  const totalCount = rows.reduce((s, r) => s + r.count, 0);
+  const body = rows.map((r) => {
+    const finCls = r.finRes > 0 ? 'pos' : r.finRes < 0 ? 'neg' : '';
+    const pct = totalCount ? ((r.count / totalCount) * 100).toFixed(1) : '0.0';
+    return `<tr>
+      <td>${esc(r.reason)}</td>
+      <td>${esc(r.outcomeLabel)}</td>
+      <td class="num">${r.count}</td>
+      <td class="num">${esc(pct)}%</td>
+      <td class="num ${finCls}">${esc(fmtMoney(r.finRes))}</td>
+      <td class="num ${finCls}">${esc(fmtMoney(r.avgFin))}</td>
+    </tr>`;
+  }).join('');
+  const sumRow = (label: string, c: number, fin: number) => {
+    const cls = fin > 0 ? 'pos' : fin < 0 ? 'neg' : '';
+    const pct = totalCount ? ((c / totalCount) * 100).toFixed(1) : '0.0';
+    return `<tr style="font-weight:600;background:#f8fafc"><td colspan="2">${esc(label)}</td><td class="num">${c}</td><td class="num">${esc(pct)}%</td><td class="num ${cls}">${esc(fmtMoney(fin))}</td><td class="num"></td></tr>`;
+  };
+  return `<div style="overflow-x:auto"><table class="stats">
+    <thead><tr><th>Причина закрытия</th><th>Исход</th><th>Сделок</th><th>Доля</th><th>FinRes</th><th>Средний FinRes</th></tr></thead>
+    <tbody>
+      ${body}
+      ${sumRow('Итого угадали', totals.win.count, +totals.win.fin.toFixed(2))}
+      ${sumRow('Итого не угадали', totals.loss.count, +totals.loss.fin.toFixed(2))}
+      ${totals.zero.count ? sumRow('Итого ноль/н/д', totals.zero.count, +totals.zero.fin.toFixed(2)) : ''}
+    </tbody>
+  </table></div>`;
 }
 
 /** #1083: карточка средней задержки с предупреждением при >30 сек. */
@@ -2191,6 +2275,7 @@ export function buildBacktestReportModel(
     hourlyOpenCloseSvg: hourlyOpenCloseSvg(trades),
     hourlyExecDelaySvg: hourlyExecDelaySvg(trades),
     weekdayChartsSvg: weekdayChartsSvg(trades, opts.tradeLots),
+    closeReasonOutcomeHtml: closeReasonOutcomeHtml(trades),
     avgExecDelaySec: averageExecDelaySec(trades),
     topWins: sortedByPnl.filter((d) => d.pnl > 0).slice(0, 8),
     topLosses: sortedByPnl.filter((d) => d.pnl < 0).slice(-8).reverse(),
@@ -2903,7 +2988,8 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
     </section>
 
     <section>
-      <h2>Открытия и закрытия по часам</h2>
+    <section>
+      <h2>Сделки и закрытия по часам</h2>
       <div class="chart">${model.hourlyOpenCloseSvg}</div>
       <h3>Средняя задержка исполнения по часам</h3>
       <div class="chart">${model.hourlyExecDelaySvg}</div>
@@ -2912,6 +2998,12 @@ export function renderBacktestReportHtml(model: BacktestReportModel): string {
     <section>
       <h2>По дням недели</h2>
       <div class="chart">${model.weekdayChartsSvg}</div>
+    </section>
+
+    <section>
+      <h2>Причины закрытия: угадано / не угадано</h2>
+      <div class="muted" style="margin-bottom:8px">Разбивка закрытых сделок по причине закрытия и финансовому результату.</div>
+      ${model.closeReasonOutcomeHtml}
     </section>
 
     <section>

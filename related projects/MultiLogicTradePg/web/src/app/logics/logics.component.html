@@ -707,6 +707,20 @@
                 </button>
                 <button
                   type="button"
+                  class="icon-btn icon-visualize"
+                  title="Визуализация логики на условном графике"
+                  aria-label="Визуализация логики"
+                  (click)="openVisualization(row, $event)"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M12 5c-5 0-9.27 3.11-11 7 1.73 3.89 6 7 11 7s9.27-3.11 11-7c-1.73-3.89-6-7-11-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-6.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   class="icon-btn icon-report"
                   title="Отчёт по реальной торговле с начала периода"
                   aria-label="Отчёт по реальной торговле"
@@ -3177,6 +3191,15 @@
   }
 
 
+
+  @if (vizOpen && vizLogic) {
+    <app-logic-visualization
+      [logic]="vizLogic"
+      [signals]="vizSignals"
+      [stops]="vizStops"
+      (closed)="closeVisualization()"
+    />
+  }
 
   <app-logic-editor
 
