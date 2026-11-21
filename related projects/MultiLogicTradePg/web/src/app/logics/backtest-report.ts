@@ -641,7 +641,7 @@ export function hourlyOpenCloseCounts(trades: LogicTradeRow[]): {
   return { open, close, closeProfit, closeLoss, matched };
 }
 
-/** Стек из 4 графиков по часам (5-минутные корзины): открытия, закрытия, закрытия в плюс, закрытия в минус.
+/** Стек из 4 графиков по часам (5-минутные корзины): открытия, закрытия, закрытия в прибыль, закрытия в убыток.
  *  Единый масштаб/шаг/сетка Y для синхронного сравнения по высоте. */
 export function hourlyOpenCloseSvg(trades: LogicTradeRow[]): string {
   const { open, close, closeProfit, closeLoss, matched } = hourlyOpenCloseCounts(trades);
@@ -687,8 +687,8 @@ export function hourlyOpenCloseSvg(trades: LogicTradeRow[]): string {
   const out: string[] = ['<div class="hourly-charts-stack">'];
   out.push(one(open, 'Открытия', '#16a34a', 'Открытия по часам'));
   out.push(one(close, 'Закрытия (все)', '#2563eb', 'Закрытия по часам'));
-  out.push(one(closeProfit, 'Закрытия в плюс', '#15803d', 'Закрытия в плюс по часам'));
-  out.push(one(closeLoss, 'Закрытия в минус', '#dc2626', 'Закрытия в минус по часам'));
+  out.push(one(closeProfit, 'Закрытия в прибыль', '#15803d', 'Закрытия в прибыль по часам'));
+  out.push(one(closeLoss, 'Закрытия в убыток', '#dc2626', 'Закрытия в убыток по часам'));
   out.push('<div class="muted" style="font-size:11px;margin-top:4px">Ось X: часы 0-24, шаг 5 минут. Единый масштаб по Y для всех графиков.</div>');
   out.push('</div>');
   return out.join('\n');
