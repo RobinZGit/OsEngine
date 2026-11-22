@@ -184,6 +184,9 @@ function buildTradeMarkers(trades) {
     side: t.action_name === 'Short' ? 'short' : 'long',
     isShadow: Boolean(t.is_shadow),
     label: t.trade_reason || undefined,
+    pnl: t.financial_result != null && Number.isFinite(Number(t.financial_result)) ? Number(t.financial_result) : null,
+    tradeReason: t.trade_reason ?? null,
+    signalFormula: t.signal_formula ?? null,
   }));
 }
 

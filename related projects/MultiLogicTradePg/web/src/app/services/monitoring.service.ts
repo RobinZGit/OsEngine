@@ -54,6 +54,38 @@ export interface MonitoringSummary {
   latestPing: ErrorLogRow | null;
 }
 
+export interface DbHangRow {
+  pid: number;
+  duration_sec: number;
+  wait_event_type: string | null;
+  wait_event: string | null;
+  state: string;
+  application_name: string | null;
+  client_addr: string | null;
+  query: string;
+  query_start: string;
+  kind: string;
+}
+
+export interface MonitoringHangs {
+  thresholdSec: number;
+  dbActive: DbHangRow[];
+  recent: ErrorLogRow[];
+}
+
+export interface ClientMonitorEvent {
+  kind: 'web_hang' | 'report_build' | 'hang' | 'stall' | 'long_task';
+  phase: 'start' | 'progress' | 'done' | 'error' | 'stall' | 'event' | 'resolved';
+  message: string;
+  detail?: string | null;
+  endpoint?: string | null;
+  method?: string | null;
+  logicId?: number | null;
+  securityId?: number | null;
+  context?: Record<string, unknown>;
+  level?: ErrorLevel;
+}
+
 /** Один результат проверки сервиса при «пинге». */
 export interface PingCheck {
   key: string;
@@ -93,13 +125,42 @@ export class MonitoringService {
   private readonly refreshSubject = new Subject<void>();
   readonly refresh$ = this.refreshSubject.asObservable();
 
+  private webHangTimer: ReturnType<typeof setInterval> | null = null;
+  private lastWebHangAt = 0;
+  private lastTickAt = Date.now();
+
   constructor(
     private readonly http: HttpClient,
     private readonly appConfig: AppConfigService
-  ) {}
+  ) {
+    this.startWebHangWatchdog();
+  }
 
+  /** �������� �⮪ ���������� ᢮��� (�ࢨ��, ����� ���). */
   notifyRefresh(): void {
     this.refreshSubject.next();
+  }
+
+  private startWebHangWatchdog(): void {
+    if (this.webHangTimer || typeof window === 'undefined') return;
+    this.lastTickAt = Date.now();
+    this.webHangTimer = setInterval(() => {
+      const now = Date.now();
+      const delta = now - this.lastTickAt;
+      this.lastTickAt = now;
+      if (delta > 15000 && !document.hidden) {
+        if (now - this.lastWebHangAt < 60000) return;
+        this.lastWebHangAt = now;
+        this.reportClientEvent({
+          kind: 'web_hang',
+          phase: 'stall',
+          level: 'warning',
+          message: `Web UI stall detected: main thread blocked ~${Math.round(delta / 1000)}s`,
+          detail: `Interval drift ${delta}ms (threshold 15000ms).`,
+          context: { deltaMs: delta, url: window.location.href },
+        }).subscribe({ error: () => {} });
+      }
+    }, 5000);
   }
 
   getErrors(opts?: { limit?: number; level?: ErrorLevel }): Observable<{ rows: ErrorLogRow[] }> {
@@ -136,6 +197,23 @@ export class MonitoringService {
       `${this.appConfig.apiUrl}/logic-trades/delay-alerts`
     );
   }
+
+  getHangs(thresholdSec = 30, limit = 50): Observable<MonitoringHangs> {
+    const params = new URLSearchParams();
+    params.set('thresholdSec', String(thresholdSec));
+    params.set('limit', String(limit));
+    return this.http.get<MonitoringHangs>(
+      `${this.appConfig.apiUrl}/monitoring/hangs?${params.toString()}`
+    );
+  }
+
+  reportClientEvent(event: ClientMonitorEvent): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(
+      `${this.appConfig.apiUrl}/monitoring/client-event`,
+      event
+    );
+  }
+
 }
 
 export interface DelayAlertRow {

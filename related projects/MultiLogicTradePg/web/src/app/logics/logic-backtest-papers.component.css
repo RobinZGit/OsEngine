@@ -342,3 +342,88 @@
 .trade-pnl-neg {
   color: #b91c1c;
 }
+
+
+/* Playback slider (same UX as logic visualization) */
+.paper-playback {
+  margin: 0 0 0.45rem;
+  padding: 0.5rem 0.6rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.paper-finres-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.paper-finres {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  font-weight: 700;
+}
+.paper-finres-label {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.paper-finres-value { font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; }
+.finres-pos .paper-finres-value, .finres-pos.viz-popup-finres { color: #16a34a; }
+.finres-neg .paper-finres-value, .finres-neg.viz-popup-finres { color: #dc2626; }
+.finres-zero .paper-finres-value, .finres-zero.viz-popup-finres { color: #374151; }
+.paper-pos { display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: #475569; font-variant-numeric: tabular-nums; }
+.paper-dt { font-weight: 600; color: #111827; }
+.paper-price { color: #2563eb; font-weight: 600; }
+.paper-slider-row { display: flex; align-items: center; gap: 8px; }
+.viz-btn {
+  border: 1px solid #d1d5db; background: #fff; color: #374151;
+  width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.viz-btn:hover { background: #f3f4f6; }
+.viz-play { width: 40px; font-size: 15px; }
+.viz-slider { flex: 1; min-width: 120px; accent-color: #2563eb; }
+
+.paper-chart-host-playback { position: relative; }
+.viz-popup {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  z-index: 30;
+  min-width: min(560px, calc(100% - 48px));
+  max-width: min(720px, calc(100% - 48px));
+  padding: 22px 28px;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+  text-align: center;
+  pointer-events: none;
+  animation: viz-popup-in 0.18s ease-out;
+}
+@keyframes viz-popup-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+.viz-popup-open {
+  background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+  border: 2px solid #86efac;
+  color: #14532d;
+}
+.viz-popup-close {
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+  border: 2px solid #fdba74;
+  color: #7c2d12;
+}
+.viz-popup-title { font-size: 32px; line-height: 1.15; font-weight: 800; letter-spacing: -0.01em; }
+.viz-popup-detail { margin-top: 8px; font-size: 15px; color: #374151; font-weight: 500; }
+.viz-popup-finres { margin-top: 14px; font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.viz-popup-acc { margin-top: 4px; font-size: 14px; color: #6b7280; font-weight: 600; }

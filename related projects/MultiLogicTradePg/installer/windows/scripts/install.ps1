@@ -85,6 +85,11 @@ try {
         try {
             Set-Location $WorkingDirectory
             & $FilePath @Arguments
+            if ($LASTEXITCODE -eq 3010 -or $LASTEXITCODE -eq 1641) {
+                Write-Warning "$FilePath exited with code $LASTEXITCODE (reboot required by installer); continuing with /norestart policy."
+                $global:LASTEXITCODE = 0
+                return
+            }
             if ($LASTEXITCODE -ne 0) {
                 throw "$FilePath exited with code $LASTEXITCODE"
             }
@@ -148,7 +153,9 @@ try {
         $download = Join-Path $env:TEMP $fileName
         Invoke-WebRequest -Uri $url -OutFile $download
         $process = Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$download`"", "/qn", "/norestart") -Wait -PassThru
-        if ($process.ExitCode -ne 0) {
+        if ($process.ExitCode -eq 3010 -or $process.ExitCode -eq 1641) {
+            Write-Warning "Node.js MSI installer exited with code $($process.ExitCode) (reboot required); continuing with /norestart policy."
+        } elseif ($process.ExitCode -ne 0) {
             throw "Node.js MSI installer exited with code $($process.ExitCode)"
         }
     }
@@ -258,7 +265,9 @@ try {
             "--serverport", "5432"
         )
         $process = Start-Process $download -ArgumentList $args -Wait -PassThru
-        if ($process.ExitCode -ne 0) {
+        if ($process.ExitCode -eq 3010 -or $process.ExitCode -eq 1641) {
+            Write-Warning "PostgreSQL installer exited with code $($process.ExitCode) (reboot required); continuing with /norestart policy."
+        } elseif ($process.ExitCode -ne 0) {
             throw "PostgreSQL installer exited with code $($process.ExitCode)"
         }
     }

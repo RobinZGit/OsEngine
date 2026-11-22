@@ -28,6 +28,16 @@ interface VizEvent {
   signalId?: number;
   stopId?: number;
   ruleKind?: 'stop_loss' | 'take_profit' | 'other';
+  finRes?: number;
+}
+
+interface VizPopup {
+  kind: 'open' | 'close' | 'stop';
+  side: 'long' | 'short';
+  title: string;
+  detail: string;
+  finRes?: number;
+  accumulatedFinRes: number;
 }
 
 @Component({
@@ -52,6 +62,9 @@ export class LogicVisualizationComponent implements OnChanges {
   maxIndex = 0;
   playSpeed = 0;
   focusDt: string | null = null;
+  accumulatedFinRes = 0;
+  popup: VizPopup | null = null;
+  private popupTimer: ReturnType<typeof setTimeout> | null = null;
   private playTimer: ReturnType<typeof setInterval> | null = null;
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -62,12 +75,14 @@ export class LogicVisualizationComponent implements OnChanges {
 
   close(): void {
     this.stopPlay();
+    this.hidePopup();
     this.closed.emit();
   }
 
   onSliderChange(value: number): void {
+    const prev = this.sliderIndex;
     this.sliderIndex = Number(value);
-    this.syncVisible();
+    this.syncVisible(prev);
   }
 
   togglePlay(): void {
@@ -81,8 +96,9 @@ export class LogicVisualizationComponent implements OnChanges {
         this.stopPlay();
         return;
       }
+      const prev = this.sliderIndex;
       this.sliderIndex += 1;
-      this.syncVisible();
+      this.syncVisible(prev);
     }, 220);
   }
 
@@ -96,21 +112,24 @@ export class LogicVisualizationComponent implements OnChanges {
 
   step(delta: number): void {
     this.stopPlay();
+    const prev = this.sliderIndex;
     const next = Math.max(0, Math.min(this.maxIndex, this.sliderIndex + delta));
     this.sliderIndex = next;
-    this.syncVisible();
+    this.syncVisible(prev);
   }
 
   toStart(): void {
     this.stopPlay();
+    const prev = this.sliderIndex;
     this.sliderIndex = 0;
-    this.syncVisible();
+    this.syncVisible(prev);
   }
 
   toEnd(): void {
     this.stopPlay();
+    const prev = this.sliderIndex;
     this.sliderIndex = this.maxIndex;
-    this.syncVisible();
+    this.syncVisible(prev);
   }
 
   currentDt(): string {
@@ -144,20 +163,67 @@ export class LogicVisualizationComponent implements OnChanges {
     return d;
   }
 
+  formatFinRes(value: number): string {
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${value.toFixed(2)}`;
+  }
+
+  finResClass(value: number): string {
+    if (value > 0) return 'finres-pos';
+    if (value < 0) return 'finres-neg';
+    return 'finres-zero';
+  }
+
+  hidePopup(): void {
+    this.popup = null;
+    if (this.popupTimer) {
+      clearTimeout(this.popupTimer);
+      this.popupTimer = null;
+    }
+  }
+
+  private showPopupForIndex(index: number, prevIndex?: number): void {
+    const candidates = this.events.filter((e) => e.barIndex === index && e.kind !== 'stop');
+    if (candidates.length === 0) return;
+    const e = prevIndex != null && index < prevIndex ? candidates[0] : candidates[candidates.length - 1];
+    const isOpen = e.kind === 'open';
+    const sideText = e.side === 'long' ? 'LONG' : 'SHORT';
+    const title = isOpen ? `Бац! Вошли в сделку ${sideText}` : `Бац! Вышли из сделки ${sideText}`;
+    const detail = isOpen
+      ? `${e.label} · ${this.fmtDt(e.dt)}`
+      : `${e.label} · Финрез: ${this.formatFinRes(Number(e.finRes ?? 0))}`;
+    this.popup = {
+      kind: e.kind,
+      side: e.side,
+      title,
+      detail,
+      finRes: e.finRes,
+      accumulatedFinRes: this.accumulatedFinRes,
+    };
+    if (this.popupTimer) clearTimeout(this.popupTimer);
+    this.popupTimer = setTimeout(() => {
+      this.popup = null;
+      this.popupTimer = null;
+    }, 2600);
+  }
+
   private rebuild(): void {
     this.stopPlay();
+    this.hidePopup();
     this.allCandles = this.generateCandles();
     this.maxIndex = Math.max(0, this.allCandles.length - 1);
     this.events = this.buildScenario(this.allCandles, this.signals ?? [], this.stops ?? []);
-    this.sliderIndex = this.maxIndex;
+    this.sliderIndex = 0;
     this.syncVisible();
   }
 
-  private syncVisible(): void {
+  private syncVisible(prevIndex?: number): void {
     const upto = Math.max(0, Math.min(this.maxIndex, this.sliderIndex));
-    // Показываем весь график целиком; ползунок управляет появлением маркеров и фокусом.
     this.visibleCandles = this.allCandles;
     this.focusDt = this.allCandles[upto]?.dt ?? null;
+    this.accumulatedFinRes = this.events
+      .filter((e) => e.barIndex <= upto && e.kind === 'close')
+      .reduce((sum, e) => sum + Number(e.finRes ?? 0), 0);
     this.visibleTradeMarkers = this.events
       .filter((e) => e.barIndex <= upto && e.kind !== 'stop')
       .map((e) => ({
@@ -176,6 +242,11 @@ export class LogicVisualizationComponent implements OnChanges {
         ruleKind: (e.ruleKind ?? 'other') as 'stop_loss' | 'take_profit' | 'other',
         label: e.label,
       }));
+    if (prevIndex !== undefined && prevIndex !== upto) {
+      this.showPopupForIndex(upto, prevIndex);
+    } else if (prevIndex === undefined) {
+      this.hidePopup();
+    }
   }
 
   /** Генерирует условный однодневный график: рост, пик, падение, боковик, пики, EOD. */
@@ -302,8 +373,21 @@ export class LogicVisualizationComponent implements OnChanges {
 
     let cursor = anchors.upEarly;
 
+    let finResCursor = 0;
+    const nextFinRes = (kind: VizEvent['kind'], ruleKind?: VizEvent['ruleKind'], explicit?: number) => {
+      if (explicit != null) return explicit;
+      if (kind !== 'close') return undefined;
+      const pattern = [1240.5, -860.25, 1530, -420.75, 980.4, -315.1, 2110.8, -540.6];
+      const v = pattern[Math.abs(finResCursor) % pattern.length];
+      finResCursor += 1;
+      if (ruleKind === 'take_profit') return Math.abs(v);
+      if (ruleKind === 'stop_loss') return -Math.abs(v);
+      return v;
+    };
+
     const pushEvent = (barIndex: number, kind: VizEvent['kind'], side: 'long' | 'short', label: string, detail: string, extra?: Partial<VizEvent>) => {
       const idx = at(barIndex);
+      const finRes = nextFinRes(kind, extra?.ruleKind, extra?.finRes);
       events.push({
         barIndex: idx,
         dt: dtAt(idx),
@@ -313,6 +397,7 @@ export class LogicVisualizationComponent implements OnChanges {
         label,
         detail,
         ...extra,
+        ...(finRes != null ? { finRes } : {}),
       });
     };
 
@@ -433,6 +518,7 @@ export class LogicVisualizationComponent implements OnChanges {
     const eodIdx = n - 1;
     const hasEod = events.some((e) => e.barIndex === eodIdx && /EOD/i.test(e.label));
     if (!hasEod) {
+      const eodFinRes = -180.25;
       events.push({
         barIndex: eodIdx,
         dt: dtAt(eodIdx),
@@ -440,8 +526,9 @@ export class LogicVisualizationComponent implements OnChanges {
         kind: 'close',
         side: 'long',
         label: 'EOD / конец дня',
-        detail: 'Закрытие позиций в конце торгового дня (EOD).',
+        detail: 'Закрытие позиций в конце торгового дня (EOD). Финрез: -180.25',
         ruleKind: 'other',
+        finRes: eodFinRes,
       });
     }
 

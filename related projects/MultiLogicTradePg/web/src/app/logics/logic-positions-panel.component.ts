@@ -89,6 +89,7 @@ import {
 } from './opt-grid';
 import { renderOptGridReportHtml } from './opt-grid-report';
 import { SecuritiesService } from '../services/securities.service';
+import { MonitoringService } from '../services/monitoring.service';
 import { lastValueFrom } from 'rxjs';
 
 
@@ -166,6 +167,7 @@ export class LogicPositionsPanelComponent implements OnChanges {
   private readonly logicsService = inject(LogicsService);
   private readonly securitiesApi = inject(SecuritiesService);
   private readonly cdr = inject(ChangeDetectorRef);
+  private readonly monitoring = inject(MonitoringService);
 
   /** Флаг построения отчёта (догрузка цен и индикаторов по бумагам, #848). */
   reportLoading = false;
@@ -1273,8 +1275,22 @@ export class LogicPositionsPanelComponent implements OnChanges {
     }
     if (this.reportLoading) return;
     const runId = this.backtestRun?.id ?? null;
+    const reportStartedAt = Date.now();
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.open();
+      win.document.write('<!doctype html><meta charset="utf-8"><title>Отчёт формируется...</title><body style="font-family:Segoe UI,Arial,sans-serif;padding:24px;color:#334155"><h2>Отчёт формируется...</h2><p>Пожалуйста, подождите.</p></body>');
+      win.document.close();
+    }
     this.reportLoading = true;
     this.cdr.markForCheck();
+    this.monitoring.reportClientEvent({
+      kind: 'report_build',
+      phase: 'start',
+      message: `Report build started for logic ${this.logicRow.id}`,
+      logicId: this.logicRow.id,
+      context: { runId, trades: this.trades.length, silent },
+    }).subscribe({ error: () => {} });
     try {
       let paramHistory: ParamHistoryEvent[] = [];
       try {
@@ -1283,16 +1299,14 @@ export class LogicPositionsPanelComponent implements OnChanges {
         );
         paramHistory = (res.rows || []) as ParamHistoryEvent[];
       } catch {
-        /* опциональный параметр — без него не блокируем отчёт */
+        /* optional */
       }
       let paperCharts: PaperReportChart[] = [];
       try {
         paperCharts = await this.loadReportPaperCharts();
       } catch (err) {
-        // Блоки по бумагам опциональны — отчёт обязателен к открытию (#855).
-        console.warn('Пер-бумажные блоки отчёта не загружены: %O', err);
+        console.warn('Per-paper charts report data not loaded: %O', err);
       }
-      // #1081: полный блок сигналов/стопов/параметров в отчёте теста.
       let logicConfig: {
         signals: LogicIndicatorSignalRow[];
         stops: LogicStopRow[];
@@ -1317,52 +1331,98 @@ export class LogicPositionsPanelComponent implements OnChanges {
           ),
         };
       } catch (err) {
-        console.warn('Конфигурация логики для отчёта не загружена: %O', err);
+        console.warn('Logic config for report not loaded: %O', err);
       }
-      const model = buildBacktestReportModel(this.logicRow, this.trades, {
-        backtestRun: this.backtestRun,
-        tradeLots: this.tradeLots,
-        paramHistory,
-        paperCharts,
-        signals: logicConfig?.signals,
-        stops: logicConfig?.stops,
-        paramsMap: logicConfig?.paramsMap,
-        configProvided: !!logicConfig,
-      });
-      const html = renderBacktestReportHtml(model);
-      const title = `Отчёт теста — ${model.logicName}`;
-      if (!openBacktestReportWindow(html, title)) {
-        if (!silent) {
-          alert(
-            'Не удалось открыть окно отчёта. Разрешите всплывающие окна для этого сайта.'
-          );
-        }
+      // Let browser paint placeholder and reduce contention with current page.
+      await new Promise<void>((r) => setTimeout(r, 30));
+      this.cdr.detach();
+      let html = '';
+      try {
+        const model = buildBacktestReportModel(this.logicRow, this.trades, {
+          backtestRun: this.backtestRun,
+          tradeLots: this.tradeLots,
+          paramHistory,
+          paperCharts,
+          signals: logicConfig?.signals,
+          stops: logicConfig?.stops,
+          paramsMap: logicConfig?.paramsMap,
+          configProvided: !!logicConfig,
+        });
+        await new Promise<void>((r) => setTimeout(r, 0));
+        html = renderBacktestReportHtml(model);
+      } finally {
+        this.cdr.reattach();
       }
+      if (!win || win.closed) {
+        this.monitoring.reportClientEvent({
+          kind: 'report_build',
+          phase: 'error',
+          level: 'error',
+          message: `Report build failed for logic ${this.logicRow.id}: popup blocked or closed`,
+          logicId: this.logicRow.id,
+          context: { runId, durationMs: Date.now() - reportStartedAt },
+        }).subscribe({ error: () => {} });
+        alert('Не удалось открыть окно отчёта. Разрешите всплывающие окна для этого сайта.');
+        return;
+      }
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      try { win.focus(); } catch {}
+      this.monitoring.reportClientEvent({
+        kind: 'report_build',
+        phase: 'done',
+        level: 'success',
+        message: `Report build completed for logic ${this.logicRow.id} in ${Date.now() - reportStartedAt}ms`,
+        logicId: this.logicRow.id,
+        context: { runId, durationMs: Date.now() - reportStartedAt, trades: this.trades.length },
+      }).subscribe({ error: () => {} });
     } catch (err) {
-      console.error('Ошибка формирования отчёта теста: %O', err);
-      if (!silent) {
-        const msg =
-          err instanceof Error ? err.message : String(err);
-        alert(`Не удалось сформировать отчёт: ${msg}`);
-      }
+      console.error('Ошибка формирования отчёта: %O', err);
+      try { if (win && !win.closed) win.close(); } catch {}
+      this.monitoring.reportClientEvent({
+        kind: 'report_build',
+        phase: 'error',
+        level: 'error',
+        message: `Report build failed for logic ${this.logicRow.id}`,
+        detail: err instanceof Error ? `${err.message}\n${err.stack ?? ''}` : String(err),
+        logicId: this.logicRow.id,
+        context: { runId, durationMs: Date.now() - reportStartedAt },
+      }).subscribe({ error: () => {} });
+      if (!silent) alert('Не удалось сформировать отчёт. Проверьте консоль браузера.');
     } finally {
       this.reportLoading = false;
       this.cdr.markForCheck();
     }
   }
 
-  /** Пер-бумажные блоки отчёта: цены, индикаторы, сделки, FIFO-лоты (#848). */
+  /** ���-�������� ����� ������: ����, ����������, ������, FIFO-���� (#848). */
   private async loadReportPaperCharts(): Promise<PaperReportChart[]> {
     const from = this.backtestRun?.date_from ?? this.testPeriodFrom ?? null;
     const to = this.backtestRun?.date_to ?? this.testPeriodTo ?? null;
     const tf = this.reportChartTimeframe();
     if (tf == null) return [];
-    const papers = papersWithTrades(this.trades, from, to, this.pinnedPaper);
-    const charts: PaperReportChart[] = [];
-    for (const p of papers.slice(0, REPORT_MAX_PAPERS)) {
-      charts.push(await this.loadReportPaperChart(Number(p.security_id), p, tf, from, to));
-    }
-    return charts;
+    const papers = papersWithTrades(this.trades, from, to, this.pinnedPaper).slice(
+      0,
+      REPORT_MAX_PAPERS
+    );
+    const out: Array<PaperReportChart | null> = new Array(papers.length).fill(null);
+    const concurrency = Math.min(4, papers.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < papers.length) {
+        const i = next++;
+        const p = papers[i];
+        try {
+          out[i] = await this.loadReportPaperChart(Number(p.security_id), p, tf, from, to);
+        } catch (err) {
+          console.warn('Per-paper report chart failed: %O', err);
+          out[i] = null;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    return out.filter((c): c is PaperReportChart => c != null);
   }
 
   private reportChartTimeframe(): number | null {

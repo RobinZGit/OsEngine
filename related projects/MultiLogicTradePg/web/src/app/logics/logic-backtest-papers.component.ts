@@ -96,8 +96,22 @@ interface PaperChartState {
   suppressIndicators: boolean;
   syncGen: number;
   lastRangeKey: string;
-  /** Индикаторы уже подгружали после первой порции свечей. */
+  /** ��������� ��� ���������� ����� ������ ������� ������. */
   indicatorsBootstrapped: boolean;
+  sliderIndex: number;
+  playSpeed: number;
+  playTimer: ReturnType<typeof setInterval> | null;
+  popup: PaperPopup | null;
+  popupTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface PaperPopup {
+  kind: 'open' | 'close';
+  side: 'long' | 'short';
+  title: string;
+  detail: string;
+  finRes?: number;
+  accumulatedFinRes: number;
 }
 
 const EMPTY_SERIES: ChartIndicatorSeries[] = [];
@@ -198,6 +212,10 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     this.subs.unsubscribe();
     this.markPriceSubs.unsubscribe();
     for (const t of this.rangeTimers.values()) clearTimeout(t);
+    for (const st of this.charts.values()) {
+      if (st.playTimer) clearInterval(st.playTimer);
+      if (st.popupTimer) clearTimeout(st.popupTimer);
+    }
   }
 
   togglePapersBlock(event: Event): void {
@@ -225,6 +243,8 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
       if (st) {
         st.loading = false;
         st.loadingOlder = false;
+        this.paperStopPlay(securityId);
+        this.paperHidePopup(securityId);
       }
       this.techLog.event(
         this.techLog.logicThreadKey(this.logicId ?? 0, 'paper'),
@@ -352,6 +372,248 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     this.cdr.detectChanges();
   }
 
+  // --- Paper playback slider ---
+  paperSliderMax(securityId: number): number {
+    return Math.max(0, this.chartState(securityId).candles.length - 1);
+  }
+
+  paperSliderValue(securityId: number): number {
+    const st = this.chartState(securityId);
+    return Math.max(0, Math.min(this.paperSliderMax(securityId), st.sliderIndex));
+  }
+
+  paperCurrentDt(securityId: number): string {
+    const st = this.chartState(securityId);
+    const c = st.candles[this.paperSliderValue(securityId)];
+    return c ? this.fmtPaperDt(c.dt) : '-';
+  }
+
+  paperCurrentPrice(securityId: number): string {
+    const st = this.chartState(securityId);
+    const c = st.candles[this.paperSliderValue(securityId)];
+    return c ? Number(c.close_price).toFixed(2) : '-';
+  }
+
+  paperAccumulatedFinRes(securityId: number): number {
+    const st = this.chartState(securityId);
+    const idx = this.paperSliderValue(securityId);
+    const dt = st.candles[idx]?.dt;
+    if (!dt) return 0;
+    const key = this.dtNum(dt);
+    const pts = this.overlays(securityId).equity;
+    let last = 0;
+    for (const p of pts) {
+      if (this.dtNum(p.dt) <= key) last = Number(p.value) || 0;
+      else break;
+    }
+    if (pts.length === 0) {
+      // fallback from markers - no finres amount, keep 0
+      return 0;
+    }
+    return last;
+  }
+
+  formatFinRes(value: number): string {
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${Number(value).toFixed(2)}`;
+  }
+
+  finResClass(value: number): string {
+    if (value > 0) return 'finres-pos';
+    if (value < 0) return 'finres-neg';
+    return 'finres-zero';
+  }
+
+  private fmtPaperDt(dt: string): string {
+    return String(dt || '').replace('T', ' ').slice(0, 16);
+  }
+
+  private dtNum(dt: string): number {
+    const t = new Date(dt).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  paperOnSliderChange(securityId: number, value: number): void {
+    const st = this.chartState(securityId);
+    const prev = this.paperSliderValue(securityId);
+    st.sliderIndex = Math.max(0, Math.min(this.paperSliderMax(securityId), Number(value)));
+    this.paperSyncSlider(securityId, prev);
+  }
+
+  paperStep(securityId: number, delta: number): void {
+    this.paperStopPlay(securityId);
+    const st = this.chartState(securityId);
+    const prev = this.paperSliderValue(securityId);
+    st.sliderIndex = Math.max(0, Math.min(this.paperSliderMax(securityId), prev + delta));
+    this.paperSyncSlider(securityId, prev);
+  }
+
+  paperToStart(securityId: number): void {
+    this.paperStopPlay(securityId);
+    const st = this.chartState(securityId);
+    const prev = this.paperSliderValue(securityId);
+    st.sliderIndex = 0;
+    this.paperSyncSlider(securityId, prev);
+  }
+
+  paperToEnd(securityId: number): void {
+    this.paperStopPlay(securityId);
+    const st = this.chartState(securityId);
+    const prev = this.paperSliderValue(securityId);
+    st.sliderIndex = this.paperSliderMax(securityId);
+    this.paperSyncSlider(securityId, prev);
+  }
+
+  paperTogglePlay(securityId: number): void {
+    const st = this.chartState(securityId);
+    if (st.playSpeed > 0) {
+      this.paperStopPlay(securityId);
+      this.bumpChartView();
+      return;
+    }
+    st.playSpeed = 1;
+    st.playTimer = setInterval(() => {
+      const cur = this.paperSliderValue(securityId);
+      const max = this.paperSliderMax(securityId);
+      if (cur >= max) {
+        this.paperStopPlay(securityId);
+        this.bumpChartView();
+        return;
+      }
+      st.sliderIndex = cur + 1;
+      this.paperSyncSlider(securityId, cur, false);
+    }, 220);
+    this.bumpChartView();
+  }
+
+  paperStopPlay(securityId: number): void {
+    const st = this.chartState(securityId);
+    st.playSpeed = 0;
+    if (st.playTimer) {
+      clearInterval(st.playTimer);
+      st.playTimer = null;
+    }
+  }
+
+  paperHidePopup(securityId: number): void {
+    const st = this.chartState(securityId);
+    st.popup = null;
+    if (st.popupTimer) {
+      clearTimeout(st.popupTimer);
+      st.popupTimer = null;
+    }
+  }
+
+  private paperSyncSlider(securityId: number, prevIndex?: number, detect = true): void {
+    const st = this.chartState(securityId);
+    const idx = this.paperSliderValue(securityId);
+    st.sliderIndex = idx;
+    st.focusDt = st.candles[idx]?.dt ?? st.focusDt;
+    if (detect && prevIndex !== undefined && prevIndex !== idx) {
+      this.paperShowPopupForIndex(securityId, idx, prevIndex);
+    } else if (prevIndex === undefined) {
+      this.paperHidePopup(securityId);
+    }
+    this.bumpChartView();
+  }
+
+  private paperShowPopupForIndex(securityId: number, index: number, prevIndex?: number): void {
+    const st = this.chartState(securityId);
+    const dt = st.candles[index]?.dt;
+    if (!dt) return;
+    const key = this.dtNum(dt);
+    const markers = this.overlays(securityId).markers.filter((m) => this.dtNum(m.dt) === key);
+    if (markers.length === 0) return;
+    const e = prevIndex != null && index < prevIndex ? markers[0] : markers[markers.length - 1];
+    const isOpen = e.kind === 'open';
+    const sideText = e.side === 'long' ? 'LONG' : 'SHORT';
+    const acc = this.paperAccumulatedFinRes(securityId);
+    // estimate trade finres as equity delta around close
+    let finRes: number | undefined;
+    if (!isOpen) {
+      const eq = this.overlays(securityId).equity;
+      const at = eq.findIndex((p) => this.dtNum(p.dt) === key);
+      if (at > 0) finRes = Number(eq[at].value) - Number(eq[at - 1].value);
+      else if (at === 0) finRes = Number(eq[0].value);
+      else finRes = undefined;
+    }
+    st.popup = {
+      kind: e.kind,
+      side: e.side,
+      title: isOpen ? `Бац! Вошли в сделку ${sideText}` : `Бац! Вышли из сделки ${sideText}`,
+      detail: isOpen
+        ? `${e.label || (e.side === 'long' ? 'Вход L' : 'Вход S')} · ${this.fmtPaperDt(dt)}`
+        : `${e.label || (e.side === 'long' ? 'Выход L' : 'Выход S')} · Финрез: ${this.formatFinRes(Number(finRes ?? 0))}`,
+      finRes,
+      accumulatedFinRes: acc,
+    };
+    if (st.popupTimer) clearTimeout(st.popupTimer);
+    st.popupTimer = setTimeout(() => {
+      st.popup = null;
+      st.popupTimer = null;
+      this.bumpChartView();
+    }, 2600);
+  }
+
+  paperVisibleMarkers(securityId: number): ChartTradeMarker[] {
+    const st = this.chartState(securityId);
+    const dt = st.candles[this.paperSliderValue(securityId)]?.dt;
+    if (!dt) return this.overlays(securityId).markers;
+    const key = this.dtNum(dt);
+    return this.overlays(securityId).markers.filter((m) => this.dtNum(m.dt) <= key);
+  }
+
+  paperVisibleStops(securityId: number): ChartStopMarker[] {
+    const st = this.chartState(securityId);
+    const dt = st.candles[this.paperSliderValue(securityId)]?.dt;
+    if (!dt) return this.overlays(securityId).stops;
+    const key = this.dtNum(dt);
+    return this.overlays(securityId).stops.filter((m) => this.dtNum(m.dt) <= key);
+  }
+
+  paperVisibleEquity(securityId: number): ChartEquityPoint[] {
+    const st = this.chartState(securityId);
+    const dt = st.candles[this.paperSliderValue(securityId)]?.dt;
+    if (!dt) return this.overlays(securityId).equity;
+    const key = this.dtNum(dt);
+    return this.overlays(securityId).equity.filter((p) => this.dtNum(p.dt) <= key);
+  }
+
+  paperVisibleEquityLong(securityId: number): ChartEquityPoint[] {
+    const st = this.chartState(securityId);
+    const dt = st.candles[this.paperSliderValue(securityId)]?.dt;
+    if (!dt) return this.overlays(securityId).equityLong;
+    const key = this.dtNum(dt);
+    return this.overlays(securityId).equityLong.filter((p) => this.dtNum(p.dt) <= key);
+  }
+
+  paperVisibleEquityShort(securityId: number): ChartEquityPoint[] {
+    const st = this.chartState(securityId);
+    const dt = st.candles[this.paperSliderValue(securityId)]?.dt;
+    if (!dt) return this.overlays(securityId).equityShort;
+    const key = this.dtNum(dt);
+    return this.overlays(securityId).equityShort.filter((p) => this.dtNum(p.dt) <= key);
+  }
+
+  paperVisibleEquityShadow(securityId: number): ChartEquityPoint[] {
+    const st = this.chartState(securityId);
+    const dt = st.candles[this.paperSliderValue(securityId)]?.dt;
+    if (!dt) return this.overlays(securityId).equityShadow;
+    const key = this.dtNum(dt);
+    return this.overlays(securityId).equityShadow.filter((p) => this.dtNum(p.dt) <= key);
+  }
+
+  paperFocusDt(securityId: number): string | null {
+    const st = this.chartState(securityId);
+    const c = st.candles[this.paperSliderValue(securityId)];
+    return c?.dt ?? st.focusDt;
+  }
+
+  paperSliderActive(securityId: number): boolean {
+    return this.chartState(securityId).candles.length > 0;
+  }
+
+
   chartState(securityId: number): PaperChartState {
     let st = this.charts.get(securityId);
     if (!st) {
@@ -368,6 +630,11 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
         syncGen: 0,
         lastRangeKey: '',
         indicatorsBootstrapped: false,
+        sliderIndex: 0,
+        playSpeed: 0,
+        playTimer: null,
+        popup: null,
+        popupTimer: null,
       };
       this.charts.set(securityId, st);
     }
@@ -569,6 +836,8 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
       const st = this.charts.get(securityId);
       if (!st) continue;
       if (opts.reloadCharts) {
+        this.paperStopPlay(securityId);
+        this.paperHidePopup(securityId);
         st.candles = [];
         st.indicatorSeries = EMPTY_SERIES;
         st.lastRangeKey = '';
@@ -576,6 +845,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
         st.error = null;
         st.loading = false;
         st.indicatorsBootstrapped = false;
+        st.sliderIndex = 0;
         this.ensureChartLoaded(securityId);
         continue;
       }
@@ -828,15 +1098,18 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     st.hasMore = rows.length >= INITIAL_CANDLES - 5;
     st.loading = false;
     st.loadingOlder = false;
+    st.sliderIndex = Math.max(0, clipped.length - 1);
+    this.paperHidePopup(securityId);
     const ov = this.overlays(securityId);
     st.error = clipped.length === 0 ? 'В БД нет свечей для этой бумаги / таймфрейма' : null;
     st.status =
       clipped.length > 0
-        ? `${clipped.length} свечей · сделок: ${ov.markers.length} · стопов: ${ov.stops.length}`
+        ? `${clipped.length} свечей · сделки: ${ov.markers.length} · стопы: ${ov.stops.length}`
         : null;
     if (!st.focusDt && ov.markers.length > 0) {
       st.focusDt = ov.markers[0].dt;
     }
+    st.focusDt = st.candles[st.sliderIndex]?.dt ?? st.focusDt;
     this.charts.set(securityId, st);
     this.bumpChartView();
     if (opts.loadIndicators && clipped.length > 0 && !st.indicatorsBootstrapped) {

@@ -39,6 +39,8 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 SetupLogging=yes
+; Node/PostgreSQL installers run with /norestart; suppress Inno restart prompt caused by PendingFileRenameOperations.
+RestartIfNeededByRun=no
 ; Иконка приложения: Setup.exe, ярлыки и «Программы и компоненты».
 SetupIconFile=MultiLogicTrade.ico
 UninstallDisplayIcon={app}\MultiLogicTrade.ico

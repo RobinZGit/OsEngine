@@ -108,17 +108,47 @@
                       <p class="paper-chart-status">Загрузка графика…</p>
                     }
                     @if (hasChartCandles(paper.security_id)) {
-                      <div class="paper-chart-host">
+                      <div class="paper-playback">
+                        <div class="paper-finres-row">
+                          <div class="paper-finres" [ngClass]="finResClass(paperAccumulatedFinRes(paper.security_id))">
+                            <span class="paper-finres-label">Накопленный финрез</span>
+                            <span class="paper-finres-value">{{ formatFinRes(paperAccumulatedFinRes(paper.security_id)) }}</span>
+                          </div>
+                          <div class="paper-pos">
+                            <span>{{ paperSliderValue(paper.security_id) + 1 }} / {{ paperSliderMax(paper.security_id) + 1 }}</span>
+                            <span class="paper-dt">{{ paperCurrentDt(paper.security_id) }}</span>
+                            <span class="paper-price">{{ paperCurrentPrice(paper.security_id) }}</span>
+                          </div>
+                        </div>
+                        <div class="paper-slider-row">
+                          <button type="button" class="viz-btn" (click)="paperToStart(paper.security_id)" title="В начало">|&#9664;</button>
+                          <button type="button" class="viz-btn" (click)="paperStep(paper.security_id, -1)" title="Шаг назад">&#9664;</button>
+                          <button type="button" class="viz-btn viz-play" (click)="paperTogglePlay(paper.security_id)" [title]="chartState(paper.security_id).playSpeed > 0 ? 'Пауза' : 'Воспроизвести'">
+                            {{ chartState(paper.security_id).playSpeed > 0 ? '&#9208;' : '&#9654;' }}
+                          </button>
+                          <button type="button" class="viz-btn" (click)="paperStep(paper.security_id, 1)" title="Шаг вперёд">&#9654;</button>
+                          <button type="button" class="viz-btn" (click)="paperToEnd(paper.security_id)" title="В конец">&#9654;|</button>
+                          <input
+                            class="viz-slider"
+                            type="range"
+                            min="0"
+                            [max]="paperSliderMax(paper.security_id)"
+                            [value]="paperSliderValue(paper.security_id)"
+                            (input)="paperOnSliderChange(paper.security_id, +$any($event.target).value)"
+                          />
+                        </div>
+                      </div>
+                      <div class="paper-chart-host paper-chart-host-playback">
                         <app-price-chart
                           [title]="paper.security_prefix || paper.security_name"
                           [securityId]="paper.security_id"
                           [candles]="chartState(paper.security_id).candles"
                           [indicatorSeries]="chartIndicatorsForDisplay(paper.security_id)"
-                          [tradeMarkers]="overlays(paper.security_id).markers"
-                          [stopMarkers]="overlays(paper.security_id).stops"
+                          [tradeMarkers]="paperVisibleMarkers(paper.security_id)"
+                          [stopMarkers]="paperVisibleStops(paper.security_id)"
                           [shadedRanges]="overlays(paper.security_id).shaded"
-                          [equityPoints]="overlays(paper.security_id).equity"
-                          [focusDt]="chartState(paper.security_id).focusDt"
+                          [equityPoints]="paperVisibleEquity(paper.security_id)"
+                          [focusDt]="paperFocusDt(paper.security_id)"
                           focusAlign="start"
                           [loading]="false"
                           [loadingOlder]="chartState(paper.security_id).loadingOlder"
@@ -127,16 +157,28 @@
                           (loadOlder)="onLoadOlder(paper.security_id)"
                           (visibleRangeChange)="onVisibleRange(paper.security_id, $event)"
                         />
+                        @if (chartState(paper.security_id).popup; as pp) {
+                          <div class="viz-popup" [ngClass]="pp.kind === 'open' ? 'viz-popup-open' : 'viz-popup-close'">
+                            <div class="viz-popup-title">{{ pp.title }}</div>
+                            <div class="viz-popup-detail">{{ pp.detail }}</div>
+                            @if (pp.kind === 'close') {
+                              <div class="viz-popup-finres" [ngClass]="finResClass(pp.finRes ?? 0)">
+                                Финрез сделки: {{ formatFinRes(pp.finRes ?? 0) }}
+                              </div>
+                              <div class="viz-popup-acc">Накопленный: {{ formatFinRes(pp.accumulatedFinRes) }}</div>
+                            }
+                          </div>
+                        }
                       </div>
                       <p class="paper-chart-legend">
                         ▲▼ вход/выход · SL/TP ·
-                        <span class="leg-swatch leg-normal">▮</span> обычная ·
-                        <span class="leg-swatch leg-shadow">▮</span> shadow ·
-                        <span class="leg-swatch leg-inverted">▮</span> инверсия ·
-                        полоса PnL внизу · ⟸сд./сд.⟹ · ⛶
+                        <span class="leg-swatch leg-normal">■</span> обычная ·
+                        <span class="leg-swatch leg-shadow">■</span> shadow ·
+                        <span class="leg-swatch leg-inverted">■</span> инверт ·
+                        линия PnL слева · ▷с./◁п. · ○
                       </p>
                     }
-                    @if (
+@if (
                       paper.underlying_security_id &&
                       paper.underlying_security_id !== paper.security_id &&
                       hasChartCandles(paper.underlying_security_id)
@@ -145,7 +187,37 @@
                         Базовый актив:
                         {{ paper.underlying_prefix || paper.underlying_security_name }}
                       </p>
-                      <div class="paper-chart-host">
+                      <div class="paper-playback">
+                        <div class="paper-finres-row">
+                          <div class="paper-finres" [ngClass]="finResClass(paperAccumulatedFinRes(paper.underlying_security_id))">
+                            <span class="paper-finres-label">Накопленный финрез</span>
+                            <span class="paper-finres-value">{{ formatFinRes(paperAccumulatedFinRes(paper.underlying_security_id)) }}</span>
+                          </div>
+                          <div class="paper-pos">
+                            <span>{{ paperSliderValue(paper.underlying_security_id) + 1 }} / {{ paperSliderMax(paper.underlying_security_id) + 1 }}</span>
+                            <span class="paper-dt">{{ paperCurrentDt(paper.underlying_security_id) }}</span>
+                            <span class="paper-price">{{ paperCurrentPrice(paper.underlying_security_id) }}</span>
+                          </div>
+                        </div>
+                        <div class="paper-slider-row">
+                          <button type="button" class="viz-btn" (click)="paperToStart(paper.underlying_security_id!)" title="В начало">|&#9664;</button>
+                          <button type="button" class="viz-btn" (click)="paperStep(paper.underlying_security_id!, -1)" title="Шаг назад">&#9664;</button>
+                          <button type="button" class="viz-btn viz-play" (click)="paperTogglePlay(paper.underlying_security_id!)" [title]="chartState(paper.underlying_security_id!).playSpeed > 0 ? 'Пауза' : 'Воспроизвести'">
+                            {{ chartState(paper.underlying_security_id!).playSpeed > 0 ? '&#9208;' : '&#9654;' }}
+                          </button>
+                          <button type="button" class="viz-btn" (click)="paperStep(paper.underlying_security_id!, 1)" title="Шаг вперёд">&#9654;</button>
+                          <button type="button" class="viz-btn" (click)="paperToEnd(paper.underlying_security_id!)" title="В конец">&#9654;|</button>
+                          <input
+                            class="viz-slider"
+                            type="range"
+                            min="0"
+                            [max]="paperSliderMax(paper.underlying_security_id!)"
+                            [value]="paperSliderValue(paper.underlying_security_id!)"
+                            (input)="paperOnSliderChange(paper.underlying_security_id!, +$any($event.target).value)"
+                          />
+                        </div>
+                      </div>
+                      <div class="paper-chart-host paper-chart-host-playback">
                         <app-price-chart
                           [title]="
                             'База: ' +
@@ -158,7 +230,7 @@
                           [stopMarkers]="[]"
                           [shadedRanges]="[]"
                           [equityPoints]="[]"
-                          [focusDt]="chartState(paper.underlying_security_id).focusDt"
+                          [focusDt]="paperFocusDt(paper.underlying_security_id!)"
                           focusAlign="start"
                           [loading]="false"
                           [loadingOlder]="chartState(paper.underlying_security_id).loadingOlder"
@@ -167,10 +239,22 @@
                           (loadOlder)="onLoadOlder(paper.underlying_security_id!)"
                           (visibleRangeChange)="onVisibleRange(paper.underlying_security_id!, $event)"
                         />
+                        @if (chartState(paper.underlying_security_id!).popup; as pp) {
+                          <div class="viz-popup" [ngClass]="pp.kind === 'open' ? 'viz-popup-open' : 'viz-popup-close'">
+                            <div class="viz-popup-title">{{ pp.title }}</div>
+                            <div class="viz-popup-detail">{{ pp.detail }}</div>
+                            @if (pp.kind === 'close') {
+                              <div class="viz-popup-finres" [ngClass]="finResClass(pp.finRes ?? 0)">
+                                Финрез сделки: {{ formatFinRes(pp.finRes ?? 0) }}
+                              </div>
+                              <div class="viz-popup-acc">Накопленный: {{ formatFinRes(pp.accumulatedFinRes) }}</div>
+                            }
+                          </div>
+                        }
                       </div>
                     }
 
-                  @if (logicId) {
+                    @if (logicId) {
                     <app-logic-backtest-ratings
                       [logicId]="logicId"
                       [securityId]="paper.security_id"

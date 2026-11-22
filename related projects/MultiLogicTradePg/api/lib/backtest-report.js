@@ -1450,6 +1450,27 @@ function renderBacktestReportHtml(model) {
     .paper-body { padding:.85rem .9rem; }
     .paper-body h3 { margin:.9rem 0 .5rem; font-size:.88rem; font-weight:700; }
     .paper-hint { margin:.4rem 0 0; font-size:.78rem; }
+    
+    
+    .pp-btn { border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 6px; padding: 0.2rem 0.45rem; font-size: 0.75rem; cursor: pointer; }
+    .pp-btn:hover { background: #f1f5f9; }
+    .pp-btn-trade { white-space: nowrap; }
+    .pp-playback { margin: 0.5rem 0 0.4rem; padding: 0.45rem 0.6rem; border: 1px solid #dbeafe; background: #f8fafc; border-radius: 8px; }
+    .pp-playback-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .pp-playback-label { font-size: 0.75rem; color: #6b7280; font-weight: 600; }
+    .pp-playback-slider { flex: 1 1 220px; min-width: 160px; }
+    .pp-playback-dt { font-size: 0.78rem; color: #334155; font-variant-numeric: tabular-nums; min-width: 130px; }
+    .pp-playback-finres { font-size: 0.82rem; font-weight: 700; font-variant-numeric: tabular-nums; color: #0f172a; }
+    .pp-playback-finres.pos { color: #059669; }
+    .pp-playback-finres.neg { color: #dc2626; }
+    .pp-playback-event { margin-top: 0.35rem; font-size: 0.78rem; min-height: 1.2em; }
+    .pp-ev { display: inline-block; padding: 0.15rem 0.45rem; border-radius: 999px; font-weight: 600; margin-right: 0.3rem; }
+    .pp-ev-enter { background: #dcfce7; color: #166534; }
+    .pp-ev-exit { background: #fee2e2; color: #991b1b; }
+    .pp-pnl { font-weight: 800; font-size: 1.08em; padding: 0.05rem 0.35rem; border-radius: 4px; margin-left: 0.15rem; display: inline-block; }
+    .pp-pnl-pos { color: #166534; background: #86efac; }
+    .pp-pnl-neg { color: #fff; background: #ef4444; box-shadow: 0 0 0 1px #dc2626 inset; }
+
     .pchart-toolbar { display:flex; align-items:center; justify-content:flex-end; margin-bottom:.45rem; }
     .pchart-toggle { display:inline-flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--muted); cursor:pointer; user-select:none; }
     .pchart-legend { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem 1rem; margin-top:.5rem; font-size:.76rem; color:#334155; }
@@ -1542,6 +1563,189 @@ function renderBacktestReportHtml(model) {
     <p class="foot">MultiLogic Trade · архив отчёта теста · PostgreSQL</p>
   </div>
   <script>
+    
+    window.__ppState = window.__ppState || {};
+    function reportPaperNormDt(dt) {
+      var s = String(dt || '').trim().replace('T', ' ');
+      var m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+      if (m) return m[1] + ' ' + m[2];
+      var ms = Date.parse(String(dt || '').replace(' ', 'T'));
+      if (!isFinite(ms)) return s.slice(0, 16);
+      var d = new Date(ms);
+      var pad = function(n){ return String(n).padStart(2,'0'); };
+      return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+    }
+    function reportPaperCloseReason(tradeReason, signalFormula) {
+      var reason = String(tradeReason || '').trim();
+      var formula = String(signalFormula || '').trim();
+      if (reason === 'eod.close' || formula === 'backtest:close') return 'EOD / конец теста (backtest:close)';
+      if (/stop.?loss/i.test(reason) || /stop.?loss/i.test(formula)) return 'Стоп-лосс' + (formula ? ': ' + formula : reason ? ': ' + reason : '');
+      if (/take.?profit/i.test(reason) || /take.?profit/i.test(formula)) return 'Тейк-профит' + (formula ? ': ' + formula : reason ? ': ' + reason : '');
+      if (formula) return 'Сигнал: ' + formula;
+      if (reason) return reason;
+      return '';
+    }
+    function reportPaperEventLabel(ev) {
+      var isOpen = ev.side === 'Open';
+      var cls = isOpen ? 'pp-ev pp-ev-enter' : 'pp-ev pp-ev-exit';
+      var label = isOpen ? 'Бац, вошли в сделку' : 'Бац, вышли из сделки';
+      var price = (ev.price != null && isFinite(Number(ev.price))) ? ' @ ' + Number(ev.price).toFixed(2) : '';
+      var qty = (ev.qty != null && isFinite(Number(ev.qty)) && Number(ev.qty) !== 0) ? ' qty ' + Number(ev.qty) : '';
+      var action = ev.action ? ' ' + ev.action : '';
+      var reason = (!isOpen && ev.reason) ? ' · ' + ev.reason : '';
+      var pnlHtml = '';
+      if (!isOpen && ev.pnl != null && isFinite(Number(ev.pnl))) {
+        var pnlV = Number(ev.pnl);
+        var pnlCls = pnlV >= 0 ? 'pp-pnl pp-pnl-pos' : 'pp-pnl pp-pnl-neg';
+        var sign = pnlV > 0 ? '+' : '';
+        pnlHtml = ' <span class="' + pnlCls + '">Фин. рез: ' + sign + pnlV.toFixed(2) + '</span>';
+      }
+      return '<span class="' + cls + '">' + label + action + qty + price + reason + pnlHtml + '</span>';
+    }
+    function reportPaperGetData(index) {
+      var st = window.__ppState[index];
+      if (st && st.data) return st.data;
+      var dataEl = document.getElementById('ppdata-' + index) || document.getElementById('ppd-' + index);
+      if (!dataEl) return null;
+      var data;
+      try { data = JSON.parse(dataEl.textContent || '{}'); } catch (e) { return null; }
+      var points = data.points || [];
+      var events = data.events || [];
+      if (!points.length && Array.isArray(data.c)) {
+        var eqMap = {};
+        (data.eq || data.esh || []).forEach(function(p){ if (p && p.length>=2) eqMap[p[0]] = Number(p[1])||0; });
+        var lastEq = 0;
+        points = data.c.map(function(c){
+          var t = c[0]; if (eqMap[t] != null) lastEq = eqMap[t];
+          return { dt: reportPaperNormDt(t), eq: lastEq };
+        });
+        events = (data.mk || []).map(function(m){
+          var side = m[1]==='open'?'Open':'Close';
+          return { dt: reportPaperNormDt(m[0]), side: side, action: m[3]==='short'?'Short':'Long', qty: 0, price: m[2], pnl: m[5] != null ? Number(m[5]) : null, reason: side === 'Close' ? reportPaperCloseReason(m[6], m[7]) : '' };
+        });
+      } else {
+        points = points.map(function(p){ return { dt: reportPaperNormDt(p.dt), eq: Number(p.eq)||0 }; });
+        events = events.map(function(ev){ return Object.assign({}, ev, { dt: reportPaperNormDt(ev.dt) }); });
+      }
+      var dtToIdx = {};
+      points.forEach(function(p, i){ if (p.dt) dtToIdx[p.dt] = i; });
+      var eventIndices = [];
+      var eventsByIdx = {};
+      events.forEach(function(ev){
+        var i = dtToIdx[ev.dt];
+        if (i == null) return;
+        if (!eventsByIdx[i]) { eventsByIdx[i] = []; eventIndices.push(i); }
+        eventsByIdx[i].push(ev);
+      });
+      eventIndices.sort(function(a,b){ return a-b; });
+      Object.keys(eventsByIdx).forEach(function(k){
+        eventsByIdx[k].sort(function(a,b){ return (a.side === 'Open' ? 0 : 1) - (b.side === 'Open' ? 0 : 1); });
+      });
+      var out = { points: points, events: events, eventIndices: eventIndices, eventsByIdx: eventsByIdx };
+      window.__ppState[index] = Object.assign(window.__ppState[index] || {}, { data: out });
+      return out;
+    }
+    function reportPaperRender(index, idx, opts) {
+      opts = opts || {};
+      var st = window.__ppState[index] = window.__ppState[index] || {};
+      var data = reportPaperGetData(index);
+      if (!data || !data.points.length) return;
+      idx = Math.max(0, Math.min(idx, data.points.length - 1));
+      var prevIdx = st.lastIdx == null ? idx : st.lastIdx;
+      st.lastIdx = idx;
+      var p = data.points[idx];
+      var dtEl = document.getElementById('ppdt-' + index);
+      var frEl = document.getElementById('ppfr-' + index);
+      var evEl = document.getElementById('ppev-' + index);
+      if (dtEl) dtEl.textContent = p.dt || '—';
+      if (frEl) {
+        var v = Number(p.eq) || 0;
+        frEl.textContent = 'П/У: ' + v.toFixed(2);
+        frEl.className = 'pp-playback-finres ' + (v >= 0 ? 'pos' : 'neg');
+      }
+      var chartEl = document.querySelector('[data-pp-index="' + index + '"]');
+      if (chartEl) {
+        var left = parseFloat(chartEl.getAttribute('data-pp-left') || '0');
+        var plotW = parseFloat(chartEl.getAttribute('data-pp-plotw') || '0');
+        var n = parseInt(chartEl.getAttribute('data-pp-n') || '1', 10);
+        if (plotW > 0) {
+          var x = left + (n > 1 ? (idx / (n - 1)) * plotW : plotW / 2);
+          ['ppcur-c-' + index, 'ppcur-l-' + index].forEach(function(id) {
+            var line = document.getElementById(id);
+            if (!line) return;
+            line.setAttribute('x1', String(x));
+            line.setAttribute('x2', String(x));
+            line.style.display = '';
+          });
+        }
+      }
+      var lo = Math.min(prevIdx, idx), hi = Math.max(prevIdx, idx);
+      var hitIdx = null;
+      var hitEvents = null;
+      for (var i = lo; i <= hi; i++) {
+        if (data.eventsByIdx[i]) { hitIdx = i; hitEvents = data.eventsByIdx[i]; }
+      }
+      if (opts.forceEventIdx != null && data.eventsByIdx[opts.forceEventIdx]) {
+        hitIdx = opts.forceEventIdx; hitEvents = data.eventsByIdx[opts.forceEventIdx];
+      }
+      var now = Date.now();
+      if (hitEvents && hitEvents.length) {
+        st.lastEventHtml = '<div class="pp-ev-group">' + hitEvents.map(reportPaperEventLabel).join(' ') + '</div>';
+        st.holdUntil = now + 1200;
+        if (evEl) evEl.innerHTML = st.lastEventHtml;
+      } else if (evEl) {
+        if (st.holdUntil && now < st.holdUntil && !st.dragging) {
+          evEl.innerHTML = st.lastEventHtml || '';
+        } else if (st.dragging) {
+          st.holdUntil = 0; st.lastEventHtml = ''; evEl.innerHTML = '';
+        } else {
+          st.holdUntil = 0; st.lastEventHtml = ''; evEl.innerHTML = '';
+        }
+      }
+    }
+    function reportPaperSeek(index, value) {
+      reportPaperRender(index, parseInt(value, 10) || 0);
+    }
+    function reportPaperSetIdx(index, idx, forceEventIdx) {
+      var st = window.__ppState[index] = window.__ppState[index] || {};
+      st.curIdx = idx;
+      reportPaperRender(index, idx, forceEventIdx != null ? { forceEventIdx: forceEventIdx } : undefined);
+    }
+    function reportPaperSeekToEvent(index, dir) {
+      var data = reportPaperGetData(index);
+      if (!data) return;
+      var st = window.__ppState[index] = window.__ppState[index] || {};
+      var cur = st.curIdx != null ? st.curIdx : (data.points.length - 1);
+      var evs = data.eventIndices || [];
+      if (!evs.length) return;
+      var target = null;
+      if (dir > 0) { for (var i=0;i<evs.length;i++){ if (evs[i] > cur) { target = evs[i]; break; } } if (target == null) target = evs[evs.length - 1]; }
+      else { for (var j=evs.length-1;j>=0;j--){ if (evs[j] < cur) { target = evs[j]; break; } } if (target == null) target = evs[0]; }
+      reportPaperSetIdx(index, target, target);
+    }
+    function reportPaperSeekToEdge(index, dir) {
+      var data = reportPaperGetData(index);
+      if (!data) return;
+      var evs = data.eventIndices || [];
+      if (!evs.length) {
+        reportPaperSetIdx(index, dir > 0 ? data.points.length - 1 : 0, null);
+        return;
+      }
+      var target = dir > 0 ? evs[evs.length - 1] : evs[0];
+      reportPaperSetIdx(index, target, target);
+    }
+    function initReportPaperPlayback() {
+      document.querySelectorAll('[data-pp-playback]').forEach(function(el) {
+        var idx = parseInt(el.getAttribute('data-pp-playback') || '', 10);
+        if (!isFinite(idx)) return;
+        var data = reportPaperGetData(idx);
+        var max = data && data.points ? data.points.length - 1 : 0;
+        reportPaperSetIdx(idx, max, null);
+      });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initReportPaperPlayback);
+    else initReportPaperPlayback();
+
     function swapReportChart(chartId, lineId, toggleId) {
       var c = document.getElementById(chartId);
       var l = document.getElementById(lineId);

@@ -11,15 +11,26 @@
       <button type="button" class="viz-close" (click)="close()" aria-label="Закрыть">✕</button>
     </div>
 
-    <div class="viz-controls">
+        <div class="viz-controls">
+      <div class="viz-finres-row">
+        <div class="viz-finres" [ngClass]="finResClass(accumulatedFinRes)">
+          <span class="viz-finres-label">Накопленный финрез</span>
+          <span class="viz-finres-value">{{ formatFinRes(accumulatedFinRes) }}</span>
+        </div>
+        <div class="viz-pos">
+          <span>{{ sliderIndex + 1 }} / {{ maxIndex + 1 }}</span>
+          <span class="viz-dt">{{ currentDt() }}</span>
+          <span class="viz-price">{{ currentPrice() }}</span>
+        </div>
+      </div>
       <div class="viz-slider-row">
-        <button type="button" class="viz-btn" (click)="toStart()" title="В начало">|◀</button>
-        <button type="button" class="viz-btn" (click)="step(-1)" title="Шаг назад">◀</button>
+        <button type="button" class="viz-btn" (click)="toStart()" title="В начало">|&#9664;</button>
+        <button type="button" class="viz-btn" (click)="step(-1)" title="Шаг назад">&#9664;</button>
         <button type="button" class="viz-btn viz-play" (click)="togglePlay()" [title]="playSpeed > 0 ? 'Пауза' : 'Воспроизвести'">
-          {{ playSpeed > 0 ? '⏸' : '▶' }}
+          {{ playSpeed > 0 ? '&#9208;' : '&#9654;' }}
         </button>
-        <button type="button" class="viz-btn" (click)="step(1)" title="Шаг вперёд">▶</button>
-        <button type="button" class="viz-btn" (click)="toEnd()" title="В конец">▶|</button>
+        <button type="button" class="viz-btn" (click)="step(1)" title="Шаг вперёд">&#9654;</button>
+        <button type="button" class="viz-btn" (click)="toEnd()" title="В конец">&#9654;|</button>
         <input
           class="viz-slider"
           type="range"
@@ -28,11 +39,6 @@
           [value]="sliderIndex"
           (input)="onSliderChange($any($event.target).value)"
         />
-        <div class="viz-pos">
-          <span>{{ sliderIndex + 1 }} / {{ maxIndex + 1 }}</span>
-          <span class="viz-dt">{{ currentDt() }}</span>
-          <span class="viz-price">{{ currentPrice() }}</span>
-        </div>
       </div>
       <div class="viz-legend">
         <span class="leg leg-long">L+ вход лонг</span>
@@ -44,7 +50,7 @@
       </div>
     </div>
 
-    <div class="viz-chart-wrap">
+        <div class="viz-chart-wrap">
       <app-price-chart
         [candles]="visibleCandles"
         [tradeMarkers]="visibleTradeMarkers"
@@ -53,6 +59,18 @@
         [title]="'Условная бумага'"
         [showRecalcButton]="false"
       ></app-price-chart>
+      @if (popup) {
+        <div class="viz-popup" [ngClass]="popup.kind === 'open' ? 'viz-popup-open' : 'viz-popup-close'">
+          <div class="viz-popup-title">{{ popup.title }}</div>
+          <div class="viz-popup-detail">{{ popup.detail }}</div>
+          @if (popup.kind === 'close') {
+            <div class="viz-popup-finres" [ngClass]="finResClass(popup.finRes ?? 0)">
+              Финрез сделки: {{ formatFinRes(popup.finRes ?? 0) }}
+            </div>
+            <div class="viz-popup-acc">Накопленный: {{ formatFinRes(popup.accumulatedFinRes) }}</div>
+          }
+        </div>
+      }
     </div>
 
     <div class="viz-bottom">

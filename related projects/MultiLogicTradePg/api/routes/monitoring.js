@@ -281,4 +281,117 @@ module.exports = function registerMonitoringRoutes(app, ctx) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // Active hangs/stalls: long-running DB queries + recent hang/client events.
+  app.get('/api/monitoring/hangs', async (req, res) => {
+    const thresholdSec = Math.max(5, Math.min(parseId(req.query.thresholdSec) || 30, 3600));
+    const recentLimit = Math.min(parseId(req.query.limit) || 50, 200);
+    try {
+      const { rows: dbRows } = await pool.query(
+        `
+        SELECT
+          pid,
+          EXTRACT(EPOCH FROM (now() - query_start))::int AS duration_sec,
+          wait_event_type,
+          wait_event,
+          state,
+          application_name,
+          client_addr::text AS client_addr,
+          left(query, 500) AS query,
+          query_start
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND state <> 'idle'
+          AND query_start IS NOT NULL
+          AND now() - query_start >= make_interval(secs => $1)
+          AND query NOT ILIKE '%pg_stat_activity%'
+        ORDER BY query_start ASC
+        `,
+        [thresholdSec]
+      );
+
+      const classify = (q) => {
+        const s = String(q || '').toLowerCase();
+        if (s.includes('run_indicator_rating_test_safe')) return 'rating_test';
+        if (s.includes('logic_backtest') || s.includes('backtest')) return 'backtest';
+        if (s.includes('buildbacktestreport') || s.includes('report')) return 'report';
+        if (s.includes('prices') || s.includes('indicator_values')) return 'data_load';
+        return 'other';
+      };
+      const dbActive = dbRows.map((r) => ({
+        ...r,
+        duration_sec: Number(r.duration_sec) || 0,
+        kind: classify(r.query),
+      }));
+
+      const { rows: recentRows } = await pool.query(
+        `
+        SELECT
+          id, created_at, level, source, category, code, message, detail,
+          endpoint, http_status, method, logic_id, security_id, context
+        FROM app_error_log
+        WHERE created_at >= now() - interval '24 hours'
+          AND (
+            category IN ('hang', 'stall', 'report_build', 'web_hang')
+            OR code ILIKE 'HANG_%'
+            OR code ILIKE 'REPORT_BUILD_%'
+            OR code ILIKE 'WEB_HANG%'
+          )
+        ORDER BY created_at DESC, id DESC
+        LIMIT $1
+        `,
+        [recentLimit]
+      );
+
+      res.json({
+        thresholdSec,
+        dbActive,
+        recent: recentRows,
+      });
+    } catch (err) {
+      console.error('GET /api/monitoring/hangs', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Client-reported hang/stall/report-build events. Stored in app_error_log.
+  app.post('/api/monitoring/client-event', async (req, res) => {
+    try {
+      const { writeErrorLog } = require('../lib/error-log');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const kind = String(body.kind || 'hang').slice(0, 32);
+      const phase = String(body.phase || 'event').slice(0, 32);
+      const message = String(body.message || `${kind}:${phase}`).slice(0, 2000);
+      const detail = body.detail != null ? String(body.detail).slice(0, 8000) : null;
+      const allowedKinds = new Set(['web_hang', 'report_build', 'hang', 'stall', 'long_task']);
+      const safeKind = allowedKinds.has(kind) ? kind : 'hang';
+      const levelByPhase = { error: 'error', fatal: 'fatal', done: 'success', ok: 'success', resolved: 'success' };
+      const level = levelByPhase[phase] || (body.level === 'error' ? 'error' : body.level === 'fatal' ? 'fatal' : 'warning');
+      const context = body.context && typeof body.context === 'object' ? body.context : {};
+      const safeContext = {
+        ...context,
+        kind: safeKind,
+        phase,
+        ua: req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 200) : undefined,
+      };
+      await writeErrorLog(pool, {
+        level,
+        source: 'web',
+        category: 'hang',
+        code: `${safeKind.toUpperCase()}_${phase.toUpperCase()}`.slice(0, 64),
+        message,
+        detail,
+        endpoint: body.endpoint ? String(body.endpoint).slice(0, 512) : null,
+        method: body.method ? String(body.method).slice(0, 10) : null,
+        logicId: body.logicId != null ? Number(body.logicId) : null,
+        securityId: body.securityId != null ? Number(body.securityId) : null,
+        context: safeContext,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('POST /api/monitoring/client-event', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
 };

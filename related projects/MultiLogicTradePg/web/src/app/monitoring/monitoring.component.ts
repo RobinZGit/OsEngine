@@ -4,8 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { catchError, forkJoin, of } from 'rxjs';
 import {
   DelayAlertRow,
+  DbHangRow,
   ErrorLevel,
   ErrorLogRow,
+  MonitoringHangs,
   MonitoringService,
   MonitoringSummary,
   PingResult,
@@ -47,6 +49,9 @@ export class MonitoringComponent implements OnInit, OnDestroy {
   delayAlerts: DelayAlertRow[] = [];
   readonly delayThresholdSec = 30;
   readonly delayWindowHours = 24;
+
+  hangs: MonitoringHangs | null = null;
+  readonly hangThresholdSec = 30;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -127,6 +132,28 @@ export class MonitoringComponent implements OnInit, OnDestroy {
     return ok ? 'ping-ok' : 'ping-fail';
   }
 
+  hangKindLabel(kind: string): string {
+    switch (kind) {
+      case 'rating_test': return 'Тест рейтинга';
+      case 'backtest': return 'Бэктест';
+      case 'report': return 'Отчёт';
+      case 'data_load': return 'Загрузка данных';
+      case 'web_hang': return 'Web UI';
+      case 'report_build': return 'Построение отчёта';
+      default: return kind || 'Другое';
+    }
+  }
+
+  hangDurationLabel(sec: number): string {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    if (s < 60) return `${s} с`;
+    const m = Math.floor(s / 60);
+    const rs = s % 60;
+    if (m < 60) return `${m} мин ${rs} с`;
+    const h = Math.floor(m / 60);
+    return `${h} ч ${m % 60} мин`;
+  }
+
   private load(silent = false): void {
     if (!silent) this.loading = true;
     forkJoin({
@@ -134,10 +161,12 @@ export class MonitoringComponent implements OnInit, OnDestroy {
       stats: this.monitoring.getStats(this.chartMinutes),
       summary: this.monitoring.getSummary(),
       delay: this.monitoring.getDelayAlerts().pipe(catchError(() => of(null))),
+      hangs: this.monitoring.getHangs(this.hangThresholdSec, 50).pipe(catchError(() => of(null))),
     }).subscribe({
-      next: ({ errors, stats, summary, delay }) => {
+      next: ({ errors, stats, summary, delay, hangs }) => {
         this.errors = errors.rows ?? [];
         this.delayAlerts = delay?.rows ?? [];
+        this.hangs = hangs;
         this.chartPoints = (stats.rows ?? []).map((r) => ({
           t: Date.parse(r.ts),
           count: Number(r.count) || 0,

@@ -250,12 +250,16 @@ function paperChartJson(chart) {
     .map((m) => {
       const t = paperDtMs(m.dt);
       if (t == null || !Number.isFinite(Number(m.price))) return null;
+      const pnl = m.pnl != null && Number.isFinite(Number(m.pnl)) ? round6(m.pnl) : null;
       return [
         t,
         m.kind === 'open' ? 'open' : 'close',
         round6(m.price),
         m.side === 'short' ? 'short' : 'long',
         !!m.isShadow ? 1 : 0,
+        pnl,
+        m.tradeReason || '',
+        m.signalFormula || '',
       ];
     })
     .filter(Boolean);
@@ -789,7 +793,19 @@ function paperChartBlockHtml(chart, index) {
           <button type="button" class="pp-btn" data-pp="fsx" onclick="ppc(${index},'fs')" title="Выйти из полного экрана" style="display:none">✕</button>
         </span>
       </div>
-      <div class="chart paper-chart">
+            <div class="pp-playback no-print" id="pppb-${index}" data-pp-playback="${index}">
+        <div class="pp-playback-row">
+          <span class="pp-playback-label">Навигация</span>
+          <button type="button" class="pp-btn pp-btn-trade" onclick="reportPaperSeekToEdge(${index}, -1)" title="Первая сделка">⏮ Первая сделка</button>
+          <button type="button" class="pp-btn pp-btn-trade" onclick="reportPaperSeekToEvent(${index}, -1)" title="Предыдущая сделка">◀ Предыдущая сделка</button>
+          <button type="button" class="pp-btn pp-btn-trade" onclick="reportPaperSeekToEvent(${index}, 1)" title="Следующая сделка">Следующая сделка ▶</button>
+          <button type="button" class="pp-btn pp-btn-trade" onclick="reportPaperSeekToEdge(${index}, 1)" title="Последняя сделка">Последняя сделка ⏭</button>
+          <span class="pp-playback-dt" id="ppdt-${index}">—</span>
+          <span class="pp-playback-finres" id="ppfr-${index}">П/У: 0.00</span>
+        </div>
+        <div class="pp-playback-event" id="ppev-${index}"></div>
+      </div>
+      <div class="chart paper-chart" data-pp-index="${index}" data-pp-n="${(chart.candles||[]).length}">
         <div class="pp-chart-plot" id="ppc-${index}"></div>
         ${paperChartLegend(chart)}
       </div>

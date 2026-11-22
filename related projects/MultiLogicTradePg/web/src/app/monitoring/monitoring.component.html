@@ -96,6 +96,69 @@
     </section>
   }
 
+  <section class="mon-hangs">
+    <div class="mon-chart-title">
+      Зависания / долгие процессы
+      <small>DB запросы &gt; {{ hangs?.thresholdSec ?? hangThresholdSec }} с: {{ hangs?.dbActive?.length ?? 0 }}, событий за 24ч: {{ hangs?.recent?.length ?? 0 }}</small>
+    </div>
+
+    @if ((hangs?.dbActive?.length ?? 0) > 0) {
+      <table class="mon-table mon-hangs-table">
+        <thead>
+          <tr>
+            <th>PID</th>
+            <th>Длительность</th>
+            <th>Тип</th>
+            <th>Ожидание</th>
+            <th>Запрос</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of hangs!.dbActive; track r.pid) {
+            <tr>
+              <td>{{ r.pid }}</td>
+              <td class="mon-delay-value">{{ hangDurationLabel(r.duration_sec) }}</td>
+              <td>{{ hangKindLabel(r.kind) }}</td>
+              <td>{{ r.wait_event_type || '' }} {{ r.wait_event || '' }}</td>
+              <td class="col-msg"><div class="mon-sub mon-detail">{{ r.query }}</div></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    } @else {
+      <div class="mon-empty">Активных долгих DB-запросов нет.</div>
+    }
+
+    @if ((hangs?.recent?.length ?? 0) > 0) {
+      <div class="mon-chart-title" style="margin-top:10px">
+        Недавние события зависаний/отчётов
+      </div>
+      <table class="mon-table mon-hangs-table">
+        <thead>
+          <tr>
+            <th class="col-time">Время</th>
+            <th class="col-level">Уровень</th>
+            <th>Код</th>
+            <th>Сообщение</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of hangs!.recent; track row.id) {
+            <tr>
+              <td class="col-time">{{ row.created_at | date: 'dd.MM HH:mm:ss' }}</td>
+              <td class="col-level"><span class="lvl-badge lvl-{{ row.level }}">{{ levelLabel(row.level) }}</span></td>
+              <td class="col-code"><span class="mon-code">{{ row.code || row.category }}</span></td>
+              <td class="col-msg">
+                <div class="mon-msg">{{ row.message }}</div>
+                @if (row.detail) { <div class="mon-sub mon-detail">{{ row.detail }}</div> }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </section>
+
   <section class="monitoring-chart">
     <div class="mon-chart-title">
       Отказы за последний час

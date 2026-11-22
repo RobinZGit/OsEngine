@@ -357,3 +357,7 @@
   font-size: 0.76rem;
   font-weight: 700;
 }
+
+.mon-hangs { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px; }
+.mon-hangs .mon-empty { padding: 8px 0; color: #92400e; font-size: 0.82rem; }
+.mon-hangs-table { margin-top: 6px; }
