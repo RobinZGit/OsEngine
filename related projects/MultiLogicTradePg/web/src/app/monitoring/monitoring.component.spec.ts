@@ -4,6 +4,7 @@ import { of, throwError } from 'rxjs';
 import { MonitoringComponent } from './monitoring.component';
 import {
   ErrorLogRow,
+  MonitoringHangs,
   MonitoringService,
   MonitoringSummary,
   formatErrorShort,
@@ -49,6 +50,7 @@ describe('MonitoringComponent (#989)', () => {
     getStats: jasmine.Spy;
     getSummary: jasmine.Spy;
     getDelayAlerts: jasmine.Spy;
+    getHangs: jasmine.Spy;
     ping: jasmine.Spy;
     notifyRefresh: jasmine.Spy;
   };
@@ -64,6 +66,9 @@ describe('MonitoringComponent (#989)', () => {
       getDelayAlerts: jasmine
         .createSpy('getDelayAlerts')
         .and.callFake(() => of({ threshold_sec: 30, window_hours: 24, rows: [] })),
+      getHangs: jasmine
+        .createSpy('getHangs')
+        .and.callFake(() => of({ thresholdSec: 30, dbActive: [], recent: [] } as MonitoringHangs)),
       ping: jasmine.createSpy('ping'),
       notifyRefresh: jasmine.createSpy('notifyRefresh'),
     };
