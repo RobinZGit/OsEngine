@@ -1116,10 +1116,10 @@
 Коммит: [0155abfc](https://github.com/RobinZGit/OsEngine/commit/0155abfc865fa62999fafd53f33591ba2c5a90e4)
 
 174. В отчётах (HTML-тест и серверные шаблоны отчётов) по каждому графику бумаги убрать ползунок воспроизведения — он тормозит; оставить только кнопки навигации и назвать понятнее: «Первая сделка», «Предыдущая сделка», «Следующая сделка», «Последняя сделка». При переходе показывать время, накопительный П/У, события входа/выхода; события в одно время — одним сообщением (сначала открытие, потом закрытие), единый формат «Бац...».
-Коммит: [TBD](https://github.com/RobinZGit/OsEngine/commit/TBD)
+Коммит: [8bc6f1da](https://github.com/RobinZGit/OsEngine/commit/8bc6f1dab40eaaa5ea9d65b256d8bf7258820c78)
 
 175. Сообщения о выходе в отчётах сделать информативнее: добавить причину закрытия и фин. результат сделки. Фин. рез выделять: положительный — ярко-зелёный, отрицательный — ярко-красный, крупнее/ярче; формат единый для отчётов «Бац...».
-Коммит: [TBD](https://github.com/RobinZGit/OsEngine/commit/TBD)
+Коммит: [8bc6f1da](https://github.com/RobinZGit/OsEngine/commit/8bc6f1dab40eaaa5ea9d65b256d8bf7258820c78)
 
 176. Формирование отчёта долго на тяжёлой странице логик; при переходе на «Мониторинг» и обратно быстрее. Смягчить: перед тяжёлой сборкой отчёта дать браузеру отрисовать placeholder, на время `buildBacktestReportModel`/`renderBacktestReportHtml` делать `cdr.detach()/reattach()` и yield между build/render.
-Коммит: [TBD](https://github.com/RobinZGit/OsEngine/commit/TBD)
+Коммит: [8bc6f1da](https://github.com/RobinZGit/OsEngine/commit/8bc6f1dab40eaaa5ea9d65b256d8bf7258820c78)
