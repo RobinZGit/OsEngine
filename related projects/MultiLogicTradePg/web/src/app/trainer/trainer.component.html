@@ -55,11 +55,17 @@
 
     <label class="ctrl ctrl-speed">
       <span>Скорость</span>
-      <select [(ngModel)]="speedMs" (ngModelChange)="onSpeedChange()" [disabled]="dataLoading">
-        @for (opt of speedOptions; track opt.value) {
-          <option [ngValue]="opt.value">{{ opt.label }}</option>
-        }
-      </select>
+      <div class="speed-control">
+        <select [(ngModel)]="speedMs" (ngModelChange)="onSpeedChange()" [disabled]="dataLoading">
+          @for (opt of speedOptions; track opt.value) {
+            <option [ngValue]="opt.value">{{ opt.label }}</option>
+          }
+        </select>
+        <div class="speed-step-btns">
+          <button type="button" class="speed-step-btn" (click)="speedUp(); $event.preventDefault()" [disabled]="dataLoading" title="Быстрее">▲</button>
+          <button type="button" class="speed-step-btn" (click)="speedDown(); $event.preventDefault()" [disabled]="dataLoading" title="Медленнее">▼</button>
+        </div>
+      </div>
     </label>
 
     <label class="ctrl ctrl-commission">
@@ -71,12 +77,6 @@
       <span>Задержка исп., сек</span>
       <input type="number" min="0" step="1" [(ngModel)]="executionDelaySec" [disabled]="dataLoading" />
     </label>
-
-    <div class="ctrl ctrl-actions">
-      <button class="btn-pause" type="button" (click)="togglePlay()" [disabled]="!started || finished || dataLoading">
-        {{ playing ? 'Пауза' : 'Продолжить' }}
-      </button>
-    </div>
 
     <div class="ctrl ctrl-status">
       @if (loading) { <span class="status-loading">Загрузка истории…</span> }
@@ -99,9 +99,12 @@
 
   <div class="trade-bar card">
     <div class="trade-buttons-col">
-      <button class="btn-start-main" type="button" (click)="start()" [disabled]="loading || dataLoading || !securityId || !timeframeId">
-        НАЧАТЬ
+      <button class="btn-start-main" type="button" (click)="onStartPauseClick()" [disabled]="(!started || finished) ? (loading || dataLoading || !securityId || !timeframeId) : false">
+        {{ startPauseLabel }}
       </button>
+      @if (started && !finished) {
+        <button class="btn-restart-small" type="button" (click)="start()" [disabled]="loading || dataLoading">Начать заново</button>
+      }
       @if (pendingOrderText) {
         <div class="pending-order-banner" role="status" aria-live="polite">
           ⏳ {{ pendingOrderText }}

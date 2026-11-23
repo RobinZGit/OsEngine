@@ -393,8 +393,37 @@ export class TrainerComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  onStartPauseClick(): void {
+    if (!this.started || this.finished) {
+      void this.start();
+      return;
+    }
+    this.togglePlay();
+  }
+
+  get startPauseLabel(): string {
+    if (!this.started || this.finished) return 'НАЧАТЬ';
+    return this.playing ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ';
+  }
+
   onSpeedChange(): void {
     if (this.playing) this.startTimer();
+  }
+
+  speedUp(): void {
+    const idx = this.speedOptions.findIndex(o => o.value === this.speedMs);
+    if (idx > 0) {
+      this.speedMs = this.speedOptions[idx - 1].value;
+      this.onSpeedChange();
+    }
+  }
+
+  speedDown(): void {
+    const idx = this.speedOptions.findIndex(o => o.value === this.speedMs);
+    if (idx >= 0 && idx < this.speedOptions.length - 1) {
+      this.speedMs = this.speedOptions[idx + 1].value;
+      this.onSpeedChange();
+    }
   }
 
   private tick(): void {
