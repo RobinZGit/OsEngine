@@ -184,15 +184,19 @@ export interface ChartVisibleRange {
   userInitiated?: boolean;
 }
 
-/** Маркер сделки на графике бэктеста (вход / выход). */
+/** Маркер сделки/сигнала на графике (вход/выход/сигнал индикатора). */
 export interface ChartTradeMarker {
   dt: string;
   price: number;
-  kind: 'open' | 'close';
+  kind: 'open' | 'close' | 'signal';
   side: 'long' | 'short';
   /** Теневая / отключённая бумага */
   isShadow?: boolean;
   label?: string;
+  /** Переопределение цвета маркера */
+  color?: string;
+  /** Короткий текст сверху вертикальной полосы (для сигналов) */
+  topLabel?: string;
 }
 
 /** Горизонтальная линия стопа / тейка с подписью типа. */

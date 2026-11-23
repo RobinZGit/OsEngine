@@ -525,6 +525,7 @@ export class LogicBacktestPapersComponent implements OnChanges, OnDestroy {
     const markers = this.overlays(securityId).markers.filter((m) => this.dtNum(m.dt) === key);
     if (markers.length === 0) return;
     const e = prevIndex != null && index < prevIndex ? markers[0] : markers[markers.length - 1];
+    if (e.kind === 'signal') return;
     const isOpen = e.kind === 'open';
     const sideText = e.side === 'long' ? 'LONG' : 'SHORT';
     const acc = this.paperAccumulatedFinRes(securityId);

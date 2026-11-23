@@ -160,6 +160,9 @@ import { assetUrl } from './shared/asset-url';
       <a routerLink="/terminal" routerLinkActive="active">
         Терминал
       </a>
+      <a routerLink="/trainer" routerLinkActive="active">
+        Тренажёр
+      </a>
       <a
         routerLink="/monitoring"
         routerLinkActive="active"

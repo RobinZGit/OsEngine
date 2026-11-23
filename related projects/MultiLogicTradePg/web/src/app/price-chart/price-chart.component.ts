@@ -1326,24 +1326,52 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       const y = yScale(Number(m.price));
       const isLong = m.side === 'long';
       const isOpen = m.kind === 'open';
-      const color = m.isShadow
+      const isSignal = m.kind === 'signal';
+      const color = m.color ?? (m.isShadow
         ? '#94a3b8'
-        : isOpen
-          ? isLong
-            ? '#16a34a'
-            : '#dc2626'
-          : isLong
-            ? '#15803d'
-            : '#b91c1c';
-      // Вертикальная полоса входа/выхода
+        : isSignal
+          ? (isLong ? '#16a34a' : '#dc2626')
+          : isOpen
+            ? isLong
+              ? '#16a34a'
+              : '#dc2626'
+            : isLong
+              ? '#15803d'
+              : '#b91c1c');
+      // Вертикальная полоса входа/выхода/сигнала
       ctx.strokeStyle = color;
-      ctx.globalAlpha = m.isShadow ? 0.22 : 0.4;
-      ctx.lineWidth = Math.max(2, candleWidth * 0.45);
+      ctx.globalAlpha = m.isShadow ? 0.22 : isSignal ? 0.28 : 0.4;
+      ctx.lineWidth = Math.max(isSignal ? 1.5 : 2, candleWidth * (isSignal ? 0.35 : 0.45));
       ctx.setLineDash([]);
       ctx.beginPath();
       ctx.moveTo(x, priceTop);
       ctx.lineTo(x, priceBottom);
       ctx.stroke();
+
+      if (isSignal) {
+        const text = (m.topLabel || m.label || '').trim();
+        if (text) {
+          ctx.font = `700 ${Math.max(9, this.px(9))}px system-ui, sans-serif`;
+          const padX = 4;
+          const th = Math.max(12, this.px(12));
+          const tw = ctx.measureText(text).width + padX * 2;
+          const tx = Math.min(right - tw - 2, Math.max(left + 2, x - tw / 2));
+          const ty = priceTop + 2;
+          ctx.globalAlpha = 0.92;
+          ctx.fillStyle = color;
+          ctx.fillRect(tx, ty, tw, th);
+          ctx.strokeStyle = 'rgba(15,23,42,0.18)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(tx, ty, tw, th);
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, tx + padX, ty + th / 2);
+          ctx.textBaseline = 'alphabetic';
+        }
+        ctx.globalAlpha = 1;
+        continue;
+      }
 
       ctx.globalAlpha = m.isShadow ? 0.6 : 1;
       ctx.fillStyle = color;

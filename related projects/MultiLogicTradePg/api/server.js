@@ -51,6 +51,8 @@ const registerMonitoringRoutes = require('./routes/monitoring');
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:4200';
+const corsOrigins = corsOrigin.split(',').map((s) => s.trim()).filter(Boolean);
+const allowLocalhost = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 
 const pool = new Pool({
   host: process.env.PGHOST || 'localhost',
@@ -65,7 +67,12 @@ const pool = new Pool({
 
 const ctx = createRouteContext(pool);
 
-app.use(cors({ origin: corsOrigin }));
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || corsOrigins.includes(origin) || allowLocalhost(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+}));
 app.use(express.json());
 
 app.use((req, res, next) => {

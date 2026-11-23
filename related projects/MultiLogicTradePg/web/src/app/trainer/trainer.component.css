@@ -1,0 +1,139 @@
+﻿.trainer-page { position: relative; padding: 16px; display: flex; flex-direction: column; gap: 14px; background: #f3f6fb; min-height: 100%; box-sizing: border-box; }
+.card { background: #fff; border: 1px solid #dbe4ee; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+
+.trainer-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.trainer-title { margin: 0; font-size: 28px; font-weight: 800; color: #1a2742; }
+.trainer-sub { margin: 4px 0 0; color: #5f6f85; font-size: 14px; }
+.trainer-total { padding: 10px 16px; border-radius: 12px; background: #f8fafc; border: 2px solid #dbe4ee; text-align: right; min-width: 180px; }
+.trainer-total-label { display: block; font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.trainer-total-value { display: block; font-size: 28px; font-weight: 800; line-height: 1.2; }
+.trainer-total.pnl-pos { background: #ecfdf5; border-color: #86efac; color: #166534; }
+.trainer-total.pnl-neg { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+
+.trainer-controls { display: flex; flex-wrap: wrap; gap: 12px 16px; padding: 14px; align-items: end; }
+.ctrl { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #475569; font-weight: 600; }
+.ctrl select, .ctrl input { height: 38px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 14px; background: #fff; color: #1e293b; min-width: 160px; }
+.ctrl-speed select { min-width: 120px; }
+.ctrl-actions { flex-direction: row; gap: 8px; align-items: center; }
+.btn-start, .btn-pause, .btn-add-ind { height: 38px; border: 0; border-radius: 8px; padding: 0 16px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-start { background: #2563eb; color: #fff; }
+.btn-start:hover:not(:disabled) { background: #1d4ed8; }
+.btn-pause { background: #e2e8f0; color: #334155; }
+.btn-pause:hover:not(:disabled) { background: #cbd5e1; }
+.btn-start:disabled, .btn-pause:disabled { opacity: .5; cursor: default; }
+.ctrl-status { min-width: 220px; justify-content: flex-end; font-size: 13px; }
+.status-loading { color: #2563eb; font-weight: 600; }
+.status-finished { color: #7c3aed; font-weight: 600; }
+.status-running { color: #475569; }
+
+.trainer-error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; padding: 10px 14px; border-radius: 10px; font-weight: 600; }
+
+.trade-bar { padding: 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: stretch; }
+.trade-buttons { display: flex; gap: 12px; }
+.btn-trade { width: 170px; min-height: 86px; border: 0; border-radius: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: transform .08s, filter .15s, box-shadow .15s; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.btn-trade:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.03); }
+.btn-trade:active:not(:disabled) { transform: translateY(1px); }
+.btn-trade:disabled { opacity: .35; cursor: not-allowed; filter: grayscale(.25); box-shadow: none; }
+.btn-trade-main { font-size: 28px; font-weight: 900; letter-spacing: .02em; line-height: 1; }
+.btn-trade-sub { font-size: 12px; font-weight: 700; opacity: .95; }
+.btn-buy { background: linear-gradient(180deg, #22c55e, #16a34a); color: #fff; }
+.btn-sell { background: linear-gradient(180deg, #ef4444, #dc2626); color: #fff; }
+
+.trade-info { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+.info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; min-width: 120px; }
+.info-box-pnl, .info-box-total { min-width: 150px; }
+.info-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+.info-value { font-size: 20px; font-weight: 800; color: #1e293b; margin-top: 2px; white-space: nowrap; }
+.info-pct { font-size: 13px; margin-left: 4px; font-weight: 700; }
+.pos-long { color: #16a34a; }
+.pos-short { color: #dc2626; }
+.pos-flat { color: #64748b; }
+
+.last-result { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 18px; border-radius: 14px; min-width: 220px; border: 2px solid transparent; }
+.last-result-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.last-result-value { font-size: 36px; font-weight: 900; line-height: 1.1; }
+.last-pos { background: #dcfce7; color: #166534; border-color: #86efac; }
+.last-neg { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.last-flat { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+
+.pnl-pos { color: #16a34a !important; }
+.pnl-neg { color: #dc2626 !important; }
+.pnl-flat { color: #64748b; }
+
+.chart-card { padding: 12px; }
+.chart-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.chart-title { font-size: 16px; font-weight: 700; color: #334155; }
+.chart-dt { font-size: 13px; font-weight: 500; color: #64748b; margin-left: 8px; }
+.chart-finres { font-size: 22px; font-weight: 900; padding: 4px 10px; border-radius: 8px; background: #f8fafc; }
+.chart-wrap { width: 100%; min-height: 320px; height: 40vh; max-height: 520px; }
+.chart-wrap app-price-chart { display: block; width: 100%; height: 100%; }
+
+.bottom-grid { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 14px; align-items: start; }
+.section-title { font-size: 16px; font-weight: 800; color: #334155; margin-bottom: 10px; }
+.indicators-card, .blotter-card { padding: 14px; }
+
+.indicator-add { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+.indicator-add label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #475569; font-weight: 600; }
+.indicator-add select, .indicator-add input, .indicator-period input { height: 34px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 8px; font-size: 14px; }
+.indicator-add input, .indicator-period input { width: 90px; }
+.btn-add-ind { background: #0ea5e9; color: #fff; }
+.btn-add-ind:hover { background: #0284c7; }
+
+.indicator-list { display: flex; flex-direction: column; gap: 8px; }
+.indicator-row { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
+.indicator-color { width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; }
+.indicator-name { font-weight: 800; color: #334155; min-width: 48px; }
+.indicator-period { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; font-weight: 600; margin-left: auto; }
+.btn-remove-ind { width: 30px; height: 30px; border: 0; border-radius: 6px; background: #fee2e2; color: #dc2626; cursor: pointer; font-size: 14px; }
+.btn-remove-ind:hover { background: #fecaca; }
+
+.blotter-wrap { overflow: auto; max-height: 360px; }
+.blotter { width: 100%; border-collapse: collapse; font-size: 13px; }
+.blotter th, .blotter td { padding: 8px 6px; border-bottom: 1px solid #e2e8f0; text-align: left; white-space: nowrap; }
+.blotter th { position: sticky; top: 0; background: #f8fafc; color: #475569; font-size: 12px; z-index: 1; }
+.blotter .row-pos td { background: #f0fdf4; }
+.blotter .row-neg td { background: #fef2f2; }
+.side-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.side-long { background: #dcfce7; color: #166534; }
+.side-short { background: #fee2e2; color: #991b1b; }
+.empty-hint { color: #64748b; font-size: 13px; padding: 10px 0; text-align: center; }
+
+@media (max-width: 1100px) {
+  .trade-bar { grid-template-columns: 1fr; }
+  .last-result { min-width: 0; }
+  .bottom-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .trade-buttons { width: 100%; }
+  .btn-trade { flex: 1; width: auto; }
+  .trainer-header { flex-direction: column; align-items: stretch; }
+  .trainer-total { text-align: left; }
+}
+
+.loading-overlay { position: absolute; inset: 0; background: rgba(243,246,251,.72); backdrop-filter: blur(2px); z-index: 50; display: flex; align-items: center; justify-content: center; border-radius: 12px; }
+.loading-overlay-card { background: #fff; border: 1px solid #dbe4ee; border-radius: 16px; padding: 28px 32px; box-shadow: 0 12px 32px rgba(15,23,42,.12); text-align: center; max-width: 460px; }
+.loading-spinner { width: 52px; height: 52px; border: 5px solid #dbeafe; border-top-color: #2563eb; border-radius: 50%; margin: 0 auto 14px; animation: trainer-spin 0.9s linear infinite; }
+.loading-overlay-text { font-size: 22px; font-weight: 800; color: #1e3a8a; }
+.loading-overlay-sub { margin-top: 8px; font-size: 13px; color: #64748b; }
+@keyframes trainer-spin { to { transform: rotate(360deg); } }
+.trainer-page.is-loading { overflow: hidden; }
+
+.ctrl-commission input { min-width: 100px; width: 110px; }
+.status-elapsed { color: #0f766e; font-weight: 700; margin-left: 8px; }
+.last-result-annual { font-size: 16px; font-weight: 800; margin-top: 4px; opacity: .95; }
+.info-annual { font-size: 13px; font-weight: 800; margin-top: 4px; }
+.info-empty { color: #94a3b8; font-weight: 700; }
+.info-hint { display: block; font-size: 11px; color: #94a3b8; font-weight: 600; margin-top: 2px; white-space: normal; line-height: 1.2; }
+.trade-buttons-col { display: flex; flex-direction: column; gap: 10px; }
+.btn-start-main { width: 100%; min-height: 72px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #3b82f6, #2563eb); color: #fff; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,.28); transition: transform .08s, filter .15s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.btn-start-main:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }
+.btn-start-main:active:not(:disabled) { transform: translateY(1px); }
+.btn-start-main:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.btn-start-main .btn-trade-main { font-size: 28px; font-weight: 900; letter-spacing: .02em; line-height: 1; }
+.btn-start-main .btn-trade-sub { font-size: 12px; font-weight: 700; opacity: .95; }
+.ctrl-delay input { min-width: 100px; width: 120px; }
+.status-pending { color: #b45309; font-weight: 800; margin-left: 8px; background: #fef3c7; padding: 2px 8px; border-radius: 999px; }
+.pending-order-banner { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 800; text-align: center; }
+.trainer-total-annual { display: block; font-size: 14px; font-weight: 800; margin-top: 2px; }
+.trainer-total-delay { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-top: 2px; }
+.info-delay { font-size: 12px; font-weight: 700; color: #64748b; margin-top: 2px; white-space: normal; }

@@ -1,0 +1,310 @@
+﻿<div class="trainer-page" [class.is-loading]="dataLoading">
+  @if (dataLoading) {
+    <div class="loading-overlay" role="status" aria-live="polite">
+      <div class="loading-overlay-card">
+        <div class="loading-spinner"></div>
+        <div class="loading-overlay-text">{{ dataLoadingMessage || 'Идёт загрузка данных…' }}</div>
+        <div class="loading-overlay-sub">Пожалуйста, подождите. Кнопки и выбор бумаги временно заблокированы.</div>
+      </div>
+    </div>
+  }
+  <div class="trainer-header">
+    <div>
+      <h2 class="trainer-title">Тренажёр</h2>
+      <p class="trainer-sub">Торгуй на истории: смотри свечи, принимай решения, сразу видишь результат.</p>
+    </div>
+    <div class="trainer-total" [class.pnl-pos]="totalPnlWithUnrealized > 0" [class.pnl-neg]="totalPnlWithUnrealized < 0" [class.pnl-flat]="totalPnlWithUnrealized === 0">
+      <span class="trainer-total-label">Итоговый финрез</span>
+      <span class="trainer-total-value">{{ formatPnl(totalPnlWithUnrealized) }}</span>
+      @if (totalAnnualPct !== null) {
+        <span class="trainer-total-annual" [ngClass]="pnlClass(totalAnnualPct)">Годовых: {{ formatPct(totalAnnualPct) }}</span>
+      }
+      @if (avgExecutionDelaySec !== null) {
+        <span class="trainer-total-delay">Ср. задержка: {{ avgExecutionDelaySec | number:'1.0-1' }} сек</span>
+      }
+    </div>
+  </div>
+
+  <div class="trainer-controls card">
+    <label class="ctrl">
+      <span>Тип</span>
+      <select [(ngModel)]="securityKind" (ngModelChange)="onSecurityKindChange()" [disabled]="loading || dataLoading">
+        @for (k of securityKindOptions; track k.value) {
+          <option [ngValue]="k.value">{{ k.label }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="ctrl">
+      <span>Инструмент</span>
+      <select [(ngModel)]="securityId" (ngModelChange)="onSetupChange()" [disabled]="loading || dataLoading">
+        @for (s of securities; track s.id) {
+          <option [ngValue]="s.id">{{ s.name }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="ctrl">
+      <span>Таймфрейм</span>
+      <select [(ngModel)]="timeframeId" (ngModelChange)="onSetupChange()" [disabled]="loading || dataLoading">
+        @for (t of timeframes; track t.id) {
+          <option [ngValue]="t.id">{{ t.full_name || t.tf }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="ctrl ctrl-speed">
+      <span>Скорость</span>
+      <select [(ngModel)]="speedMs" (ngModelChange)="onSpeedChange()" [disabled]="dataLoading">
+        @for (opt of speedOptions; track opt.value) {
+          <option [ngValue]="opt.value">{{ opt.label }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="ctrl ctrl-commission">
+      <span>Комиссия, %</span>
+      <input type="number" min="0" step="0.001" [(ngModel)]="commissionPct" [disabled]="dataLoading" />
+    </label>
+
+    <label class="ctrl ctrl-delay">
+      <span>Задержка исп., сек</span>
+      <input type="number" min="0" step="1" [(ngModel)]="executionDelaySec" [disabled]="dataLoading" />
+    </label>
+
+    <div class="ctrl ctrl-actions">
+      <button class="btn-pause" type="button" (click)="togglePlay()" [disabled]="!started || finished || dataLoading">
+        {{ playing ? 'Пауза' : 'Продолжить' }}
+      </button>
+    </div>
+
+    <div class="ctrl ctrl-status">
+      @if (loading) { <span class="status-loading">Загрузка истории…</span> }
+      @if (finished) { <span class="status-finished">Воспроизведение завершено</span> }
+      @if (started && !finished && !loading) {
+        <span class="status-running">{{ playing ? 'Идёт воспроизведение' : 'Пауза' }} · {{ visibleCandles.length }} свечей@if (currentDt) { · {{ currentDt }} }</span>
+      }
+      @if (started) {
+        <span class="status-elapsed">Время по свечам: {{ simulatedElapsed }}</span>
+      }
+      @if (pendingOrderText) {
+        <span class="status-pending">{{ pendingOrderText }}</span>
+      }
+    </div>
+  </div>
+
+  @if (loadingError) {
+    <div class="trainer-error">{{ loadingError }}</div>
+  }
+
+  <div class="trade-bar card">
+    <div class="trade-buttons-col">
+      <button class="btn-start-main" type="button" (click)="start()" [disabled]="loading || dataLoading || !securityId || !timeframeId">
+        <span class="btn-trade-main">НАЧАТЬ</span>
+        <span class="btn-trade-sub">{{ started ? 'Сначала' : 'Старт' }}</span>
+      </button>
+      @if (pendingOrderText) {
+        <div class="pending-order-banner" role="status" aria-live="polite">
+          ⏳ {{ pendingOrderText }}
+        </div>
+      }
+      <div class="trade-buttons">
+        <button
+          type="button"
+          class="btn-trade btn-buy"
+          [disabled]="!canBuy"
+          (click)="buy()"
+        >
+          <span class="btn-trade-main">КУПИТЬ</span>
+          <span class="btn-trade-sub">{{ position === 'short' ? 'Закрыть шорт' : 'Открыть лонг' }}</span>
+        </button>
+
+        <button
+          type="button"
+          class="btn-trade btn-sell"
+          [disabled]="!canSell"
+          (click)="sell()"
+        >
+          <span class="btn-trade-main">ПРОДАТЬ</span>
+          <span class="btn-trade-sub">{{ position === 'long' ? 'Закрыть лонг' : 'Открыть шорт' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="trade-info">
+      <div class="info-box">
+        <div class="info-label">Позиция</div>
+        <div class="info-value" [class.pos-long]="position === 'long'" [class.pos-short]="position === 'short'" [class.pos-flat]="position === 'flat'">
+          @if (position === 'flat') { НЕТ }
+          @if (position === 'long') { LONG }
+          @if (position === 'short') { SHORT }
+        </div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">Цена входа</div>
+        <div class="info-value">
+          @if (entryPrice != null) {
+            {{ formatPrice(entryPrice) }}
+          } @else {
+            <span class="info-empty">—</span>
+            <span class="info-hint">{{ started ? 'Нет открытой позиции' : 'Нажмите «Начать»' }}</span>
+          }
+        </div>
+      </div>
+      <div class="info-box">
+        <div class="info-label">Текущая цена</div>
+        <div class="info-value">
+          @if (currentPrice != null) {
+            {{ formatPrice(currentPrice) }}
+          } @else {
+            <span class="info-empty">—</span>
+            <span class="info-hint">Нажмите «Начать»</span>
+          }
+        </div>
+      </div>
+      <div class="info-box info-box-pnl">
+        <div class="info-label">Плавающий PnL</div>
+        <div class="info-value" [ngClass]="pnlClass(unrealizedPnl)">
+          {{ formatPnl(unrealizedPnl) }}
+          <span class="info-pct">{{ formatPct(unrealizedPnlPct) }}</span>
+        </div>
+      </div>
+      <div class="info-box info-box-total">
+        <div class="info-label">Итог</div>
+        <div class="info-value" [ngClass]="pnlClass(totalPnlWithUnrealized)">{{ formatPnl(totalPnlWithUnrealized) }}</div>
+        @if (totalAnnualPct !== null) {
+          <div class="info-annual" [ngClass]="pnlClass(totalAnnualPct)">{{ formatPct(totalAnnualPct) }} годовых</div>
+        }
+        @if (avgExecutionDelaySec !== null) {
+          <div class="info-delay">Ср. задержка: {{ avgExecutionDelaySec | number:'1.0-1' }} сек</div>
+        }
+      </div>
+    </div>
+
+    @if (position !== 'flat') {
+      <div class="last-result"
+           [class.last-pos]="(unrealizedPnl ?? 0) > 0"
+           [class.last-neg]="(unrealizedPnl ?? 0) < 0"
+           [class.last-flat]="(unrealizedPnl ?? 0) === 0">
+        <div class="last-result-label">Результат сделки</div>
+        <div class="last-result-value">{{ formatPnl(unrealizedPnl) }}</div>
+      </div>
+    } @else if (lastPnl !== null) {
+      <div class="last-result" [class.last-pos]="lastPnl > 0" [class.last-neg]="lastPnl < 0" [class.last-flat]="lastPnl === 0">
+        <div class="last-result-label">Результат сделки</div>
+        <div class="last-result-value">{{ formatPnl(lastPnl) }}</div>
+      </div>
+    }
+  </div>
+
+  <div class="chart-card card">
+    <div class="chart-top">
+      <div class="chart-title">
+        График
+        @if (currentDt) { <span class="chart-dt">{{ currentDt }}</span> }
+      </div>
+      @if (lastPnl !== null) {
+        <div class="chart-finres" [ngClass]="pnlClass(lastPnl)">
+          Финрез: {{ formatPnl(lastPnl) }}
+        </div>
+      }
+    </div>
+    <div class="chart-wrap">
+      <app-price-chart
+        [candles]="visibleCandles"
+        [indicatorSeries]="indicatorSeries"
+        [tradeMarkers]="chartMarkers"
+        [loading]="loading && !started"
+        [error]="loadingError"
+        [followLast]="playing"
+        [focusDt]="playing ? currentDt : null"
+        [focusAlign]="'end'"
+        [title]="''"
+        [showRecalcButton]="false"
+      ></app-price-chart>
+    </div>
+  </div>
+
+  <div class="bottom-grid">
+    <div class="card indicators-card">
+      <div class="section-title">Индикаторы</div>
+      <div class="indicator-add">
+        <label class="ind-type-label">
+          <span>Индикатор</span>
+          <select [(ngModel)]="addIndicatorType" (ngModelChange)="onIndicatorTypeChange()">
+            @for (def of indicatorDefs; track def.code) {
+              <option [ngValue]="def.code">{{ def.name }}</option>
+            }
+          </select>
+        </label>
+        @if (selectedIndicatorDef.hasPeriod) {
+          <label>
+            <span>Период</span>
+            <input type="number" min="2" max="500" [(ngModel)]="addIndicatorPeriod" />
+          </label>
+        }
+        <button type="button" class="btn-add-ind" (click)="addIndicator()" [disabled]="dataLoading">Добавить</button>
+      </div>
+
+      <div class="indicator-list">
+        @for (ind of indicators; track trackByInd($index, ind)) {
+          <div class="indicator-row">
+            <span class="indicator-color" [style.background]="ind.color"></span>
+            <span class="indicator-name">{{ indicatorLabel(ind.type) }}</span>
+            @if (indicatorHasPeriod(ind.type)) {
+              <label class="indicator-period">
+                <span>Период</span>
+                <input type="number" min="2" max="500" [ngModel]="ind.period" (ngModelChange)="updateIndicatorPeriod(ind, $event)" />
+              </label>
+            }
+            <button type="button" class="btn-remove-ind" (click)="removeIndicator(ind.uid)">✕</button>
+          </div>
+        }
+        @if (indicators.length === 0) {
+          <div class="empty-hint">Индикаторов нет. Добавьте индикатор из списка.</div>
+        }
+      </div>
+    </div>
+
+    <div class="card blotter-card">
+      <div class="section-title">Сделки</div>
+      <div class="blotter-wrap">
+        <table class="blotter">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Сторона</th>
+              <th>Открытие</th>
+              <th>Цена откр.</th>
+              <th>Закрытие</th>
+              <th>Цена закр.</th>
+              <th>Комиссия</th>
+              <th>Финрез</th>
+              <th>%</th>
+              <th>% годовых</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of trades; track trackByTrade($index, t)) {
+              <tr [class.row-pos]="t.pnl > 0" [class.row-neg]="t.pnl < 0">
+                <td>{{ t.id }}</td>
+                <td><span class="side-badge" [class.side-long]="t.side === 'long'" [class.side-short]="t.side === 'short'">{{ t.side === 'long' ? 'LONG' : 'SHORT' }}</span></td>
+                <td>{{ t.openDt }}</td>
+                <td>{{ formatPrice(t.openPrice) }}</td>
+                <td>{{ t.closeDt }}</td>
+                <td>{{ formatPrice(t.closePrice) }}</td>
+                <td>{{ formatPrice(t.commission) }}</td>
+                <td [ngClass]="pnlClass(t.pnl)">{{ formatPnl(t.pnl) }}</td>
+                <td [ngClass]="pnlClass(t.pnl)">{{ formatPct(t.pnlPct) }}</td>
+                <td [ngClass]="pnlClass(t.pnl)">{{ formatPct(t.annualPct) }}</td>
+              </tr>
+            }
+            @if (trades.length === 0) {
+              <tr><td colspan="10" class="empty-hint">Сделок пока нет. Нажми КУПИТЬ или ПРОДАТЬ.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
