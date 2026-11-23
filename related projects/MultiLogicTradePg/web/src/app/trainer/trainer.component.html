@@ -78,6 +78,12 @@
       <input type="number" min="0" step="1" [(ngModel)]="executionDelaySec" [disabled]="dataLoading" />
     </label>
 
+    @if (started && !finished) {
+      <div class="ctrl ctrl-actions">
+        <button class="btn-restart-top" type="button" (click)="start()" [disabled]="loading || dataLoading">Начать заново</button>
+      </div>
+    }
+
     <div class="ctrl ctrl-status">
       @if (loading) { <span class="status-loading">Загрузка истории…</span> }
       @if (finished) { <span class="status-finished">Воспроизведение завершено</span> }
@@ -102,9 +108,6 @@
       <button class="btn-start-main" type="button" (click)="onStartPauseClick()" [disabled]="(!started || finished) ? (loading || dataLoading || !securityId || !timeframeId) : false">
         {{ startPauseLabel }}
       </button>
-      @if (started && !finished) {
-        <button class="btn-restart-small" type="button" (click)="start()" [disabled]="loading || dataLoading">Начать заново</button>
-      }
       @if (pendingOrderText) {
         <div class="pending-order-banner" role="status" aria-live="polite">
           ⏳ {{ pendingOrderText }}
