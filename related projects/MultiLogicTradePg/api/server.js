@@ -47,6 +47,7 @@ const registerBacktestRoutes = require('./routes/backtest');
 const registerOpsRoutes = require('./routes/ops');
 const registerTerminalRoutes = require('./routes/terminal');
 const registerMonitoringRoutes = require('./routes/monitoring');
+const registerTrainerRoutes = require('./routes/trainer');
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
@@ -140,6 +141,7 @@ registerBacktestRoutes(app, ctx);
 registerOpsRoutes(app, ctx);
 registerTerminalRoutes(app, ctx);
 registerMonitoringRoutes(app, ctx);
+registerTrainerRoutes(app, ctx);
 
 app.use((_req, res) => {
   res.status(404).json({

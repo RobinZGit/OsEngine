@@ -7,6 +7,8 @@
 .btn-report { height: 34px; padding: 0 14px; border: 1px solid #2563eb; border-radius: 8px; background: #eff6ff; color: #1d4ed8; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .btn-report:hover:not(:disabled) { background: #dbeafe; }
 .btn-report:disabled { opacity: .55; cursor: default; }
+.btn-stats { border-color: #0f766e; background: #f0fdfa; color: #0f766e; }
+.btn-stats:hover:not(:disabled) { background: #ccfbf1; }
 .trainer-sub { margin: 4px 0 0; color: #5f6f85; font-size: 14px; }
 .trainer-total { padding: 10px 16px; border-radius: 12px; background: #f8fafc; border: 2px solid #dbe4ee; text-align: right; min-width: 180px; }
 .trainer-total-label { display: block; font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }

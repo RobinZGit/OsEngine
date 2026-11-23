@@ -690,6 +690,13 @@ try {
             }
             Write-Step "Applying user JS indicators upgrade migration (indicators.js_code, calc_kind)"
             Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $jsIndicatorsMigration)
+
+            $trainerResultsMigration = Join-Path $InstallDir "sql\upgrade_trainer_results.sql"
+            if (-not (Test-Path $trainerResultsMigration)) {
+                throw ("Missing {0} (required for trainer results upgrade migration)." -f $trainerResultsMigration)
+            }
+            Write-Step "Applying trainer results upgrade migration (trainer_sessions, trainer_trades)"
+            Invoke-Psql $Psql "multilogictrade" @("-v", "ON_ERROR_STOP=1", "-f", $trainerResultsMigration)
         }
 
         Write-Step "Deploying database 01 -> ensure_seed -> 02"

@@ -12,6 +12,8 @@ import { Subscription, firstValueFrom, forkJoin } from 'rxjs';
 import { PriceChartComponent } from '../price-chart/price-chart.component';
 import { SecuritiesService } from '../services/securities.service';
 import { ReferencesService } from '../services/references.service';
+import { TrainerService, TrainerSessionSavePayload, TrainerTradeSavePayload } from '../services/trainer.service';
+import { renderTrainerStatsHtml } from './trainer-stats-report';
 import {
   ChartEquityPoint,
   ChartIndicatorSeries,
@@ -98,6 +100,7 @@ type PositionSide = 'flat' | 'long' | 'short';
 export class TrainerComponent implements OnInit, OnDestroy {
   private readonly securitiesApi = inject(SecuritiesService);
   private readonly refsApi = inject(ReferencesService);
+  private readonly trainerApi = inject(TrainerService);
   private readonly cdr = inject(ChangeDetectorRef);
 
   exchanges: ExchangeRow[] = [];
@@ -139,7 +142,9 @@ export class TrainerComponent implements OnInit, OnDestroy {
   dataLoading = false;
   dataLoadingMessage = '';
   reportLoading = false;
+  statsLoading = false;
   totalDetailsOpen = false;
+  private sessionKey: string | null = null;
 
   private allCandles: PriceCandle[] = [];
   visibleCandles: PriceCandle[] = [];
@@ -169,8 +174,11 @@ export class TrainerComponent implements OnInit, OnDestroy {
   }
 
   readonly indicatorDefs = INDICATOR_DEFS;
+  // По умолчанию две скользящие средние: краткосрочная SMA 9 и долгосрочная SMA 21,
+  // разными цветами (синяя / янтарная).
   indicators: LocalIndicator[] = [
-    { uid: 'sma-default', type: 'SMA', period: 20, color: '#2563eb' },
+    { uid: 'sma-short-default', type: 'SMA', period: 9, color: '#2563eb' },
+    { uid: 'sma-long-default', type: 'SMA', period: 21, color: '#f59e0b' },
   ];
   indicatorSeries: ChartIndicatorSeries[] = [];
   addIndicatorType: IndicatorCode = 'SMA';
@@ -185,6 +193,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.started) this.saveSession();
     this.stopPlayback();
     this.subs.forEach((s) => s.unsubscribe());
   }
@@ -265,7 +274,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
 
   private ensureDefaultIndicators(): void {
     if (this.indicators.length === 0) {
-      this.indicators.push({ uid: 'sma-default', type: 'SMA', period: 20, color: '#f59e0b' });
+      this.indicators.push({ uid: 'sma-short-default', type: 'SMA', period: 9, color: '#2563eb' });
+      this.indicators.push({ uid: 'sma-long-default', type: 'SMA', period: 21, color: '#f59e0b' });
       this.colorIdx = 1;
     }
   }
@@ -273,6 +283,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
   async start(): Promise<void> {
     if (!this.securityId || !this.timeframeId) return;
     this.resetTrainer();
+    this.sessionKey = this.newSessionKey();
     this.loading = true;
     this.loadingError = null;
     this.cdr.markForCheck();
@@ -446,6 +457,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
       this.finished = true;
       this.stopPlayback();
       this.flushPendingOrder();
+      this.saveSession();
       this.cdr.markForCheck();
       return;
     }
@@ -457,11 +469,13 @@ export class TrainerComponent implements OnInit, OnDestroy {
       this.finished = true;
       this.stopPlayback();
       this.flushPendingOrder();
+      this.saveSession();
     }
     this.cdr.markForCheck();
   }
 
   resetTrainer(): void {
+    if (this.started) this.saveSession();
     this.stopPlayback();
     this.allCandles = [];
     this.visibleCandles = [];
@@ -1315,6 +1329,107 @@ export class TrainerComponent implements OnInit, OnDestroy {
       this.reportLoading = false;
       this.cdr.markForCheck();
     }
+  }
+
+  /** Статистический отчёт по всем сохранённым сессиям (из БД). */
+  async openStats(): Promise<void> {
+    if (this.statsLoading) return;
+    this.statsLoading = true;
+    this.cdr.markForCheck();
+    try {
+      const stats = await firstValueFrom(this.trainerApi.getStats());
+      const html = renderTrainerStatsHtml(stats);
+      const ok = openBacktestReportWindow(html, 'Статистика тренировок — Тренажёр');
+      if (!ok) {
+        this.loadingError = 'Браузер заблокировал окно отчёта. Разрешите всплывающие окна и попробуйте снова.';
+      }
+    } catch (err: any) {
+      console.error('Trainer stats error', err);
+      this.loadingError = err?.error?.error || err?.message || 'Ошибка загрузки статистики тренажёра';
+    } finally {
+      this.statsLoading = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  private newSessionKey(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+      const r = (Math.random() * 16) | 0;
+      const v = ch === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  /**
+   * Сохранение результатов сессии в БД (upsert по session_key).
+   * Вызывается при завершении истории, «Начать заново»/смене настроек и уходе со вкладки.
+   */
+  private saveSession(): void {
+    if (!this.sessionKey || !this.started) return;
+    const security = this.securities.find(s => s.id === this.securityId);
+    const tf = this.timeframes.find(t => t.id === this.timeframeId);
+    const startMs = this.playbackStartDt ? dtToMs(this.playbackStartDt) : NaN;
+    const endMs = this.currentDt ? dtToMs(this.currentDt) : NaN;
+    const tradingMs = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
+      ? endMs - startMs
+      : null;
+
+    const tradesChrono = [...this.trades].slice().reverse();
+    const tradePayloads: TrainerTradeSavePayload[] = tradesChrono.map((t) => ({
+      side: t.side,
+      open_dt: t.openDt,
+      open_price: t.openPrice,
+      close_dt: t.closeDt,
+      close_price: t.closePrice,
+      commission: t.commission,
+      pnl: t.pnl,
+      pnl_pct: t.pnlPct,
+      annual_pct: t.annualPct,
+      holding_ms: Number.isFinite(t.holdingMs) ? t.holdingMs : null,
+      is_open: false,
+    }));
+    // Открытая позиция сохраняется как mark-to-market строка (как в отчёте сессии).
+    if (this.position !== 'flat' && this.entryDt != null && this.entryPrice != null) {
+      const holdMs = this.currentDt ? dtToMs(this.currentDt) - dtToMs(this.entryDt) : null;
+      tradePayloads.push({
+        side: this.position,
+        open_dt: this.entryDt,
+        open_price: this.entryPrice,
+        close_dt: this.currentDt,
+        close_price: this.currentPrice,
+        commission: 0,
+        pnl: this.unrealizedPnl,
+        pnl_pct: this.unrealizedPnlPct,
+        annual_pct: this.unrealizedAnnualPct,
+        holding_ms: holdMs != null && Number.isFinite(holdMs) ? Math.max(0, holdMs) : null,
+        is_open: true,
+      });
+    }
+
+    const payload: TrainerSessionSavePayload = {
+      session_key: this.sessionKey,
+      security_id: this.securityId,
+      timeframe_id: this.timeframeId,
+      security_name: security?.name || 'Инструмент',
+      timeframe_tf: tf?.tf || 'M5',
+      started_at: this.playbackStartDt,
+      ended_at: this.currentDt,
+      trading_ms: tradingMs,
+      commission_pct: Number(this.commissionPct) || 0,
+      exec_delay_sec: Number(this.executionDelaySec) || 0,
+      finished: this.finished,
+      total_pnl: this.totalPnl,
+      unrealized_pnl: this.unrealizedPnl ?? 0,
+      annual_pct: this.totalAnnualPct,
+      avg_exec_delay_sec: this.avgExecutionDelaySec,
+      trades: tradePayloads,
+    };
+    this.trainerApi.saveSession(payload).subscribe({
+      error: (err) => console.error('Trainer session save error', err),
+    });
   }
 
   formatPrice(v: number | string | null | undefined): string {

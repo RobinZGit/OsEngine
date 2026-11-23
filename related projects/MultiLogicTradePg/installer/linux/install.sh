@@ -444,6 +444,12 @@ deploy_schema() {
     fi
     step "Applying user JS indicators upgrade migration (indicators.js_code, calc_kind)"
     psql_q multilogictrade -f "$PREFIX/sql/upgrade_user_js_indicators.sql"
+    if [[ ! -f "$PREFIX/sql/upgrade_trainer_results.sql" ]]; then
+      echo "Missing $PREFIX/sql/upgrade_trainer_results.sql (required for trainer results upgrade migration)." >&2
+      exit 1
+    fi
+    step "Applying trainer results upgrade migration (trainer_sessions, trainer_trades)"
+    psql_q multilogictrade -f "$PREFIX/sql/upgrade_trainer_results.sql"
   fi
   step "Deploying database 01 -> ensure_seed -> 02"
   if [[ ! -f "$PREFIX/01_multilogictrade_tables_and_data.sql" ]]; then

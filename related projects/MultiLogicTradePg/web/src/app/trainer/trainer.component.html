@@ -12,8 +12,13 @@
     <div>
       <div class="trainer-title-row">
         <h2 class="trainer-title">Тренажёр</h2>
-        <button type="button" class="btn-report" (click)="openReport()" [disabled]="reportLoading || (!started && trades.length === 0)">
-          {{ reportLoading ? 'Формирование…' : 'Отчёт' }}
+        <button type="button" class="btn-report" (click)="openReport()" [disabled]="reportLoading || (!started && trades.length === 0)"
+                title="Отчёт по текущей сессии: сделки, график, финрез">
+          {{ reportLoading ? 'Формирование…' : 'Отчёт сессии' }}
+        </button>
+        <button type="button" class="btn-report btn-stats" (click)="openStats()" [disabled]="statsLoading"
+                title="Статистика по всем сохранённым сессиям: какие бумаги и таймфреймы получались, какие действия успешны">
+          {{ statsLoading ? 'Загрузка…' : 'Статистика тренировок' }}
         </button>
       </div>
       <p class="trainer-sub">Торгуй на истории: смотри свечи, принимай решения, сразу видишь результат.</p>
