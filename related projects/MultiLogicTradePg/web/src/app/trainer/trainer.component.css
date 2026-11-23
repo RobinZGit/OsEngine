@@ -30,7 +30,7 @@
 
 .trade-bar { padding: 14px; display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: stretch; }
 .trade-buttons { display: flex; gap: 12px; }
-.btn-trade { width: 170px; min-height: 86px; border: 0; border-radius: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: transform .08s, filter .15s, box-shadow .15s; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.btn-trade { width: 170px; min-height: 112px; border: 0; border-radius: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transition: transform .08s, filter .15s, box-shadow .15s; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
 .btn-trade:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.03); }
 .btn-trade:active:not(:disabled) { transform: translateY(1px); }
 .btn-trade:disabled { opacity: .35; cursor: not-allowed; filter: grayscale(.25); box-shadow: none; }
@@ -125,12 +125,10 @@
 .info-empty { color: #94a3b8; font-weight: 700; }
 .info-hint { display: block; font-size: 11px; color: #94a3b8; font-weight: 600; margin-top: 2px; white-space: normal; line-height: 1.2; }
 .trade-buttons-col { display: flex; flex-direction: column; gap: 10px; }
-.btn-start-main { width: 100%; min-height: 72px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #3b82f6, #2563eb); color: #fff; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,.28); transition: transform .08s, filter .15s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.btn-start-main { width: 100%; min-height: 36px; border: 0; border-radius: 10px; background: linear-gradient(180deg, #3b82f6, #2563eb); color: #fff; cursor: pointer; box-shadow: 0 4px 14px rgba(37,99,235,.28); transition: transform .08s, filter .15s; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 900; letter-spacing: .02em; line-height: 1; padding: 0 14px; }
 .btn-start-main:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }
 .btn-start-main:active:not(:disabled) { transform: translateY(1px); }
 .btn-start-main:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
-.btn-start-main .btn-trade-main { font-size: 28px; font-weight: 900; letter-spacing: .02em; line-height: 1; }
-.btn-start-main .btn-trade-sub { font-size: 12px; font-weight: 700; opacity: .95; }
 .ctrl-delay input { min-width: 100px; width: 120px; }
 .status-pending { color: #b45309; font-weight: 800; margin-left: 8px; background: #fef3c7; padding: 2px 8px; border-radius: 999px; }
 .pending-order-banner { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 800; text-align: center; }

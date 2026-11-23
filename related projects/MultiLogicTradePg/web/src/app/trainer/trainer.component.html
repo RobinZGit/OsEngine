@@ -100,8 +100,7 @@
   <div class="trade-bar card">
     <div class="trade-buttons-col">
       <button class="btn-start-main" type="button" (click)="start()" [disabled]="loading || dataLoading || !securityId || !timeframeId">
-        <span class="btn-trade-main">НАЧАТЬ</span>
-        <span class="btn-trade-sub">{{ started ? 'Сначала' : 'Старт' }}</span>
+        НАЧАТЬ
       </button>
       @if (pendingOrderText) {
         <div class="pending-order-banner" role="status" aria-live="polite">
