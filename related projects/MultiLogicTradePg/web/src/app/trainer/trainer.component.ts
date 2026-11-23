@@ -13,6 +13,7 @@ import { PriceChartComponent } from '../price-chart/price-chart.component';
 import { SecuritiesService } from '../services/securities.service';
 import { ReferencesService } from '../services/references.service';
 import {
+  ChartEquityPoint,
   ChartIndicatorSeries,
   ChartTradeMarker,
   PriceCandle,
@@ -20,6 +21,16 @@ import {
   TimeframeRow,
 } from '../models/market.model';
 import { ExchangeRow, IndicatorRow } from '../models/lookup.model';
+import { LogicRow } from '../models/logic.model';
+import { LogicTradeRow } from '../shared/logic-trade';
+import {
+  BacktestReportRunInfo,
+  PaperReportChart,
+  buildBacktestReportModel,
+  buildPaperReportCloseRows,
+  openBacktestReportWindow,
+  renderBacktestReportHtml,
+} from '../logics/backtest-report';
 
 interface TrainerTrade {
   id: number;
@@ -32,6 +43,7 @@ interface TrainerTrade {
   pnl: number;
   pnlPct: number;
   annualPct: number | null;
+  holdingMs: number;
 }
 
 type IndicatorCode =
@@ -126,6 +138,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
   loadingError: string | null = null;
   dataLoading = false;
   dataLoadingMessage = '';
+  reportLoading = false;
+  totalDetailsOpen = false;
 
   private allCandles: PriceCandle[] = [];
   visibleCandles: PriceCandle[] = [];
@@ -512,6 +526,33 @@ export class TrainerComponent implements OnInit, OnDestroy {
     return (pnlPct / holdDays) * 365;
   }
 
+  get currentHoldingMs(): number | null {
+    if (this.position === 'flat' || this.entryDt == null || this.currentDt == null) return null;
+    const ms = dtToMs(this.currentDt) - dtToMs(this.entryDt);
+    return Number.isFinite(ms) && ms >= 0 ? ms : null;
+  }
+
+  get positionHoldingText(): string {
+    if (this.position !== 'flat') {
+      const ms = this.currentHoldingMs;
+      return ms == null ? '—' : formatDuration(ms);
+    }
+    const last = this.trades[0];
+    if (!last) return '—';
+    return formatDuration(Math.max(0, last.holdingMs ?? 0));
+  }
+
+  get lastTradeHoldingText(): string {
+    const last = this.trades[0];
+    if (!last) return '—';
+    return formatDuration(Math.max(0, last.holdingMs ?? 0));
+  }
+
+  formatHoldingMs(ms: number | null | undefined): string {
+    if (ms == null || !Number.isFinite(ms) || ms < 0) return '—';
+    return formatDuration(ms);
+  }
+
   get totalPnlWithUnrealized(): number {
     return this.totalPnl + (this.unrealizedPnl ?? 0);
   }
@@ -534,6 +575,16 @@ export class TrainerComponent implements OnInit, OnDestroy {
   get avgExecutionDelaySec(): number | null {
     if (this.executionDelayCount <= 0) return null;
     return this.executionDelaySumSec / this.executionDelayCount;
+  }
+
+  get totalTradingTimeText(): string {
+    return this.simulatedElapsed;
+  }
+
+  get avgHoldingTimeText(): string {
+    if (this.trades.length === 0) return '—';
+    const sum = this.trades.reduce((acc, t) => acc + (Number.isFinite(t.holdingMs) ? Math.max(0, t.holdingMs) : 0), 0);
+    return formatDuration(sum / this.trades.length);
   }
 
   get canBuy(): boolean {
@@ -659,6 +710,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
       pnl,
       pnlPct,
       annualPct,
+      holdingMs: Math.max(0, holdMs),
     };
     this.trades = [trade, ...this.trades];
     this.totalPnl += pnl;
@@ -1000,6 +1052,269 @@ export class TrainerComponent implements OnInit, OnDestroy {
     }
 
     return res;
+  }
+
+  openReport(): void {
+    if (this.reportLoading) return;
+    this.reportLoading = true;
+    this.cdr.markForCheck();
+    try {
+      const security = this.securities.find(s => s.id === this.securityId);
+      const tf = this.timeframes.find(t => t.id === this.timeframeId);
+      const securityName = security?.name || 'Инструмент';
+      const securityPrefix = security?.prefix || null;
+      const tfLabel = tf?.full_name || tf?.tf || 'TF';
+      const candles = this.allCandles.length ? this.allCandles : this.visibleCandles;
+      const reportStartDt = this.playbackStartDt ?? candles[0]?.dt ?? this.trades[this.trades.length - 1]?.openDt ?? this.currentDt ?? '';
+      const reportEndDt = this.currentDt ?? candles[candles.length - 1]?.dt ?? this.trades[0]?.closeDt ?? '';
+      const avgTradeOpen = this.trades.length > 0
+        ? this.trades.reduce((s, t) => s + t.openPrice, 0) / this.trades.length
+        : (this.entryPrice ?? this.toNumber(candles[0]?.close_price) ?? 100000);
+      const basePrice = Number.isFinite(avgTradeOpen) && avgTradeOpen > 0 ? avgTradeOpen : 100000;
+      const initialBalance = Math.max(1, basePrice);
+
+      const synthLogic: LogicRow = {
+        id: 0,
+        name: `Тренажёр: ${securityName}`,
+        account_id: 0,
+        broker_id: 0,
+        is_enabled: true,
+        timeframe: tf?.tf || 'M5',
+        position_size_pct: 100,
+        max_open_positions: 1,
+        initial_balance: initialBalance,
+        commission_pct: Number(this.commissionPct) || 0,
+        cost_method: 'FIFO',
+        base_annual_rate_pct: 0,
+        inversion: false,
+        cash_fund_code: null,
+        account_type: 'fake',
+        account_name: 'Тренажёр',
+        account_code: 'TRAINER',
+        current_balance: initialBalance + this.totalPnlWithUnrealized,
+        test_initial_balance: initialBalance,
+      } as unknown as LogicRow;
+
+      const tradesChrono = [...this.trades].slice().reverse();
+      const synthTrades: LogicTradeRow[] = [];
+      let tradeId = 1;
+      const avgDelay = this.avgExecutionDelaySec;
+      for (const t of tradesChrono) {
+        const dir = t.side === 'long' ? 'Long' : 'Short';
+        const openRow: LogicTradeRow = {
+          id: tradeId++,
+          logic_id: 0,
+          account_id: 0,
+          security_id: this.securityId ?? 0,
+          timeframe_id: this.timeframeId ?? 0,
+          side_id: 1,
+          action_id: t.side === 'long' ? 1 : 2,
+          signal_kind: 'trend',
+          signal_formula: 'TRAINER',
+          quantity: 1,
+          price: t.openPrice,
+          bar_dt: t.openDt,
+          executed_at: t.openDt,
+          exec_delay_sec: avgDelay,
+          is_simulated: true,
+          is_fictitious: false,
+          is_shadow: false,
+          is_test: true,
+          run_id: null,
+          trade_reason: 'Тренажёр: открытие',
+          broker_order_id: null,
+          status: 'filled',
+          commission: 0,
+          financial_result: null,
+          remaining_qty: 0,
+          note: 'Тренажёр',
+          opt_lane: null,
+          security_name: securityName,
+          security_prefix: securityPrefix,
+          side_name: 'Open',
+          action_name: dir,
+          timeframe_tf: tf?.tf || 'M5',
+        } as LogicTradeRow;
+        const closeRow: LogicTradeRow = {
+          id: tradeId++,
+          logic_id: 0,
+          account_id: 0,
+          security_id: this.securityId ?? 0,
+          timeframe_id: this.timeframeId ?? 0,
+          side_id: 2,
+          action_id: t.side === 'long' ? 1 : 2,
+          signal_kind: 'trend',
+          signal_formula: 'TRAINER',
+          quantity: 1,
+          price: t.closePrice,
+          bar_dt: t.closeDt,
+          executed_at: t.closeDt,
+          exec_delay_sec: avgDelay,
+          is_simulated: true,
+          is_fictitious: false,
+          is_shadow: false,
+          is_test: true,
+          run_id: null,
+          trade_reason: 'Тренажёр: закрытие',
+          broker_order_id: null,
+          status: 'filled',
+          commission: t.commission,
+          financial_result: t.pnl,
+          remaining_qty: null,
+          note: 'Тренажёр',
+          opt_lane: null,
+          security_name: securityName,
+          security_prefix: securityPrefix,
+          side_name: 'Close',
+          action_name: dir,
+          timeframe_tf: tf?.tf || 'M5',
+        } as LogicTradeRow;
+        synthTrades.push(openRow, closeRow);
+      }
+
+      // If position is currently open, include a mark-to-market close so report stats
+      // (net PnL, annual %, drawdown, equity) match the trainer's "Итог" with unrealized PnL.
+      if (this.position !== 'flat' && this.entryDt != null && this.entryPrice != null) {
+        const dir = this.position === 'long' ? 'Long' : 'Short';
+        const mtmPrice = this.currentPrice ?? this.entryPrice;
+        const mtmDt = this.currentDt ?? this.entryDt;
+        const mtmPnl = this.unrealizedPnl ?? 0;
+        synthTrades.push({
+          id: tradeId++,
+          logic_id: 0,
+          account_id: 0,
+          security_id: this.securityId ?? 0,
+          timeframe_id: this.timeframeId ?? 0,
+          side_id: 1,
+          action_id: this.position === 'long' ? 1 : 2,
+          signal_kind: 'trend',
+          signal_formula: 'TRAINER',
+          quantity: 1,
+          price: this.entryPrice,
+          bar_dt: this.entryDt,
+          executed_at: this.entryDt,
+          exec_delay_sec: avgDelay,
+          is_simulated: true,
+          is_fictitious: false,
+          is_shadow: false,
+          is_test: true,
+          run_id: null,
+          trade_reason: 'Тренажёр: открытие (текущая позиция)',
+          broker_order_id: null,
+          status: 'filled',
+          commission: 0,
+          financial_result: null,
+          remaining_qty: 0,
+          note: 'Тренажёр: текущая позиция',
+          opt_lane: null,
+          security_name: securityName,
+          security_prefix: securityPrefix,
+          side_name: 'Open',
+          action_name: dir,
+          timeframe_tf: tf?.tf || 'M5',
+        } as LogicTradeRow);
+        synthTrades.push({
+          id: tradeId++,
+          logic_id: 0,
+          account_id: 0,
+          security_id: this.securityId ?? 0,
+          timeframe_id: this.timeframeId ?? 0,
+          side_id: 2,
+          action_id: this.position === 'long' ? 1 : 2,
+          signal_kind: 'trend',
+          signal_formula: 'TRAINER',
+          quantity: 1,
+          price: mtmPrice,
+          bar_dt: mtmDt,
+          executed_at: mtmDt,
+          exec_delay_sec: avgDelay,
+          is_simulated: true,
+          is_fictitious: false,
+          is_shadow: false,
+          is_test: true,
+          run_id: null,
+          trade_reason: 'Тренажёр: текущая позиция (нереализ.)',
+          broker_order_id: null,
+          status: 'filled',
+          commission: 0,
+          financial_result: mtmPnl,
+          remaining_qty: null,
+          note: 'Mark-to-market: позиция ещё открыта',
+          opt_lane: null,
+          security_name: securityName,
+          security_prefix: securityPrefix,
+          side_name: 'Close',
+          action_name: dir,
+          timeframe_tf: tf?.tf || 'M5',
+        } as LogicTradeRow);
+      }
+
+      const run: BacktestReportRunInfo = {
+        status: this.finished ? 'completed' : (this.started ? 'running' : 'idle'),
+        date_from: reportStartDt ? String(reportStartDt).slice(0, 10) : null,
+        date_to: reportEndDt ? String(reportEndDt).slice(0, 10) : null,
+        progress_pct: this.finished ? 100 : (this.allCandles.length > 0 ? Math.round((this.playIndex / this.allCandles.length) * 100) : null),
+      };
+
+      const equity: ChartEquityPoint[] = [];
+      let cum = 0;
+      for (const t of tradesChrono) {
+        cum += t.pnl;
+        equity.push({ dt: t.closeDt, value: cum });
+      }
+      if (this.position !== 'flat' && this.unrealizedPnl != null && this.currentDt) {
+        equity.push({ dt: this.currentDt, value: cum + this.unrealizedPnl });
+      }
+
+      const paperChart: PaperReportChart = {
+        securityId: this.securityId ?? 0,
+        securityName,
+        securityPrefix,
+        timeframeLabel: tfLabel,
+        candles: candles,
+        indicators: this.indicatorSeries.map(s => ({
+          indicator_code: s.indicator_code,
+          line_code: s.line_code,
+          line_name: s.line_name,
+          color: s.color,
+          on_price_scale: s.on_price_scale,
+          is_threshold: s.is_threshold,
+          points: s.points.map(p => ({ dt: p.dt, value: p.value })),
+        })),
+        trades: synthTrades.filter(t => t.security_id === (this.securityId ?? 0)),
+        markers: this.tradeMarkers.filter(m => m.kind === 'open' || m.kind === 'close'),
+        stops: [],
+        shaded: [],
+        equity,
+        equityShadow: [],
+        closes: buildPaperReportCloseRows(synthTrades),
+        pnl: this.totalPnlWithUnrealized,
+        dealCount: this.trades.length,
+        openQty: this.position !== 'flat' ? 1 : 0,
+        lastPrice: this.currentPrice,
+        loadError: null,
+      };
+
+      const model = buildBacktestReportModel(synthLogic, synthTrades, {
+        backtestRun: run,
+        paperCharts: [paperChart],
+        reportMode: 'test',
+        configProvided: false,
+      });
+
+      const html = renderBacktestReportHtml(model);
+      const title = `Отчёт тренажёра — ${securityName}`;
+      const ok = openBacktestReportWindow(html, title);
+      if (!ok) {
+        this.loadingError = 'Браузер заблокировал окно отчёта. Разрешите всплывающие окна и попробуйте снова.';
+      }
+    } catch (err: any) {
+      console.error('Trainer report error', err);
+      this.loadingError = err?.message || 'Ошибка формирования отчёта тренажёра';
+    } finally {
+      this.reportLoading = false;
+      this.cdr.markForCheck();
+    }
   }
 
   formatPrice(v: number | string | null | undefined): string {

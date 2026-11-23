@@ -10,7 +10,12 @@
   }
   <div class="trainer-header">
     <div>
-      <h2 class="trainer-title">Тренажёр</h2>
+      <div class="trainer-title-row">
+        <h2 class="trainer-title">Тренажёр</h2>
+        <button type="button" class="btn-report" (click)="openReport()" [disabled]="reportLoading || (!started && trades.length === 0)">
+          {{ reportLoading ? 'Формирование…' : 'Отчёт' }}
+        </button>
+      </div>
       <p class="trainer-sub">Торгуй на истории: смотри свечи, принимай решения, сразу видишь результат.</p>
     </div>
     <div class="trainer-total" [class.pnl-pos]="totalPnlWithUnrealized > 0" [class.pnl-neg]="totalPnlWithUnrealized < 0" [class.pnl-flat]="totalPnlWithUnrealized === 0">
@@ -183,6 +188,16 @@
         @if (avgExecutionDelaySec !== null) {
           <div class="info-delay">Ср. задержка: {{ avgExecutionDelaySec | number:'1.0-1' }} сек</div>
         }
+        <div class="info-holding">Удержание: {{ positionHoldingText }}</div>
+        <button type="button" class="total-details-toggle" (click)="totalDetailsOpen = !totalDetailsOpen">
+          <span class="total-details-chevron">{{ totalDetailsOpen ? '▾' : '▸' }}</span> Прочее
+        </button>
+        @if (totalDetailsOpen) {
+          <div class="total-details">
+            <div class="total-details-row"><span class="td-label">Время торговли</span><span class="td-value">{{ totalTradingTimeText }}</span></div>
+            <div class="total-details-row"><span class="td-label">Ср. удержание</span><span class="td-value">{{ avgHoldingTimeText }}</span></div>
+          </div>
+        }
       </div>
     </div>
 
@@ -193,11 +208,13 @@
            [class.last-flat]="(unrealizedPnl ?? 0) === 0">
         <div class="last-result-label">Результат сделки</div>
         <div class="last-result-value">{{ formatPnl(unrealizedPnl) }}</div>
+        <div class="last-result-holding">Удержание: {{ positionHoldingText }}</div>
       </div>
     } @else if (lastPnl !== null) {
       <div class="last-result" [class.last-pos]="lastPnl > 0" [class.last-neg]="lastPnl < 0" [class.last-flat]="lastPnl === 0">
         <div class="last-result-label">Результат сделки</div>
         <div class="last-result-value">{{ formatPnl(lastPnl) }}</div>
+        <div class="last-result-holding">Удержание: {{ lastTradeHoldingText }}</div>
       </div>
     }
   </div>
@@ -283,6 +300,7 @@
               <th>Цена откр.</th>
               <th>Закрытие</th>
               <th>Цена закр.</th>
+              <th>Удержание</th>
               <th>Комиссия</th>
               <th>Финрез</th>
               <th>%</th>
@@ -298,6 +316,7 @@
                 <td>{{ formatPrice(t.openPrice) }}</td>
                 <td>{{ t.closeDt }}</td>
                 <td>{{ formatPrice(t.closePrice) }}</td>
+                <td>{{ formatHoldingMs(t.holdingMs) }}</td>
                 <td>{{ formatPrice(t.commission) }}</td>
                 <td [ngClass]="pnlClass(t.pnl)">{{ formatPnl(t.pnl) }}</td>
                 <td [ngClass]="pnlClass(t.pnl)">{{ formatPct(t.pnlPct) }}</td>
@@ -305,7 +324,7 @@
               </tr>
             }
             @if (trades.length === 0) {
-              <tr><td colspan="10" class="empty-hint">Сделок пока нет. Нажми КУПИТЬ или ПРОДАТЬ.</td></tr>
+              <tr><td colspan="11" class="empty-hint">Сделок пока нет. Нажми КУПИТЬ или ПРОДАТЬ.</td></tr>
             }
           </tbody>
         </table>
