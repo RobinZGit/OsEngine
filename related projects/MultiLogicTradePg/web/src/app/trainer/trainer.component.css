@@ -240,3 +240,17 @@
 
 .speed-btn.speed-btn-sm:hover:not(:disabled) { background: #5b21b6; border-color: #5b21b6; filter: none; box-shadow: 0 0 0 2px rgba(124,58,237,.35); }
 .speed-btn.speed-btn-sm:disabled { background: #7c3aed; border-color: #7c3aed; color: #fff; opacity: .45; }
+
+
+/* export picker */
+.export-wrap { position: relative; display: inline-flex; }
+.btn-export { position: relative; overflow: hidden; }
+.btn-export-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(34, 197, 94, 0.35); transition: width .25s ease; pointer-events: none; }
+.btn-export-text { position: relative; z-index: 1; }
+.btn-export:disabled { opacity: 1; }
+.export-picker { position: absolute; top: 100%; right: 0; z-index: 30; min-width: 280px; max-width: 420px; max-height: min(60vh, 420px); overflow: auto; padding: 10px; margin-top: 6px; box-shadow: 0 8px 24px rgba(15,23,42,.12); }
+.export-picker-title { font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px; }
+.export-picker-item { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 13px; color: #0f172a; cursor: pointer; }
+.export-picker-item input { margin: 0; }
+.export-picker-empty { font-size: 12px; color: #64748b; padding: 6px 0; }
+.export-picker-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }

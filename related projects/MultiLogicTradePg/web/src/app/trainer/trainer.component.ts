@@ -37,6 +37,7 @@ import {
   openBacktestReportWindow,
   renderBacktestReportHtml,
 } from '../logics/backtest-report';
+import { buildExportTfData, buildTrainerExportHtml, ExportSecurityData, TrainerExportData } from './trainer-export';
 
 interface TrainerTrade {
   id: number;
@@ -242,6 +243,11 @@ export class TrainerComponent implements OnInit, OnDestroy {
   dataLoadingStage = '';
   statsLoading = false;
   globalReportLoading = false;
+  exporting = false;
+  exportStatus = '';
+  exportProgress = 0;
+  exportPickerOpen = false;
+  exportSelectedIds = new Set<number>();
   totalDetailsOpen = false;
   private dataLoadSlowTimer: ReturnType<typeof setTimeout> | null = null;
   private dataLoadStartedAt = 0;
@@ -585,18 +591,20 @@ export class TrainerComponent implements OnInit, OnDestroy {
 
     try {
       this.setDataLoading(`Загрузка свечей: ${b.securityName}`, 15);
+      const tfSec = this.timeframes.find(t => t.id === this.timeframeId)?.sec ?? 300;
+      const desiredCandles = Math.max(260, Math.round((1200 * 300) / Math.max(1, tfSec)));
       let candles = await this.loadHistory(b.securityId, this.timeframeId, b);
-      if (candles.length === 0) {
-        this.setDataLoading(`Автозагрузка цен: ${b.securityName}`, 45);
-        candles = await this.autoLoadPrices(b.securityId, this.timeframeId, b);
+      if (candles.length < desiredCandles) {
+        this.setDataLoading(`Загрузка цен: ${b.securityName}`, 45);
+        candles = await this.autoLoadPrices(b.securityId, this.timeframeId, b, desiredCandles);
       }
       if (candles.length === 0) {
         throw new Error('Нет исторических свечей по выбранному инструменту и таймфрейму. Проверьте, что данные загружены на вкладке «Данные».');
       }
       this.setDataLoading(`Подготовка графика: ${b.securityName}`, 85);
       b.allCandles = candles;
-      const reserve = Math.min(1500, Math.max(120, Math.floor(candles.length * 0.45)));
-      b.playIndex = Math.max(20, candles.length - reserve);
+      const warmup = Math.min(200, Math.max(20, Math.floor(candles.length * 0.15)));
+      b.playIndex = warmup;
       b.visibleCandles = candles.slice(0, b.playIndex);
       b.playbackStartDt = b.visibleCandles[b.visibleCandles.length - 1]?.dt ?? candles[0]?.dt ?? null;
       b.playing = false;
@@ -615,20 +623,21 @@ export class TrainerComponent implements OnInit, OnDestroy {
     }
   }
 
-  private async autoLoadPrices(securityId: number, timeframeId: number, b: TrainerBlock): Promise<PriceCandle[]> {
+  private async autoLoadPrices(securityId: number, timeframeId: number, b: TrainerBlock, desiredMin = 1): Promise<PriceCandle[]> {
+    const tfSec = this.timeframes.find(t => t.id === timeframeId)?.sec ?? 300;
+    const daysBack = Math.max(365, Math.ceil((desiredMin * tfSec) / 86400) + 30);
     const to = new Date();
-    const from = new Date(to.getTime() - 365 * 24 * 3600 * 1000);
+    const from = new Date(to.getTime() - daysBack * 24 * 3600 * 1000);
     const dateFrom = this.toDateStr(from);
     const dateTo = this.toDateStr(to);
     const res: any = await firstValueFrom(this.securitiesApi.loadPrices({ security_id: securityId, timeframe_id: timeframeId, date_from: dateFrom, date_to: dateTo }));
-    if (res && res.ok === false) throw new Error(res?.error || 'Не удалось автоматически загрузить цены');
-    // простое ожидание и перечитывание истории
+    if (res && res.ok === false) throw new Error(res?.error || 'Не удалось загрузить цены');
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       if (!b.started) return [];
-      this.setDataLoading(`Автозагрузка: ${b.securityName}`, Math.min(84, 45 + i * 1.3));
+      this.setDataLoading(`Загрузка цен: ${b.securityName}`, Math.min(84, 45 + i * 1.3));
       const candles = await this.loadHistory(securityId, timeframeId, b);
-      if (candles.length > 0) return candles;
+      if (candles.length >= desiredMin) return candles;
     }
     return await this.loadHistory(securityId, timeframeId, b);
   }
@@ -1029,25 +1038,43 @@ export class TrainerComponent implements OnInit, OnDestroy {
   get globalTotalPnl(): number {
     return this.blocks.reduce((s, b) => s + this.totalPnlWithUnrealized(b), 0);
   }
+  get globalAnnualPct(): number | null {
+    let weightedSum = 0;
+    let weightTotal = 0;
+    for (const b of this.blocks) {
+      const ap = this.totalAnnualPct(b);
+      const base = this.blockBasePrice(b);
+      if (ap == null || base == null || !Number.isFinite(base) || base <= 0) continue;
+      // weight by base price (per 1 unit) so different securities contribute proportionally to their % base
+      weightedSum += ap * base;
+      weightTotal += base;
+    }
+    if (weightTotal <= 0) return null;
+    return weightedSum / weightTotal;
+  }
+  private blockBasePrice(b: TrainerBlock): number | null {
+    const basePrice = b.trades.length > 0
+      ? b.trades.reduce((s, t) => s + t.openPrice, 0) / b.trades.length
+      : (b.entryPrice ?? (b.visibleCandles.length > 0 ? Number(b.visibleCandles[0].close_price) : null));
+    return basePrice != null && Number.isFinite(basePrice) && basePrice > 0 ? basePrice : null;
+  }
 
   // ---- trading ----
   canBuy(b: TrainerBlock): boolean {
     if (this.battleMode) {
       return b.started && !b.loading && !this.battlePlacing
         && this.currentPrice(b) != null && !!this.battleAccountId
-        && b.position !== 'short'
-        && (b.position === 'long' || this.battleQty(b) > 0);
+        && (b.position === 'long' || b.position === 'short' || this.battleQty(b) > 0);
     }
-    return b.started && !b.loading && !this.dataLoading && this.currentPrice(b) != null && b.position !== 'short' && !b.pendingOrder;
+    return b.started && !b.loading && !this.dataLoading && this.currentPrice(b) != null && !b.pendingOrder;
   }
   canSell(b: TrainerBlock): boolean {
     if (this.battleMode) {
       return b.started && !b.loading && !this.battlePlacing
         && this.currentPrice(b) != null && !!this.battleAccountId
-        && b.position !== 'long'
-        && (b.position === 'short' || this.battleQty(b) > 0);
+        && (b.position === 'short' || b.position === 'long' || this.battleQty(b) > 0);
     }
-    return b.started && !b.loading && !this.dataLoading && this.currentPrice(b) != null && b.position !== 'long' && !b.pendingOrder;
+    return b.started && !b.loading && !this.dataLoading && this.currentPrice(b) != null && !b.pendingOrder;
   }
 
   pendingOrderText(b: TrainerBlock): string | null {
@@ -1824,11 +1851,305 @@ export class TrainerComponent implements OnInit, OnDestroy {
     }
   }
 
+
+  exportSecurityOptions(): Array<{ id: number; name: string }> {
+    const seen = new Set<number>();
+    const out: Array<{ id: number; name: string }> = [];
+    for (const sec of this.securities) {
+      if (sec?.id == null || seen.has(sec.id)) continue;
+      seen.add(sec.id);
+      out.push({ id: sec.id, name: sec.name });
+    }
+    // include any block securities not in current securities list
+    for (const b of this.blocks) {
+      if (b.securityId == null || seen.has(b.securityId)) continue;
+      seen.add(b.securityId);
+      out.push({ id: b.securityId, name: b.securityName || String(b.securityId) });
+    }
+    return out;
+  }
+
+  private defaultExportSecurityIds(): Set<number> {
+    const ids = new Set<number>();
+    for (const b of this.blocks) if (b.securityId != null) ids.add(b.securityId);
+    if (ids.size === 0 && this.addSecurityId != null) ids.add(this.addSecurityId);
+    if (ids.size === 0 && this.securities.length > 0) ids.add(this.securities[0].id);
+    return ids;
+  }
+
+  toggleExportPicker(): void {
+    if (this.exporting) return;
+    this.exportPickerOpen = !this.exportPickerOpen;
+    if (this.exportPickerOpen) {
+      // keep previous selection if still valid, else default
+      const opts = this.exportSecurityOptions();
+      const valid = new Set(opts.map(o => o.id));
+      const kept = Array.from(this.exportSelectedIds).filter(id => valid.has(id));
+      this.exportSelectedIds = kept.length > 0 ? new Set(kept) : this.defaultExportSecurityIds();
+    }
+  }
+
+  toggleExportSecurity(id: number, checked: boolean): void {
+    const next = new Set(this.exportSelectedIds);
+    if (checked) next.add(id); else next.delete(id);
+    this.exportSelectedIds = next;
+  }
+
+  async exportTrainerHtml(): Promise<void> {
+    if (this.exporting) return;
+    const opts = this.exportSecurityOptions();
+    const valid = new Set(opts.map(o => o.id));
+    let chosen = Array.from(this.exportSelectedIds).filter(id => valid.has(id));
+    if (chosen.length === 0) chosen = Array.from(this.defaultExportSecurityIds()).filter(id => valid.has(id));
+    if (chosen.length === 0 && opts.length > 0) chosen = [opts[0].id];
+    const targetIds = chosen;
+    if (targetIds.length === 0) { this.loadingError = 'Выберите хотя бы одну бумагу для экспорта'; this.cdr.markForCheck(); return; }
+    if (!this.timeframes.length) { this.loadingError = 'Нет таймфреймов для экспорта'; this.cdr.markForCheck(); return; }
+
+    this.exporting = true;
+    this.exportPickerOpen = false;
+    this.exportProgress = 0;
+    this.exportStatus = 'Подготовка...';
+    this.loadingError = null;
+    this.cdr.markForCheck();
+
+    try {
+      const PRICE_PAGE = 500; // /api/prices отдаёт максимум 500 строк за запрос
+      const MIN_BASE_CAP = 6000; // достаточно для ~1200 5m-свечей
+      const tfs = this.timeframes.slice().sort((a, b) => b.sec - a.sec);
+      const securities: ExportSecurityData[] = [];
+      for (let si = 0; si < targetIds.length; si++) {
+        const secId = targetIds[si];
+        const sec = this.securities.find(s => s.id === secId) ?? null;
+        const block = this.blocks.find(b => b.securityId === secId) ?? null;
+        const secName = sec?.name ?? block?.securityName ?? String(secId);
+        const exchangeName = (sec as any)?.exchange_name ?? this.exchanges.find(e => e.id === this.exchangeId)?.name ?? '';
+        const byTf: ExportSecurityData['byTf'] = {};
+        const includedTfs: ExportSecurityData['timeframes'] = [];
+        const secBaseProgress = (si / Math.max(1, targetIds.length)) * 100;
+        const secSlice = 100 / Math.max(1, targetIds.length);
+
+        const baseTf = this.timeframes.find(t => t.sec === 60) ?? this.timeframes.slice().sort((a,b)=>a.sec-b.sec)[0] ?? null;
+        let baseCandles: PriceCandle[] = [];
+        const canUseBase = !!baseTf && baseTf.sec === 60;
+
+        if (canUseBase && baseTf) {
+          const maxBaseCap = Math.min(20000, Math.max(...tfs.map(tf => Math.max(260, Math.round((1200 * 300) / Math.max(1, tf.sec))) * Math.max(1, Math.round(tf.sec / 60)))));
+          this.exportStatus = `${secName}: 1m загрузка...${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
+          this.cdr.markForCheck();
+          try {
+            let before: string | undefined = undefined;
+            while (baseCandles.length < maxBaseCap) {
+              const batch: PriceCandle[] = await firstValueFrom(this.securitiesApi.getPrices(secId, baseTf.id, PRICE_PAGE, before)) ?? [];
+              const rows: PriceCandle[] = (batch as PriceCandle[]).map(normalizeCandle);
+              if (!rows.length) break;
+              rows.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
+              const firstDt = rows[0].dt;
+              if (before && firstDt === before) break;
+              const existing = new Set(baseCandles.map(c => c.dt));
+              const merged = rows.filter((r: PriceCandle) => !existing.has(r.dt)).concat(baseCandles);
+              merged.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
+              baseCandles = merged;
+              before = rows[0].dt;
+              this.exportProgress = Math.round(secBaseProgress + secSlice * 0.6 * Math.min(1, baseCandles.length / Math.max(1, MIN_BASE_CAP)));
+              this.cdr.markForCheck();
+              if (rows.length < PRICE_PAGE) break;
+            }
+          } catch (e) {
+            console.warn('Export: failed to load 1m base', secId, e);
+          }
+          if (baseCandles.length < MIN_BASE_CAP) {
+            try {
+              const daysBack = Math.max(30, Math.ceil((maxBaseCap * 60) / 86400) + 10);
+              const toD = new Date();
+              const fromD = new Date(toD.getTime() - daysBack * 86400000);
+              const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+              this.exportStatus = `${secName}: 1m загрузка цен...${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
+              this.cdr.markForCheck();
+              await Promise.race([
+                firstValueFrom(this.securitiesApi.loadPrices({ security_id: secId, timeframe_id: baseTf.id, date_from: fmt(fromD), date_to: fmt(toD) })),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 120000)),
+              ]).catch(e => console.warn('Export: loadPrices 1m timeout/fail', secId, e));
+              for (let w = 0; w < 6 && baseCandles.length < MIN_BASE_CAP; w++) {
+                await new Promise(r => setTimeout(r, 2000));
+                let before: string | undefined = undefined;
+                let reloaded: PriceCandle[] = [];
+                while (reloaded.length < maxBaseCap) {
+                  const batch2: PriceCandle[] = await firstValueFrom(this.securitiesApi.getPrices(secId, baseTf.id, PRICE_PAGE, before)) ?? [];
+                  const rows2: PriceCandle[] = (batch2 as PriceCandle[]).map(normalizeCandle);
+                  if (!rows2.length) break;
+                  rows2.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
+                  const fdt = rows2[0].dt;
+                  if (before && fdt === before) break;
+                  const ex = new Set(reloaded.map(c => c.dt));
+                  reloaded = rows2.filter((r: PriceCandle) => !ex.has(r.dt)).concat(reloaded);
+                  reloaded.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
+                  before = rows2[0].dt;
+                  this.exportProgress = Math.round(secBaseProgress + secSlice * 0.6 * Math.min(1, reloaded.length / Math.max(1, MIN_BASE_CAP)));
+                  this.cdr.markForCheck();
+                  if (rows2.length < PRICE_PAGE) break;
+                }
+                if (reloaded.length >= baseCandles.length) baseCandles = reloaded;
+                if (baseCandles.length >= maxBaseCap) break;
+              }
+            } catch (e) {
+              console.warn('Export: auto-load 1m base failed', secId, e);
+            }
+          }
+          this.exportProgress = Math.round(secBaseProgress + secSlice * 0.6);
+          this.cdr.markForCheck();
+        }
+
+        for (let i = 0; i < tfs.length; i++) {
+          const tf = tfs[i];
+          this.exportStatus = `${secName}: ${tf.tf} сборка (${i + 1}/${tfs.length})${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
+          this.cdr.markForCheck();
+          await new Promise(r => setTimeout(r, 0));
+          const cap = Math.max(260, Math.round((1200 * 300) / Math.max(1, tf.sec)));
+          let candles: PriceCandle[] = [];
+
+          if (canUseBase && baseCandles.length > 0 && tf.sec >= 60 && tf.sec % 60 === 0) {
+            const resampled = tf.sec === 60 ? baseCandles.slice() : resampleCandles(baseCandles, tf.sec);
+            const trimmed = resampled.length > cap ? resampled.slice(resampled.length - cap) : resampled;
+            // склейка из 1m быстрая: используем любые полученные свечи, не дёргаем провайдера
+            candles = trimmed;
+          }
+
+          if (candles.length === 0) {
+            // fallback: direct load per TF
+            try {
+              let before: string | undefined = undefined;
+              while (candles.length < cap) {
+                const batch: PriceCandle[] = await firstValueFrom(this.securitiesApi.getPrices(secId, tf.id, PRICE_PAGE, before)) ?? [];
+                const rows: PriceCandle[] = (batch as PriceCandle[]).map(normalizeCandle);
+                if (!rows.length) break;
+                rows.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
+                const firstDt = rows[0].dt;
+                if (before && firstDt === before) break;
+                const existing = new Set(candles.map(c => c.dt));
+                const merged = rows.filter((r: PriceCandle) => !existing.has(r.dt)).concat(candles);
+                merged.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
+                candles = merged;
+                before = rows[0].dt;
+                if (rows.length < PRICE_PAGE) break;
+              }
+            } catch (e) {
+              console.warn('Export: failed to load prices', secId, tf.tf, e);
+            }
+            if (candles.length < cap) {
+              try {
+                const daysBack = Math.max(365, Math.ceil((cap * tf.sec) / 86400) + 30);
+                const toD = new Date();
+                const fromD = new Date(toD.getTime() - daysBack * 86400000);
+                const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                this.exportStatus = `${secName}: ${tf.tf} загрузка цен...${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
+                this.cdr.markForCheck();
+                await Promise.race([
+                  firstValueFrom(this.securitiesApi.loadPrices({ security_id: secId, timeframe_id: tf.id, date_from: fmt(fromD), date_to: fmt(toD) })),
+                  new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 120000)),
+                ]).catch(e => console.warn('Export: loadPrices timeout/fail', secId, tf.tf, e));
+                for (let w = 0; w < 6 && candles.length < cap; w++) {
+                  await new Promise(r => setTimeout(r, 2000));
+                  let before2: string | undefined = undefined;
+                  let reloaded: PriceCandle[] = [];
+                  while (reloaded.length < cap) {
+                    const batch2: PriceCandle[] = await firstValueFrom(this.securitiesApi.getPrices(secId, tf.id, PRICE_PAGE, before2)) ?? [];
+                    const rows2: PriceCandle[] = (batch2 as PriceCandle[]).map(normalizeCandle);
+                    if (!rows2.length) break;
+                    rows2.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
+                    const fdt = rows2[0].dt;
+                    if (before2 && fdt === before2) break;
+                    const ex = new Set(reloaded.map(c => c.dt));
+                    reloaded = rows2.filter((r: PriceCandle) => !ex.has(r.dt)).concat(reloaded);
+                    reloaded.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
+                    before2 = rows2[0].dt;
+                    if (rows2.length < PRICE_PAGE) break;
+                  }
+                  if (reloaded.length >= candles.length) candles = reloaded;
+                  if (candles.length >= cap) break;
+                }
+              } catch (e) {
+                console.warn('Export: auto-load prices failed', secId, tf.tf, e);
+              }
+            }
+            if (candles.length > cap) candles = candles.slice(candles.length - cap);
+          }
+
+          if (candles.length > 0) {
+            this.exportStatus = `${secName}: ${tf.tf} (${i + 1}/${tfs.length})${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
+            this.cdr.markForCheck();
+            await new Promise(r => setTimeout(r, 0));
+            byTf[String(tf.id)] = buildExportTfData(tf.id, tf.tf, tf.sec, candles);
+            includedTfs.push({ id: tf.id, tf: tf.tf, sec: tf.sec });
+          }
+          this.exportProgress = Math.round(secBaseProgress + secSlice * (0.6 + 0.4 * ((i + 1) / Math.max(1, tfs.length))));
+        }
+
+        if (includedTfs.length > 0) {
+          const defaultTfId = this.timeframeId ?? this.timeframes[0]?.id ?? null;
+          securities.push({
+            id: secId, name: secName, exchangeName,
+            timeframes: includedTfs, byTf,
+            defaultTfId: includedTfs.some(t => t.id === defaultTfId) ? defaultTfId : includedTfs[0].id,
+          });
+        }
+      }
+
+      if (!securities.length) { this.loadingError = 'Нет загруженных цен для экспорта выбранных бумаг'; return; }
+
+      this.exportStatus = 'Сборка HTML...';
+      this.cdr.markForCheck();
+      await new Promise(r => setTimeout(r, 0));
+
+      const defaultIndicators: Array<{ uid: string; type: string; period: number; color: string }> = [];
+      const seenInd = new Set<string>();
+      const pushInd = (type: string, period: number, color: string) => {
+        const k = `${type}:${period}`;
+        if (seenInd.has(k)) return;
+        seenInd.add(k);
+        defaultIndicators.push({ uid: `ind-${type}-${period}-${defaultIndicators.length}`, type, period, color });
+      };
+      pushInd('SMA', 9, '#2563eb');
+      pushInd('SMA', 21, '#f59e0b');
+      for (const b of this.blocks) {
+        for (const ind of (b.indicators ?? [])) pushInd(ind.type, Math.max(2, Math.floor(Number(ind.period) || 20)), ind.color || '#2563eb');
+      }
+      const data: TrainerExportData = {
+        version: 3,
+        exportedAt: new Date().toISOString(),
+        securities,
+        defaultSecurityId: securities[0].id,
+        defaultIndicators,
+        defaults: { commissionPct: this.commissionPct, executionDelaySec: this.executionDelaySec, speedMs: this.speedMs },
+      };
+
+      const html = buildTrainerExportHtml(data);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safe = (securities.length === 1 ? securities[0].name : `trainer_${securities.length}_securities`).replace(/[^\w\u0400-\u04FF.-]+/g, '_').slice(0, 60);
+      a.href = url;
+      a.download = `trainer_${safe}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      this.exportStatus = `Готово: ${securities.length} бум., ${securities.reduce((n,s)=>n+s.timeframes.length,0)} ТФ`;
+    } catch (err: any) {
+      console.error('Trainer export error', err);
+      this.loadingError = err?.message || 'Ошибка экспорта тренажёра';
+    } finally {
+      this.exporting = false;
+      this.exportProgress = 0;
+      this.cdr.markForCheck();
+      setTimeout(() => { if (!this.exporting) { this.exportStatus = ''; this.exportProgress = 0; this.cdr.markForCheck(); } }, 3000);
+    }
+  }
 }
 
-type Pt = { dt: string; value: number };
+export type Pt = { dt: string; value: number };
 
-function calcSma(candles: PriceCandle[], period: number): Pt[] {
+export function calcSma(candles: PriceCandle[], period: number): Pt[] {
   const out: Pt[] = [];
   let sum = 0;
   for (let i = 0; i < candles.length; i++) {
@@ -1840,7 +2161,7 @@ function calcSma(candles: PriceCandle[], period: number): Pt[] {
   return out;
 }
 
-function calcEma(candles: PriceCandle[], period: number): Pt[] {
+export function calcEma(candles: PriceCandle[], period: number): Pt[] {
   const out: Pt[] = [];
   if (candles.length < period) return out;
   const k = 2 / (period + 1);
@@ -1855,7 +2176,7 @@ function calcEma(candles: PriceCandle[], period: number): Pt[] {
   return out;
 }
 
-function calcWma(candles: PriceCandle[], period: number): Pt[] {
+export function calcWma(candles: PriceCandle[], period: number): Pt[] {
   const out: Pt[] = [];
   const denom = (period * (period + 1)) / 2;
   for (let i = period - 1; i < candles.length; i++) {
@@ -1866,7 +2187,7 @@ function calcWma(candles: PriceCandle[], period: number): Pt[] {
   return out;
 }
 
-function calcHma(candles: PriceCandle[], period: number): Pt[] {
+export function calcHma(candles: PriceCandle[], period: number): Pt[] {
   const n2 = Math.max(2, Math.floor(period / 2));
   const sqrtN = Math.max(2, Math.round(Math.sqrt(period)));
   const wmaN = calcWma(candles, period);
@@ -1888,7 +2209,7 @@ function calcHma(candles: PriceCandle[], period: number): Pt[] {
   return out;
 }
 
-function calcVwap(candles: PriceCandle[]): Pt[] {
+export function calcVwap(candles: PriceCandle[]): Pt[] {
   let cumPV = 0;
   let cumV = 0;
   const out: Pt[] = [];
@@ -1902,7 +2223,7 @@ function calcVwap(candles: PriceCandle[]): Pt[] {
   return out;
 }
 
-function calcBb(candles: PriceCandle[], period: number, mult: number): { middle: Pt[]; upper: Pt[]; lower: Pt[] } {
+export function calcBb(candles: PriceCandle[], period: number, mult: number): { middle: Pt[]; upper: Pt[]; lower: Pt[] } {
   const middle = calcSma(candles, period);
   const upper: Pt[] = [];
   const lower: Pt[] = [];
@@ -1921,7 +2242,7 @@ function calcBb(candles: PriceCandle[], period: number, mult: number): { middle:
   return { middle, upper, lower };
 }
 
-function calcDonchian(candles: PriceCandle[], period: number): { middle: Pt[]; upper: Pt[]; lower: Pt[] } {
+export function calcDonchian(candles: PriceCandle[], period: number): { middle: Pt[]; upper: Pt[]; lower: Pt[] } {
   const upper: Pt[] = [];
   const lower: Pt[] = [];
   const middle: Pt[] = [];
@@ -1939,7 +2260,7 @@ function calcDonchian(candles: PriceCandle[], period: number): { middle: Pt[]; u
   return { middle, upper, lower };
 }
 
-function calcRsi(candles: PriceCandle[], period: number): Pt[] {
+export function calcRsi(candles: PriceCandle[], period: number): Pt[] {
   if (candles.length < period + 1) return [];
   let gain = 0;
   let loss = 0;
@@ -1977,7 +2298,7 @@ function emaFromValues(values: { dt: string; value: number }[], period: number):
   return out;
 }
 
-function calcMacd(candles: PriceCandle[], fast: number, slow: number, signal: number): { macd: Pt[]; signal: Pt[]; hist: Pt[] } {
+export function calcMacd(candles: PriceCandle[], fast: number, slow: number, signal: number): { macd: Pt[]; signal: Pt[]; hist: Pt[] } {
   const emaFast = calcEma(candles, Math.max(2, fast));
   const emaSlow = calcEma(candles, Math.max(3, slow));
   const slowMap = new Map(emaSlow.map((p) => [p.dt, p.value]));
@@ -1996,7 +2317,7 @@ function calcMacd(candles: PriceCandle[], fast: number, slow: number, signal: nu
   return { macd, signal: sig, hist };
 }
 
-function calcStoch(candles: PriceCandle[], kPeriod: number, dPeriod: number, smooth: number): { k: Pt[]; d: Pt[] } {
+export function calcStoch(candles: PriceCandle[], kPeriod: number, dPeriod: number, smooth: number): { k: Pt[]; d: Pt[] } {
   const rawK: Pt[] = [];
   for (let i = kPeriod - 1; i < candles.length; i++) {
     let hi = -Infinity;
@@ -2025,7 +2346,7 @@ function smaFromValues(values: Pt[], period: number): Pt[] {
   return out;
 }
 
-function calcAtr(candles: PriceCandle[], period: number): Pt[] {
+export function calcAtr(candles: PriceCandle[], period: number): Pt[] {
   if (candles.length < 2) return [];
   const trs: Pt[] = [];
   for (let i = 1; i < candles.length; i++) {
@@ -2046,7 +2367,7 @@ function calcAtr(candles: PriceCandle[], period: number): Pt[] {
   return out;
 }
 
-function calcCci(candles: PriceCandle[], period: number): Pt[] {
+export function calcCci(candles: PriceCandle[], period: number): Pt[] {
   const out: Pt[] = [];
   for (let i = period - 1; i < candles.length; i++) {
     const tps: number[] = [];
@@ -2062,7 +2383,7 @@ function calcCci(candles: PriceCandle[], period: number): Pt[] {
   return out;
 }
 
-function calcAdx(candles: PriceCandle[], period: number): { adx: Pt[]; pdi: Pt[]; mdi: Pt[] } {
+export function calcAdx(candles: PriceCandle[], period: number): { adx: Pt[]; pdi: Pt[]; mdi: Pt[] } {
   if (candles.length < period + 2) return { adx: [], pdi: [], mdi: [] };
   const trs: number[] = [];
   const plusDm: number[] = [];
@@ -2115,7 +2436,7 @@ function calcAdx(candles: PriceCandle[], period: number): { adx: Pt[]; pdi: Pt[]
   return { adx, pdi, mdi };
 }
 
-function calcRoc(candles: PriceCandle[], period: number): Pt[] {
+export function calcRoc(candles: PriceCandle[], period: number): Pt[] {
   const out: Pt[] = [];
   for (let i = period; i < candles.length; i++) {
     const prev = candles[i - period].close_price;
@@ -2124,7 +2445,7 @@ function calcRoc(candles: PriceCandle[], period: number): Pt[] {
   return out;
 }
 
-function calcObv(candles: PriceCandle[]): Pt[] {
+export function calcObv(candles: PriceCandle[]): Pt[] {
   if (candles.length === 0) return [];
   let obv = 0;
   const out: Pt[] = [{ dt: candles[0].dt, value: obv }];
@@ -2137,7 +2458,7 @@ function calcObv(candles: PriceCandle[]): Pt[] {
   return out;
 }
 
-function calcMfi(candles: PriceCandle[], period: number): Pt[] {
+export function calcMfi(candles: PriceCandle[], period: number): Pt[] {
   if (candles.length < period + 1) return [];
   const typical = (c: PriceCandle) => (c.high_price + c.low_price + c.close_price) / 3;
   const out: Pt[] = [];
@@ -2181,6 +2502,40 @@ function normalizeCandle(c: PriceCandle): PriceCandle {
     close_price: toNum(c.close_price),
     volume: toNum(c.volume),
   };
+}
+
+function resampleCandles(base: PriceCandle[], tfSec: number): PriceCandle[] {
+  if (tfSec <= 60 || base.length === 0) return base.slice();
+  const bucketMs = tfSec * 1000;
+  const out: PriceCandle[] = [];
+  let cur: PriceCandle | null = null;
+  let curBucket = -1;
+  for (const c of base) {
+    const ms = dtToMs(c.dt);
+    if (!ms) continue;
+    const bucket = Math.floor(ms / bucketMs) * bucketMs;
+    if (!cur || bucket !== curBucket) {
+      if (cur) out.push(cur);
+      curBucket = bucket;
+      cur = {
+        ...c,
+        dt: new Date(bucket).toISOString(),
+        open_price: c.open_price,
+        high_price: c.high_price,
+        low_price: c.low_price,
+        close_price: c.close_price,
+        volume: c.volume ?? 0,
+      };
+    } else {
+      if (c.high_price > cur.high_price) cur.high_price = c.high_price;
+      if (c.low_price < cur.low_price) cur.low_price = c.low_price;
+      cur.close_price = c.close_price;
+      cur.volume = (cur.volume ?? 0) + (c.volume ?? 0);
+      cur.dt = c.dt; // keep last candle dt in bucket
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
 }
 
 function dtToMs(dt: string): number {

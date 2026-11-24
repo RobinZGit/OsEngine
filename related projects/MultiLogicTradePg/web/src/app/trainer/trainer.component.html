@@ -21,7 +21,7 @@
       <div class="fs-total" [class.pnl-pos]="globalTotalPnl > 0" [class.pnl-neg]="globalTotalPnl < 0">
         <span class="fs-total-label">Общий финрез:</span>
         <span class="fs-total-val">{{ formatPnl(globalTotalPnl) }}</span>
-        <span class="fs-total-hold">Ср. удерж.: {{ globalAvgHoldingText }}</span>
+        <span class="fs-total-hold" title="Годовых: средневзвешенный по базовой сумме (средняя цена входа/цена) по блокам">Годовых: {{ formatPct(globalAnnualPct) || '—' }} · Ср. удерж.: {{ globalAvgHoldingText }}</span>
       </div>
       <div class="fs-speed" [class.disabled]="battleMode">
         <span class="fs-speed-label">Скорость</span>
@@ -43,16 +43,40 @@
           <button type="button" class="btn-report btn-stats" [disabled]="statsLoading" (click)="openStats()">
             {{ statsLoading ? 'Загрузка…' : 'Статистика по всем бумагам' }}
           </button>
+          <div class="export-wrap">
+            <button type="button" class="btn-report btn-export" (click)="toggleExportPicker()" [disabled]="exporting" [title]="exportStatus || 'Экспорт в HTML'">
+              <span class="btn-export-fill" [style.width.%]="exporting ? exportProgress : 0"></span>
+              <span class="btn-export-text">{{ exporting ? (exportProgress + '% ' + (exportStatus || 'Экспорт...')) : 'Экспорт' }}</span>
+            </button>
+            @if (exportPickerOpen) {
+              <div class="export-picker card">
+                <div class="export-picker-title">Бумаги для экспорта</div>
+                @for (s of exportSecurityOptions(); track s.id) {
+                  <label class="export-picker-item">
+                    <input type="checkbox" [checked]="exportSelectedIds.has(s.id)" (change)="toggleExportSecurity(s.id, $any($event.target).checked)" />
+                    <span>{{ s.name }}</span>
+                  </label>
+                }
+                @if (exportSecurityOptions().length === 0) {
+                  <div class="export-picker-empty">Нет доступных бумаг</div>
+                }
+                <div class="export-picker-actions">
+                  <button type="button" class="btn-report" (click)="exportTrainerHtml()" [disabled]="exporting || exportSelectedIds.size === 0">Скачать HTML</button>
+                  <button type="button" class="btn-report" (click)="exportPickerOpen=false">Отмена</button>
+                </div>
+              </div>
+            }
+          </div>
           <button type="button" class="btn-report btn-fs" (click)="enterFullscreen()" [disabled]="blocks.length === 0" title="Полный экран">⛶ Полный экран</button>
         </div>
         <p class="trainer-sub">Добавляйте бумаги кнопкой «+», торгуйте по каждой отдельно. В боевом режиме сделки отправляются на выбранный счёт.</p>
       </div>
       <div class="trainer-total">
-        <div class="total-label">ОБЩИЙ ФИНРЕЗ</div>
+        <div class="total-label">Общий финрез</div>
         <div class="total-value" [class.pnl-pos]="globalTotalPnl > 0" [class.pnl-neg]="globalTotalPnl < 0" [class.pnl-flat]="globalTotalPnl === 0">
           {{ formatPnl(globalTotalPnl) }}
         </div>
-        <div class="total-meta">Блоков: {{ blocks.length }} · Ср. удерж.: {{ globalAvgHoldingText }}</div>
+        <div class="total-meta" title="Годовых: средневзвешенный по базовой сумме (средняя цена входа/цена 1 ед.) по блокам">Блоков: {{ blocks.length }} · Годовых: {{ formatPct(globalAnnualPct) || '—' }} · Ср. удерж.: {{ globalAvgHoldingText }}</div>
       </div>
     </div>
 
@@ -188,14 +212,22 @@
             </div>
           </div>
           <div class="block-head-actions">
-            <button type="button" class="tca-btn tca-buy" [class.tca-close]="b.position === 'long'" [disabled]="!canBuy(b)" (click)="buy(b)">
+            <button type="button" class="tca-btn tca-buy" [class.tca-close]="b.position === 'long' || b.position === 'short'" [disabled]="!canBuy(b)" (click)="buy(b)">
+
               <span class="tca-main" [class.close-on-buy]="b.position === 'long'">{{ b.position === 'long' ? 'ЗАКРЫТЬ' : 'КУПИТЬ' }}</span>
-              <span class="tca-sub">{{ b.position === 'long' ? positionHoldingText(b) : (b.position === 'short' ? 'шорт открыт' : 'лонг') }}</span>
+
+              <span class="tca-sub">{{ b.position !== 'flat' ? positionHoldingText(b) : 'ЛОНГ' }}</span>
+
             </button>
-            <button type="button" class="tca-btn tca-sell" [class.tca-close-sell]="b.position === 'short'" [disabled]="!canSell(b)" (click)="sell(b)">
+
+            <button type="button" class="tca-btn tca-sell" [class.tca-close-sell]="b.position === 'short' || b.position === 'long'" [disabled]="!canSell(b)" (click)="sell(b)">
+
               <span class="tca-main" [class.close-on-sell]="b.position === 'short'">{{ b.position === 'short' ? 'ЗАКРЫТЬ' : 'ПРОДАТЬ' }}</span>
-              <span class="tca-sub">{{ b.position === 'short' ? positionHoldingText(b) : (b.position === 'long' ? 'лонг открыт' : 'шорт') }}</span>
+
+              <span class="tca-sub">{{ b.position !== 'flat' ? positionHoldingText(b) : 'ШОРТ' }}</span>
+
             </button>
+
             <button type="button" class="tca-btn tca-start" (click)="onStartPauseClick(b)" [disabled]="b.loading">{{ startPauseLabel(b) }}</button>
             <button type="button" class="tca-btn tca-reset" (click)="resetBlock(b)" [disabled]="b.loading || !b.started">Сначала</button>
             <div class="tca-info tca-result" (click)="refreshBattlePrice(b)" title="Обновить цену по последней котировке">

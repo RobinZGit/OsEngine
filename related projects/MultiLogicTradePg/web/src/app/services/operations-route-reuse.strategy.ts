@@ -6,27 +6,41 @@ import {
 } from '@angular/router';
 
 /**
- * Keep «Торговые операции» (LogicsComponent) mounted when switching to other tabs.
- * Otherwise the component is destroyed and yellow/progress UI is lost until Start again.
+ * Keep top-level tab routes mounted when switching tabs so long-running UI state
+ * (export/import/loading/progress) is preserved.
  */
 @Injectable()
 export class OperationsRouteReuseStrategy implements RouteReuseStrategy {
-  private operationsHandle: DetachedRouteHandle | null = null;
+  private handles = new Map<string, DetachedRouteHandle>();
+
+  private static readonly CACHED_PATHS = new Set([
+    'operations',
+    'references',
+    'terminal',
+    'trainer',
+    'monitoring',
+    'indicators',
+  ]);
 
   shouldDetach(route: ActivatedRouteSnapshot): boolean {
-    return this.isOperations(route);
+    return this.isCached(route);
   }
 
-  store(_route: ActivatedRouteSnapshot, handle: DetachedRouteHandle | null): void {
-    this.operationsHandle = handle;
+  store(route: ActivatedRouteSnapshot, handle: DetachedRouteHandle | null): void {
+    const path = this.path(route);
+    if (!path) return;
+    if (handle) this.handles.set(path, handle);
+    else this.handles.delete(path);
   }
 
   shouldAttach(route: ActivatedRouteSnapshot): boolean {
-    return this.isOperations(route) && this.operationsHandle != null;
+    const path = this.path(route);
+    return !!path && this.handles.has(path);
   }
 
   retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null {
-    return this.isOperations(route) ? this.operationsHandle : null;
+    const path = this.path(route);
+    return path ? this.handles.get(path) ?? null : null;
   }
 
   shouldReuseRoute(
@@ -36,7 +50,12 @@ export class OperationsRouteReuseStrategy implements RouteReuseStrategy {
     return future.routeConfig === curr.routeConfig;
   }
 
-  private isOperations(route: ActivatedRouteSnapshot): boolean {
-    return route.routeConfig?.path === 'operations';
+  private isCached(route: ActivatedRouteSnapshot): boolean {
+    const path = this.path(route);
+    return !!path && OperationsRouteReuseStrategy.CACHED_PATHS.has(path);
+  }
+
+  private path(route: ActivatedRouteSnapshot): string | null {
+    return route.routeConfig?.path ?? null;
   }
 }
