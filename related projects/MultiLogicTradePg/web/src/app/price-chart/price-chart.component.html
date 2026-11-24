@@ -8,7 +8,10 @@
       <span class="chart-title">{{ title }}</span>
     }
     @if (!compact || fullscreen) {
-      <span
+      <div class="chart-toolbar-group chart-toolbar-projected">
+      <ng-content select="[chartToolbarActions]"></ng-content>
+    </div>
+    <span
         class="chart-mode-toggle"
         role="group"
         aria-label="Вид графика цены"
@@ -32,7 +35,8 @@
           (click)="setViewMode('line', $event)"
         >∿</button>
       </span>
-      <div class="chart-toolbar-group">
+    
+    <div class="chart-toolbar-group">
         @if (showRecalcButton) {
         <button
           type="button"
@@ -111,6 +115,7 @@
         </button>
       }
     </div>
+    
     <div class="chart-toolbar-group chart-toolbar-end">
       @if (fullscreen) {
         <button

@@ -1,339 +1,296 @@
-﻿<div class="trainer-page" [class.is-loading]="dataLoading">
+<div class="trainer-page" [class.is-loading]="dataLoading" [class.fullscreen]="fullscreen">
   @if (dataLoading) {
     <div class="loading-overlay" role="status" aria-live="polite">
       <div class="loading-overlay-card">
         <div class="loading-spinner"></div>
         <div class="loading-overlay-text">{{ dataLoadingMessage || 'Идёт загрузка данных…' }}</div>
-        <div class="loading-overlay-sub">Пожалуйста, подождите. Кнопки и выбор бумаги временно заблокированы.</div>
-      </div>
-    </div>
-  }
-  <div class="trainer-header">
-    <div>
-      <div class="trainer-title-row">
-        <h2 class="trainer-title">Тренажёр</h2>
-        <button type="button" class="btn-report" (click)="openReport()" [disabled]="reportLoading || (!started && trades.length === 0)"
-                title="Отчёт по текущей сессии: сделки, график, финрез">
-          {{ reportLoading ? 'Формирование…' : 'Отчёт сессии' }}
-        </button>
-        <button type="button" class="btn-report btn-stats" (click)="openStats()" [disabled]="statsLoading"
-                title="Статистика по всем сохранённым сессиям: какие бумаги и таймфреймы получались, какие действия успешны">
-          {{ statsLoading ? 'Загрузка…' : 'Статистика тренировок' }}
-        </button>
-      </div>
-      <p class="trainer-sub">Торгуй на истории: смотри свечи, принимай решения, сразу видишь результат.</p>
-    </div>
-    <div class="trainer-total" [class.pnl-pos]="totalPnlWithUnrealized > 0" [class.pnl-neg]="totalPnlWithUnrealized < 0" [class.pnl-flat]="totalPnlWithUnrealized === 0">
-      <span class="trainer-total-label">Итоговый финрез</span>
-      <span class="trainer-total-value">{{ formatPnl(totalPnlWithUnrealized) }}</span>
-      @if (totalAnnualPct !== null) {
-        <span class="trainer-total-annual" [ngClass]="pnlClass(totalAnnualPct)">Годовых: {{ formatPct(totalAnnualPct) }}</span>
-      }
-      @if (avgExecutionDelaySec !== null) {
-        <span class="trainer-total-delay">Ср. задержка: {{ avgExecutionDelaySec | number:'1.0-1' }} сек</span>
-      }
-    </div>
-  </div>
-
-  <div class="trainer-controls card">
-    <label class="ctrl">
-      <span>Тип</span>
-      <select [(ngModel)]="securityKind" (ngModelChange)="onSecurityKindChange()" [disabled]="loading || dataLoading">
-        @for (k of securityKindOptions; track k.value) {
-          <option [ngValue]="k.value">{{ k.label }}</option>
-        }
-      </select>
-    </label>
-
-    <label class="ctrl">
-      <span>Инструмент</span>
-      <select [(ngModel)]="securityId" (ngModelChange)="onSetupChange()" [disabled]="loading || dataLoading">
-        @for (s of securities; track s.id) {
-          <option [ngValue]="s.id">{{ s.name }}</option>
-        }
-      </select>
-    </label>
-
-    <label class="ctrl">
-      <span>Таймфрейм</span>
-      <select [(ngModel)]="timeframeId" (ngModelChange)="onSetupChange()" [disabled]="loading || dataLoading">
-        @for (t of timeframes; track t.id) {
-          <option [ngValue]="t.id">{{ t.full_name || t.tf }}</option>
-        }
-      </select>
-    </label>
-
-    <label class="ctrl ctrl-speed">
-      <span>Скорость</span>
-      <div class="speed-control">
-        <select [(ngModel)]="speedMs" (ngModelChange)="onSpeedChange()" [disabled]="dataLoading">
-          @for (opt of speedOptions; track opt.value) {
-            <option [ngValue]="opt.value">{{ opt.label }}</option>
-          }
-        </select>
-        <div class="speed-step-btns">
-          <button type="button" class="speed-step-btn" (click)="speedUp(); $event.preventDefault()" [disabled]="dataLoading" title="Быстрее">▲</button>
-          <button type="button" class="speed-step-btn" (click)="speedDown(); $event.preventDefault()" [disabled]="dataLoading" title="Медленнее">▼</button>
-        </div>
-      </div>
-    </label>
-
-    <label class="ctrl ctrl-commission">
-      <span>Комиссия, %</span>
-      <input type="number" min="0" step="0.001" [(ngModel)]="commissionPct" [disabled]="dataLoading" />
-    </label>
-
-    <label class="ctrl ctrl-delay">
-      <span>Задержка исп., сек</span>
-      <input type="number" min="0" step="1" [(ngModel)]="executionDelaySec" [disabled]="dataLoading" />
-    </label>
-
-    @if (started && !finished) {
-      <div class="ctrl ctrl-actions">
-        <button class="btn-restart-top" type="button" (click)="start()" [disabled]="loading || dataLoading">Начать заново</button>
-      </div>
-    }
-
-    <div class="ctrl ctrl-status">
-      @if (loading) { <span class="status-loading">Загрузка истории…</span> }
-      @if (finished) { <span class="status-finished">Воспроизведение завершено</span> }
-      @if (started && !finished && !loading) {
-        <span class="status-running">{{ playing ? 'Идёт воспроизведение' : 'Пауза' }} · {{ visibleCandles.length }} свечей@if (currentDt) { · {{ currentDt }} }</span>
-      }
-      @if (started) {
-        <span class="status-elapsed">Время по свечам: {{ simulatedElapsed }}</span>
-      }
-      @if (pendingOrderText) {
-        <span class="status-pending">{{ pendingOrderText }}</span>
-      }
-    </div>
-  </div>
-
-  @if (loadingError) {
-    <div class="trainer-error">{{ loadingError }}</div>
-  }
-
-  <div class="trade-bar card">
-    <div class="trade-buttons-col">
-      <button class="btn-start-main" type="button" (click)="onStartPauseClick()" [disabled]="(!started || finished) ? (loading || dataLoading || !securityId || !timeframeId) : false">
-        {{ startPauseLabel }}
-      </button>
-      @if (pendingOrderText) {
-        <div class="pending-order-banner" role="status" aria-live="polite">
-          ⏳ {{ pendingOrderText }}
-        </div>
-      }
-      <div class="trade-buttons">
-        <button
-          type="button"
-          class="btn-trade btn-buy"
-          [disabled]="!canBuy"
-          (click)="buy()"
-        >
-          <span class="btn-trade-main">КУПИТЬ</span>
-          <span class="btn-trade-sub">{{ position === 'short' ? 'Закрыть шорт' : 'Открыть лонг' }}</span>
-        </button>
-
-        <button
-          type="button"
-          class="btn-trade btn-sell"
-          [disabled]="!canSell"
-          (click)="sell()"
-        >
-          <span class="btn-trade-main">ПРОДАТЬ</span>
-          <span class="btn-trade-sub">{{ position === 'long' ? 'Закрыть лонг' : 'Открыть шорт' }}</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="trade-info">
-      <div class="info-box">
-        <div class="info-label">Позиция</div>
-        <div class="info-value" [class.pos-long]="position === 'long'" [class.pos-short]="position === 'short'" [class.pos-flat]="position === 'flat'">
-          @if (position === 'flat') { НЕТ }
-          @if (position === 'long') { LONG }
-          @if (position === 'short') { SHORT }
-        </div>
-      </div>
-      <div class="info-box">
-        <div class="info-label">Цена входа</div>
-        <div class="info-value">
-          @if (entryPrice != null) {
-            {{ formatPrice(entryPrice) }}
-          } @else {
-            <span class="info-empty">—</span>
-            <span class="info-hint">{{ started ? 'Нет открытой позиции' : 'Нажмите «Начать»' }}</span>
-          }
-        </div>
-      </div>
-      <div class="info-box">
-        <div class="info-label">Текущая цена</div>
-        <div class="info-value">
-          @if (currentPrice != null) {
-            {{ formatPrice(currentPrice) }}
-          } @else {
-            <span class="info-empty">—</span>
-            <span class="info-hint">Нажмите «Начать»</span>
-          }
-        </div>
-      </div>
-      <div class="info-box info-box-pnl">
-        <div class="info-label">Плавающий PnL</div>
-        <div class="info-value" [ngClass]="pnlClass(unrealizedPnl)">
-          {{ formatPnl(unrealizedPnl) }}
-          <span class="info-pct">{{ formatPct(unrealizedPnlPct) }}</span>
-        </div>
-      </div>
-      <div class="info-box info-box-total">
-        <div class="info-label">Итог</div>
-        <div class="info-value" [ngClass]="pnlClass(totalPnlWithUnrealized)">{{ formatPnl(totalPnlWithUnrealized) }}</div>
-        @if (totalAnnualPct !== null) {
-          <div class="info-annual" [ngClass]="pnlClass(totalAnnualPct)">{{ formatPct(totalAnnualPct) }} годовых</div>
-        }
-        @if (avgExecutionDelaySec !== null) {
-          <div class="info-delay">Ср. задержка: {{ avgExecutionDelaySec | number:'1.0-1' }} сек</div>
-        }
-        <div class="info-holding">Удержание: {{ positionHoldingText }}</div>
-        <button type="button" class="total-details-toggle" (click)="totalDetailsOpen = !totalDetailsOpen">
-          <span class="total-details-chevron">{{ totalDetailsOpen ? '▾' : '▸' }}</span> Прочее
-        </button>
-        @if (totalDetailsOpen) {
-          <div class="total-details">
-            <div class="total-details-row"><span class="td-label">Время торговли</span><span class="td-value">{{ totalTradingTimeText }}</span></div>
-            <div class="total-details-row"><span class="td-label">Ср. удержание</span><span class="td-value">{{ avgHoldingTimeText }}</span></div>
+        <div class="loading-progress" aria-hidden="true">
+          <div class="loading-progress-track">
+            <div class="loading-progress-fill" [class.indeterminate]="dataLoadingPercent == null" [style.width.%]="dataLoadingPercent ?? 35"></div>
           </div>
-        }
-      </div>
-    </div>
-
-    @if (position !== 'flat') {
-      <div class="last-result"
-           [class.last-pos]="(unrealizedPnl ?? 0) > 0"
-           [class.last-neg]="(unrealizedPnl ?? 0) < 0"
-           [class.last-flat]="(unrealizedPnl ?? 0) === 0">
-        <div class="last-result-label">Результат сделки</div>
-        <div class="last-result-value">{{ formatPnl(unrealizedPnl) }}</div>
-        <div class="last-result-holding">Удержание: {{ positionHoldingText }}</div>
-      </div>
-    } @else if (lastPnl !== null) {
-      <div class="last-result" [class.last-pos]="lastPnl > 0" [class.last-neg]="lastPnl < 0" [class.last-flat]="lastPnl === 0">
-        <div class="last-result-label">Результат сделки</div>
-        <div class="last-result-value">{{ formatPnl(lastPnl) }}</div>
-        <div class="last-result-holding">Удержание: {{ lastTradeHoldingText }}</div>
-      </div>
-    }
-  </div>
-
-  <div class="chart-card card">
-    <div class="chart-top">
-      <div class="chart-title">
-        График
-        @if (currentDt) { <span class="chart-dt">{{ currentDt }}</span> }
-      </div>
-      @if (lastPnl !== null) {
-        <div class="chart-finres" [ngClass]="pnlClass(lastPnl)">
-          Финрез: {{ formatPnl(lastPnl) }}
+          <div class="loading-progress-pct">{{ dataLoadingPercent == null ? '…' : (dataLoadingPercent + '%') }}</div>
         </div>
-      }
+        <div class="loading-overlay-sub">Пожалуйста, подождите.</div>
+      </div>
     </div>
-    <div class="chart-wrap">
-      <app-price-chart
-        [candles]="visibleCandles"
-        [indicatorSeries]="indicatorSeries"
-        [tradeMarkers]="chartMarkers"
-        [loading]="loading && !started"
-        [error]="loadingError"
-        [followLast]="playing"
-        [focusDt]="playing ? currentDt : null"
-        [focusAlign]="'end'"
-        [title]="''"
-        [showRecalcButton]="false"
-      ></app-price-chart>
-    </div>
-  </div>
+  }
 
-  <div class="bottom-grid">
-    <div class="card indicators-card">
-      <div class="section-title">Индикаторы</div>
-      <div class="indicator-add">
-        <label class="ind-type-label">
-          <span>Индикатор</span>
-          <select [(ngModel)]="addIndicatorType" (ngModelChange)="onIndicatorTypeChange()">
-            @for (def of indicatorDefs; track def.code) {
-              <option [ngValue]="def.code">{{ def.name }}</option>
-            }
+  @if (fullscreen) {
+    <div class="fs-topbar">
+      <button type="button" class="fs-exit-btn" (click)="exitFullscreenMode()" title="Выйти из полноэкранного режима">⛶ Выйти из полноэкрана</button>
+      <div class="fs-total" [class.pnl-pos]="globalTotalPnl > 0" [class.pnl-neg]="globalTotalPnl < 0">
+        <span class="fs-total-label">Общий финрез:</span>
+        <span class="fs-total-val">{{ formatPnl(globalTotalPnl) }}</span>
+        <span class="fs-total-hold">Ср. удерж.: {{ globalAvgHoldingText }}</span>
+      </div>
+      <div class="fs-speed" [class.disabled]="battleMode">
+        <span class="fs-speed-label">Скорость</span>
+        <button type="button" class="speed-btn" (click)="speedDown()" [disabled]="battleMode">−</button>
+        <span class="fs-speed-val">{{ speedMs / 1000 }}с</span>
+        <button type="button" class="speed-btn" (click)="speedUp()" [disabled]="battleMode">+</button>
+      </div>
+    </div>
+  }
+
+  @if (!fullscreen) {
+    <div class="trainer-header">
+      <div>
+        <div class="trainer-title-row">
+          <h1 class="trainer-title">Тренажёр</h1>
+          <button type="button" class="btn-report" [disabled]="globalReportLoading || blocks.length === 0" (click)="openGlobalReport()">
+            {{ globalReportLoading ? 'Формирование…' : 'Отчёт по всем бумагам' }}
+          </button>
+          <button type="button" class="btn-report btn-stats" [disabled]="statsLoading" (click)="openStats()">
+            {{ statsLoading ? 'Загрузка…' : 'Статистика по всем бумагам' }}
+          </button>
+          <button type="button" class="btn-report btn-fs" (click)="enterFullscreen()" [disabled]="blocks.length === 0" title="Полный экран">⛶ Полный экран</button>
+        </div>
+        <p class="trainer-sub">Добавляйте бумаги кнопкой «+», торгуйте по каждой отдельно. В боевом режиме сделки отправляются на выбранный счёт.</p>
+      </div>
+      <div class="trainer-total">
+        <div class="total-label">ОБЩИЙ ФИНРЕЗ</div>
+        <div class="total-value" [class.pnl-pos]="globalTotalPnl > 0" [class.pnl-neg]="globalTotalPnl < 0" [class.pnl-flat]="globalTotalPnl === 0">
+          {{ formatPnl(globalTotalPnl) }}
+        </div>
+        <div class="total-meta">Блоков: {{ blocks.length }} · Ср. удерж.: {{ globalAvgHoldingText }}</div>
+      </div>
+    </div>
+
+    <div class="setup-bar card">
+      <div class="setup-row setup-row-single">
+        <label class="setup-field">
+          <span>Биржа</span>
+          <select [(ngModel)]="exchangeId" (change)="onExchangeChange()">
+            @for (ex of exchanges; track ex.id) { <option [ngValue]="ex.id">{{ ex.name }}</option> }
           </select>
         </label>
-        @if (selectedIndicatorDef.hasPeriod) {
-          <label>
-            <span>Период</span>
-            <input type="number" min="2" max="500" [(ngModel)]="addIndicatorPeriod" />
+        <label class="setup-field">
+          <span>Тип</span>
+          <select [(ngModel)]="securityKind" (change)="onSecurityKindChange()">
+            @for (k of securityKindOptions; track k.value) { <option [value]="k.value">{{ k.label }}</option> }
+          </select>
+        </label>
+        <label class="setup-field">
+          <span>Таймфрейм</span>
+          <select [(ngModel)]="timeframeId">
+            @for (tf of timeframes; track tf.id) { <option [ngValue]="tf.id">{{ tf.tf }}</option> }
+          </select>
+        </label>
+
+        <div class="setup-field instrument-field">
+          <span>Бумага</span>
+          <button type="button" class="form-select instrument-trigger" (click)="toggleSecurityPicker()">
+            <span class="instrument-trigger-name">{{ selectedAddSecurityName }}</span>
+            <span class="instrument-trigger-caret">▾</span>
+          </button>
+          @if (securityPickerOpen) {
+            <div class="instrument-picker card">
+              <div class="instrument-picker-hint">Клик по инструменту добавит блок. Цвет — частота использования.</div>
+              <div class="instrument-list">
+                @for (sec of securities; track sec.id) {
+                  <button type="button" class="instrument-option" [class.selected]="sec.id === addSecurityId"
+                    [style.background]="securityUsageBg(sec.id)" (click)="selectAddSecurity(sec.id)">
+                    <span class="instrument-option-name">{{ sec.name }}</span>
+                    @if (securityUsageScore(sec.id) > 0) {
+                      <span class="instrument-option-badge">{{ securityUsageScore(sec.id) }} сделок</span>
+                    }
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <button type="button" class="btn-add-block" (click)="addBlock()" [disabled]="addSecurityId == null || dataLoading" title="Добавить блок с выбранной бумагой">+ Добавить</button>
+
+        <label class="setup-field compact">
+          <span>Комиссия %</span>
+          <input class="narrow-num" type="number" step="0.01" min="0" [(ngModel)]="commissionPct" />
+        </label>
+        <label class="setup-field compact">
+          <span>Задержка, сек</span>
+          <input class="narrow-num" type="number" step="1" min="0" [(ngModel)]="executionDelaySec" [disabled]="battleMode" />
+        </label>
+
+        <div class="setup-right">
+          <label class="setup-field compact speed-field speed-field-outlined">
+            <span>Скорость</span>
+            <div class="speed-ctrl speed-ctrl-compact">
+              <select [(ngModel)]="speedMs" (change)="onSpeedChange()" [disabled]="battleMode">
+                @for (opt of speedOptions; track opt.value) { <option [ngValue]="opt.value">{{ opt.label }}</option> }
+              </select>
+              <div class="speed-btns-stack">
+                <button type="button" class="speed-btn speed-btn-sm" (click)="speedUp()" [disabled]="battleMode" title="Быстрее">+</button>
+                <button type="button" class="speed-btn speed-btn-sm" (click)="speedDown()" [disabled]="battleMode" title="Медленнее">−</button>
+              </div>
+            </div>
           </label>
-        }
-        <button type="button" class="btn-add-ind" (click)="addIndicator()" [disabled]="dataLoading">Добавить</button>
-      </div>
 
-      <div class="indicator-list">
-        @for (ind of indicators; track trackByInd($index, ind)) {
-          <div class="indicator-row">
-            <span class="indicator-color" [style.background]="ind.color"></span>
-            <span class="indicator-name">{{ indicatorLabel(ind.type) }}</span>
-            @if (indicatorHasPeriod(ind.type)) {
-              <label class="indicator-period">
-                <span>Период</span>
-                <input type="number" min="2" max="500" [ngModel]="ind.period" (ngModelChange)="updateIndicatorPeriod(ind, $event)" />
-              </label>
+          <div class="battle-wrap">
+            <button type="button" class="btn-battle" [class.active]="battleMode" [class.real]="isBattleReal" [class.fake]="isBattleFake"
+              (click)="toggleBattlePicker()" [disabled]="dataLoading || battlePlacing">
+              БОЙ{{ battleMode ? (isBattleReal ? ' · РЕАЛ' : ' · ФЕЙК') : '' }}
+            </button>
+            @if (battlePickerOpen) {
+              <div class="battle-picker card">
+                <div class="battle-picker-title">Режим боя</div>
+                <div class="battle-picker-sub">Сделки отправляются на выбранный счёт. График идёт в реальном времени.</div>
+                @if (battleLoading) { <div class="battle-picker-loading">Загрузка счетов…</div> }
+                @else {
+                  <label class="battle-field">
+                    <span>Счёт</span>
+                    <select [(ngModel)]="battleAccountId">
+                      @for (acc of battleAccounts; track acc.id) {
+                        <option [ngValue]="acc.id">{{ acc.name }} ({{ acc.account_type === 'real' ? 'реальный' : 'демо' }})</option>
+                      }
+                    </select>
+                  </label>
+                  <label class="battle-field">
+                    <span>% депозита на сделку</span>
+                    <input type="number" min="0.1" max="100" step="0.1" [(ngModel)]="battleDepositPct" />
+                  </label>
+                  <div class="battle-picker-actions">
+                    @if (!battleMode) {
+                      <button type="button" class="btn-battle-start" (click)="enterBattle()" [disabled]="!battleAccountId">Войти в бой</button>
+                    } @else {
+                      <button type="button" class="btn-battle-stop" (click)="exitBattle()">Выйти из боя</button>
+                    }
+                  </div>
+                }
+              </div>
             }
-            <button type="button" class="btn-remove-ind" (click)="removeIndicator(ind.uid)">✕</button>
           </div>
-        }
-        @if (indicators.length === 0) {
-          <div class="empty-hint">Индикаторов нет. Добавьте индикатор из списка.</div>
-        }
+        </div>
       </div>
+      @if (battleMode) {
+        <div class="battle-live-hint">БОЙ: график в реальном времени, скорость/задержка не влияют.</div>
+      }
     </div>
+  }
 
-    <div class="card blotter-card">
-      <div class="section-title">Сделки</div>
-      <div class="blotter-wrap">
-        <table class="blotter">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Сторона</th>
-              <th>Открытие</th>
-              <th>Цена откр.</th>
-              <th>Закрытие</th>
-              <th>Цена закр.</th>
-              <th>Удержание</th>
-              <th>Комиссия</th>
-              <th>Финрез</th>
-              <th>%</th>
-              <th>% годовых</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (t of trades; track trackByTrade($index, t)) {
-              <tr [class.row-pos]="t.pnl > 0" [class.row-neg]="t.pnl < 0">
-                <td>{{ t.id }}</td>
-                <td><span class="side-badge" [class.side-long]="t.side === 'long'" [class.side-short]="t.side === 'short'">{{ t.side === 'long' ? 'LONG' : 'SHORT' }}</span></td>
-                <td>{{ t.openDt }}</td>
-                <td>{{ formatPrice(t.openPrice) }}</td>
-                <td>{{ t.closeDt }}</td>
-                <td>{{ formatPrice(t.closePrice) }}</td>
-                <td>{{ formatHoldingMs(t.holdingMs) }}</td>
-                <td>{{ formatPrice(t.commission) }}</td>
-                <td [ngClass]="pnlClass(t.pnl)">{{ formatPnl(t.pnl) }}</td>
-                <td [ngClass]="pnlClass(t.pnl)">{{ formatPct(t.pnlPct) }}</td>
-                <td [ngClass]="pnlClass(t.pnl)">{{ formatPct(t.annualPct) }}</td>
-              </tr>
-            }
-            @if (trades.length === 0) {
-              <tr><td colspan="11" class="empty-hint">Сделок пока нет. Нажми КУПИТЬ или ПРОДАТЬ.</td></tr>
-            }
-          </tbody>
-        </table>
+  @if (loadingError) {
+    <div class="trainer-error card">{{ loadingError }}</div>
+  }
+
+  <div class="blocks-wrap" [class.fs-blocks]="fullscreen">
+    @for (b of blocks; track trackByBlock($index, b)) {
+      <div class="block-card card" [class.battle-real]="isBattleReal" [class.battle-fake]="isBattleFake">
+        <div class="block-head">
+          <div class="block-head-left">
+            <button type="button" class="block-del" (click)="removeBlock(b)" title="Удалить блок">✕</button>
+            <div class="block-title-wrap">
+              <div class="block-title">{{ b.securityName }}</div>
+              @if (b.position !== 'flat') {
+                <span class="pos-badge" [class.pos-long]="b.position === 'long'" [class.pos-short]="b.position === 'short'">
+                  {{ b.position === 'long' ? 'LONG' : 'SHORT' }} {{ formatPrice(b.entryPrice) }}
+                </span>
+              }
+            </div>
+          </div>
+          <div class="block-head-actions">
+            <button type="button" class="tca-btn tca-buy" [class.tca-close]="b.position === 'long'" [disabled]="!canBuy(b)" (click)="buy(b)">
+              <span class="tca-main" [class.close-on-buy]="b.position === 'long'">{{ b.position === 'long' ? 'ЗАКРЫТЬ' : 'КУПИТЬ' }}</span>
+              <span class="tca-sub">{{ b.position === 'long' ? positionHoldingText(b) : (b.position === 'short' ? 'шорт открыт' : 'лонг') }}</span>
+            </button>
+            <button type="button" class="tca-btn tca-sell" [class.tca-close-sell]="b.position === 'short'" [disabled]="!canSell(b)" (click)="sell(b)">
+              <span class="tca-main" [class.close-on-sell]="b.position === 'short'">{{ b.position === 'short' ? 'ЗАКРЫТЬ' : 'ПРОДАТЬ' }}</span>
+              <span class="tca-sub">{{ b.position === 'short' ? positionHoldingText(b) : (b.position === 'long' ? 'лонг открыт' : 'шорт') }}</span>
+            </button>
+            <button type="button" class="tca-btn tca-start" (click)="onStartPauseClick(b)" [disabled]="b.loading">{{ startPauseLabel(b) }}</button>
+            <button type="button" class="tca-btn tca-reset" (click)="resetBlock(b)" [disabled]="b.loading || !b.started">Сначала</button>
+            <div class="tca-info tca-result" (click)="refreshBattlePrice(b)" title="Обновить цену по последней котировке">
+              <div class="tca-lbl">Результат сделки</div>
+              <div class="tca-val" [ngClass]="pnlClass(b.position !== 'flat' ? unrealizedPnl(b) : b.lastPnl)">
+                {{ b.position !== 'flat' ? formatPnl(unrealizedPnl(b)) : formatPnl(b.lastPnl) }}
+                <span class="tca-pct">{{ b.position !== 'flat' ? formatPct(unrealizedPnlPct(b)) : formatPct(b.lastPnlPct) }}</span>
+              </div>
+            </div>
+            <div class="tca-info tca-total">
+              <div class="tca-lbl">Итоговый финрез</div>
+              <div class="tca-val" [ngClass]="pnlClass(totalPnlWithUnrealized(b))">
+                {{ formatPnl(totalPnlWithUnrealized(b)) }}
+                <span class="tca-pct">{{ formatPct(totalPnlPct(b)) }}</span>
+              </div>
+            </div>
+            <div class="tca-info tca-holding">
+              <div class="tca-lbl">Время удержания</div>
+              <div class="tca-val tca-hold-val">{{ b.position !== 'flat' ? positionHoldingText(b) : lastTradeHoldingText(b) }}</div>
+              <div class="tca-hold">Ср.: {{ avgHoldingText(b) }}</div>
+            </div>
+            <div class="tca-info tca-annual">
+              <div class="tca-lbl">Годовых</div>
+              <div class="tca-val" [ngClass]="pnlClass(totalAnnualPct(b))">{{ formatPct(totalAnnualPct(b)) || '—' }}</div>
+              <div class="tca-hold">пересчёт в реальном времени</div>
+            </div>
+          </div>
+        </div>
+
+        @if (b.loadingError) { <div class="block-error">{{ b.loadingError }}</div> }
+        @if (pendingOrderText(b)) { <div class="block-pending">{{ pendingOrderText(b) }}</div> }
+
+        <div class="block-chart" [style.height.px]="fullscreen ? 250 : 360">
+          <app-price-chart
+            [candles]="b.visibleCandles"
+            [indicatorSeries]="b.indicatorSeries"
+            [tradeMarkers]="chartMarkers(b)"
+            [showRecalcButton]="false"
+            [followLast]="true"
+          >
+            <div chartToolbarActions class="trainer-chart-nav">
+              <span class="tca-nav">{{ b.playIndex }} / {{ b.allCandles.length }}</span>
+            </div>
+          </app-price-chart>
+        </div>
+
+        <details class="block-details" [open]="b.detailsOpen" (toggle)="b.detailsOpen = $any($event.target).open">
+          <summary class="block-details-summary">Выбор индикаторов и сделок</summary>
+          <div class="block-details-body">
+            <div class="details-grid">
+              <div class="details-left">
+                <div class="ind-add-row">
+                  <select class="ind-select" [(ngModel)]="b.addIndicatorType" (change)="onIndicatorTypeChange(b)">
+                    @for (d of indicatorDefs; track d.code) { <option [value]="d.code">{{ d.name }}</option> }
+                  </select>
+                  @if (indicatorHasPeriod(b.addIndicatorType)) {
+                    <input class="ind-period" type="number" min="2" max="500" [(ngModel)]="b.addIndicatorPeriod" />
+                  }
+                  <button type="button" class="btn-ind-add" (click)="addIndicator(b)">Добавить</button>
+                </div>
+                <div class="ind-chips">
+                  @for (ind of b.indicators; track trackByInd($index, ind)) {
+                    <span class="ind-chip" [style.borderColor]="ind.color">
+                      <span class="ind-dot" [style.background]="ind.color"></span>
+                      {{ indicatorLabel(ind.type) }}@if (indicatorHasPeriod(ind.type)) {<span>({{ ind.period }})</span>}
+                      <button type="button" class="ind-remove" (click)="removeIndicator(b, ind.uid)">×</button>
+                    </span>
+                  }
+                </div>
+              </div>
+              <div class="details-right">
+                <div class="trades-mini-title">Сделки ({{ b.trades.length }})</div>
+                <div class="trades-mini-list">
+                  @for (t of b.trades.slice(0, 30); track trackByTrade($index, t)) {
+                    <div class="trade-mini-row">
+                      <span class="tm-side" [class.side-long]="t.side === 'long'" [class.side-short]="t.side === 'short'">{{ t.side === 'long' ? 'L' : 'S' }}</span>
+                      <span class="tm-dt">{{ t.closeDt | date:'dd.MM HH:mm' }}</span>
+                      <span class="tm-pnl" [ngClass]="pnlClass(t.pnl)">{{ formatPnl(t.pnl) }}</span>
+                      <span class="tm-pct" [ngClass]="pnlClass(t.pnlPct)">{{ formatPct(t.pnlPct) }}</span>
+                    </div>
+                  }
+                  @if (b.trades.length === 0) { <div class="trades-mini-empty">Сделок пока нет</div> }
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
-    </div>
+    }
+
+    @if (blocks.length === 0 && !fullscreen) {
+      <div class="empty-state card">
+        <div class="empty-title">Нет добавленных бумаг</div>
+        <div class="empty-sub">Выберите бумагу выше и нажмите «+ Добавить бумагу». После этого появится блок с графиком и кнопками Купить/Продать/Начать.</div>
+      </div>
+    }
   </div>
 </div>

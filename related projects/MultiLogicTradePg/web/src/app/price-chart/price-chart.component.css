@@ -1,8 +1,11 @@
+:host { display: block; height: 100%; min-height: 220px; }
+
 .chart-shell {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: 220px;
+  height: 100%;
+  min-height: 220px;
   background: #fafafa;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -40,6 +43,7 @@
   background: #f3f4f6;
   border-bottom: 1px solid #e5e7eb;
   min-height: 2rem;
+  flex-wrap: wrap;
 }
 
 .chart-title {
@@ -60,6 +64,14 @@
   gap: 0.2rem;
 }
 
+.chart-toolbar-projected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .chart-toolbar-end {
   margin-left: auto;
 }
@@ -163,7 +175,9 @@
 }
 
 .chart-shell--fullscreen .chart-body {
-  height: calc(100vh - 96px - 2rem);
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 /* Компактный режим (терминал): собственная панель кнопок скрыта —
@@ -213,3 +227,10 @@
   height: 2.1rem;
   font-size: 1rem;
 }
+
+.chart-toolbar:has(.trainer-chart-nav) { min-height: 40px; padding: 4px 8px; gap: 6px; align-items: center; flex-wrap: wrap; }
+.chart-toolbar:has(.trainer-chart-nav) .chart-btn { min-height: 30px; height: 30px; padding: 0 8px; font-size: 12px; align-self: center; }
+.chart-toolbar:has(.trainer-chart-nav) .chart-toolbar-group:not(.chart-toolbar-projected):not(.chart-toolbar-end) { flex-wrap: nowrap; gap: 4px; align-items: center; }
+.chart-toolbar:has(.trainer-chart-nav) .chart-mode-toggle { flex-wrap: nowrap; width: auto; gap: 2px; }
+.chart-toolbar:has(.trainer-chart-nav) .chart-mode-toggle .chart-btn-mode { width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 0; border-radius: 6px; font-size: 13px; }
+.chart-toolbar:has(.trainer-chart-nav) .chart-btn-expand { display: none; }
