@@ -150,7 +150,9 @@
 
 /* details */
 .block-details { border-top: 1px solid #e2e8f0; }
-.block-details-summary { padding: 10px 14px; font-size: 13px; font-weight: 700; color: #334155; cursor: pointer; user-select: none; background: #f8fafc; list-style: none; display: flex; align-items: center; gap: 8px; }
+.block-details-summary { padding: 10px 14px; font-size: 13px; font-weight: 700; color: #334155; cursor: pointer; user-select: none; background: #f8fafc; list-style: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.block-details-summary-title { white-space: nowrap; }
+.ind-chips-summary { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: 4px; }
 .block-details-summary::-webkit-details-marker { display: none; }
 .block-details-summary::before { content: '▶'; font-size: 10px; color: #64748b; transition: transform .15s; }
 .block-details[open] .block-details-summary::before { transform: rotate(90deg); }
@@ -162,11 +164,18 @@
 .ind-select { flex: 1; min-width: 220px; height: 34px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 8px; font-size: 13px; }
 .ind-period { width: 72px; height: 34px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 8px; font-size: 13px; }
 .btn-ind-add { height: 34px; padding: 0 12px; border: none; border-radius: 8px; background: #2563eb; color: #fff; font-weight: 700; cursor: pointer; }
+.ind-topbar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid #e2e8f0; background: #f8fafc; flex-wrap: wrap; }
+.ind-topbar-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
 .ind-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.ind-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 12px; background: #fff; }
-.ind-dot { width: 8px; height: 8px; border-radius: 50%; }
+.ind-chips-top { gap: 6px; align-items: center; }
+.ind-chip { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 999px; font-size: 12px; background: #fff; cursor: default; }
+.ind-chip-abbr { font-weight: 700; color: #1e293b; white-space: nowrap; }
+.ind-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .ind-remove { border: none; background: transparent; color: #64748b; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 0 0 2px; }
 .ind-remove:hover { color: #dc2626; }
+.ind-chip[data-hint]:hover::after { content: attr(data-hint); position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; background: #1f2937; color: #fff; font-size: 12px; font-weight: 500; line-height: 1.35; padding: 8px 10px; border-radius: 8px; white-space: pre-line; min-width: 180px; max-width: 320px; box-shadow: 0 8px 24px rgba(0,0,0,.18); pointer-events: none; }
+.ind-chip[data-hint]:hover::before { content: ''; position: absolute; left: 14px; top: calc(100% + 2px); border: 4px solid transparent; border-bottom-color: #1f2937; z-index: 31; pointer-events: none; }
+.ind-empty-hint { font-size: 12px; color: #94a3b8; }
 .trades-mini-title { font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .03em; }
 .trades-mini-list { max-height: 220px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
 .trade-mini-row { display: grid; grid-template-columns: 28px 90px 1fr 80px; gap: 8px; padding: 6px 8px; font-size: 12px; border-bottom: 1px solid #f1f5f9; align-items: center; font-variant-numeric: tabular-nums; }

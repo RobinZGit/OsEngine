@@ -78,6 +78,20 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
 
   /** Режим отображения цены: свечи или линия по Close (#835). */
   viewMode: 'candles' | 'line' = 'candles';
+  /** Направление графика: false = новые справа, true = новые слева. */
+  chartReversed = false;
+
+  toggleChartDirection(event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    if (this.chartReversed === !this.chartReversed) return;
+    this.chartReversed = !this.chartReversed;
+    this.scheduleRedraw();
+  }
+
+  private xIndex(i: number, count: number): number {
+    return this.chartReversed ? (count - 1 - i) : i;
+  }
 
   setViewMode(mode: 'candles' | 'line', event: Event): void {
     event.preventDefault();
@@ -200,8 +214,8 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     }
     if (changes['candles']) {
       const added = this.candles.length - this.prevCandlesLen;
-      if (this.followLast && (this.prevCandlesLen === 0 || added < 0)) {
-        // Первая загрузка / полная перезагрузка: показать последнюю свечу.
+      if (this.followLast) {
+        // followLast: всегда держим последнюю свечу в видимой области.
         this.viewStart = Math.max(0, this.candles.length - this.viewCount());
       } else if (added > 0 && this.prevCandlesLen > 0 && this.viewStart > 0) {
         this.viewStart += added;
@@ -336,12 +350,14 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
 
   panLeft(event: Event): void {
     event.stopPropagation();
-    this.shiftView(-Math.max(5, Math.floor(this.viewCount() / 4)));
+    const step = Math.max(5, Math.floor(this.viewCount() / 4));
+    this.shiftView(this.chartReversed ? step : -step);
   }
 
   panRight(event: Event): void {
     event.stopPropagation();
-    this.shiftView(Math.max(5, Math.floor(this.viewCount() / 4)));
+    const step = Math.max(5, Math.floor(this.viewCount() / 4));
+    this.shiftView(this.chartReversed ? -step : step);
   }
 
   /** Предыдущая сделка (open/close — одинаково). */
@@ -810,7 +826,7 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       ctx.lineWidth = Math.max(1.25, this.px(1.4));
       ctx.beginPath();
       visible.forEach((c, i) => {
-        const x = pad.left + i * cw + cw / 2;
+        const x = pad.left + this.xIndex(i, visible.length) * cw + cw / 2;
         const y = yScale(Number(c.close_price));
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
@@ -818,7 +834,7 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       ctx.stroke();
     } else {
       visible.forEach((c, i) => {
-        const x = pad.left + i * cw + cw / 2;
+        const x = pad.left + this.xIndex(i, visible.length) * cw + cw / 2;
         const open = Number(c.open_price);
         const close = Number(c.close_price);
         const high = Number(c.high_price);
@@ -1027,8 +1043,10 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       if (i0 < 0) i0 = 0;
       if (i1 < 0) i1 = visible.length - 1;
       if (i1 < i0) [i0, i1] = [i1, i0];
-      const x0 = left + i0 * candleWidth;
-      const x1 = left + (i1 + 1) * candleWidth;
+      const xi0 = this.xIndex(i0, visible.length);
+      const xi1 = this.xIndex(i1, visible.length);
+      const x0 = left + Math.min(xi0, xi1) * candleWidth;
+      const x1 = left + (Math.max(xi0, xi1) + 1) * candleWidth;
       const kind = range.kind ?? 'normal';
       // Бледные зоны: green = обычная логика; gray = shadow; pink = инверсия.
       const fill =
@@ -1166,19 +1184,17 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     ctx.stroke();
     ctx.setLineDash([]);
 
+    const eqX = (i: number) => left + this.xIndex(i, visible.length) * candleWidth + candleWidth / 2;
     // Заливка под ступенями
     ctx.fillStyle = 'rgba(124, 58, 237, 0.14)';
     let seg: { i: number; v: number }[] = [];
     const flushFill = () => {
       if (seg.length === 0) return;
+      const pts = (this.chartReversed ? [...seg].reverse() : seg).map(s => ({ x: eqX(s.i), y: yEq(s.v) }));
       ctx.beginPath();
-      const x0 = left + seg[0].i * candleWidth + candleWidth / 2;
-      ctx.moveTo(x0, y0);
-      for (const s of seg) {
-        ctx.lineTo(left + s.i * candleWidth + candleWidth / 2, yEq(s.v));
-      }
-      const x1 = left + seg[seg.length - 1].i * candleWidth + candleWidth / 2;
-      ctx.lineTo(x1, y0);
+      ctx.moveTo(pts[0].x, y0);
+      for (const p of pts) ctx.lineTo(p.x, p.y);
+      ctx.lineTo(pts[pts.length - 1].x, y0);
       ctx.closePath();
       ctx.fill();
       seg = [];
@@ -1195,8 +1211,10 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     ctx.beginPath();
     let started = false;
     let prevY: number | null = null;
-    for (const s of samples) {
-      const x = left + s.i * candleWidth + candleWidth / 2;
+    let prevX: number | null = null;
+    const drawSamples = this.chartReversed ? [...samples].reverse() : samples;
+    for (const s of drawSamples) {
+      const x = eqX(s.i);
       const y = yEq(s.v);
       if (!started || s.gapBefore) {
         ctx.moveTo(x, y);
@@ -1209,6 +1227,7 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
         ctx.lineTo(x, y);
       }
       prevY = y;
+      prevX = x;
     }
     ctx.stroke();
 
@@ -1257,7 +1276,7 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     for (const m of this.stopMarkers) {
       const i = this.indexInVisible(visible, m.dt);
       if (i < 0) continue;
-      const x = left + i * candleWidth + candleWidth / 2;
+      const x = left + this.xIndex(i, visible.length) * candleWidth + candleWidth / 2;
       const y = yScale(Number(m.price));
       const color = m.ruleKind === 'take_profit' ? '#059669' : '#dc2626';
       // Вертикальная полоса — где сработал стоп/тейк
@@ -1322,7 +1341,9 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
           : (slot % 2 ? 1 : -1) *
             Math.ceil((slot + 1) / 2) *
             Math.max(2, candleWidth * 0.18);
-      const x = left + i * candleWidth + Math.min(1, Math.max(0, frac)) * candleWidth + offset;
+      const xi = this.xIndex(i, visible.length);
+      const f = this.chartReversed ? (1 - Math.min(1, Math.max(0, frac))) : Math.min(1, Math.max(0, frac));
+      const x = left + xi * candleWidth + f * candleWidth + (this.chartReversed ? -offset : offset);
       const y = yScale(Number(m.price));
       const isLong = m.side === 'long';
       const isOpen = m.kind === 'open';
@@ -1440,7 +1461,7 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
         started = false;
         return;
       }
-      const x = left + i * candleWidth + candleWidth / 2;
+      const x = left + this.xIndex(i, visible.length) * candleWidth + candleWidth / 2;
       const y = yScale(v);
       if (!started) {
         ctx.moveTo(x, y);

@@ -275,27 +275,29 @@
         </div>
 
         <details class="block-details" [open]="b.detailsOpen" (toggle)="b.detailsOpen = $any($event.target).open">
-          <summary class="block-details-summary">Выбор индикаторов и сделок</summary>
+          <summary class="block-details-summary">
+            <span class="block-details-summary-title">Добавить индикатор / сделки</span>
+            <span class="ind-chips ind-chips-summary" (click)="$event.stopPropagation()">
+              @for (ind of b.indicators; track trackByInd($index, ind)) {
+                <span class="ind-chip" [style.borderColor]="ind.color" [title]="indicatorHint(ind.type)" [attr.data-hint]="indicatorHint(ind.type)">
+                  <span class="ind-dot" [style.background]="ind.color"></span>
+                  <span class="ind-chip-abbr">{{ indicatorShort(ind.type, ind.period) }}</span>
+                  <button type="button" class="ind-remove" (click)="removeIndicator(b, ind.uid); $event.stopPropagation()" title="Убрать индикатор">×</button>
+                </span>
+              }
+            </span>
+          </summary>
           <div class="block-details-body">
             <div class="details-grid">
               <div class="details-left">
                 <div class="ind-add-row">
-                  <select class="ind-select" [(ngModel)]="b.addIndicatorType" (change)="onIndicatorTypeChange(b)">
-                    @for (d of indicatorDefs; track d.code) { <option [value]="d.code">{{ d.name }}</option> }
+                  <select class="ind-select" [(ngModel)]="b.addIndicatorType" (change)="onIndicatorTypeChange(b)" [title]="indicatorHint(b.addIndicatorType)">
+                    @for (d of indicatorDefs; track d.code) { <option [value]="d.code" [title]="indicatorHint(d.code)">{{ d.name }}</option> }
                   </select>
                   @if (indicatorHasPeriod(b.addIndicatorType)) {
                     <input class="ind-period" type="number" min="2" max="500" [(ngModel)]="b.addIndicatorPeriod" />
                   }
                   <button type="button" class="btn-ind-add" (click)="addIndicator(b)">Добавить</button>
-                </div>
-                <div class="ind-chips">
-                  @for (ind of b.indicators; track trackByInd($index, ind)) {
-                    <span class="ind-chip" [style.borderColor]="ind.color">
-                      <span class="ind-dot" [style.background]="ind.color"></span>
-                      {{ indicatorLabel(ind.type) }}@if (indicatorHasPeriod(ind.type)) {<span>({{ ind.period }})</span>}
-                      <button type="button" class="ind-remove" (click)="removeIndicator(b, ind.uid)">×</button>
-                    </span>
-                  }
                 </div>
               </div>
               <div class="details-right">

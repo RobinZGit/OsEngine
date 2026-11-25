@@ -293,4 +293,26 @@ describe('PriceChartComponent', () => {
     expect(fxInBar('2026-09-21 15:15:00', '2026-09-21 15:15:00', '2026-09-21 15:30:00')).toBe(0);
     expect(fxInBar('2026-09-21 15:31:00', '2026-09-21 15:15:00', '2026-09-21 15:30:00')).toBe(1);
   });
+
+  it('followLast keeps view at end when candles are appended during playback', () => {
+    spyOn(component as unknown as { viewCount: () => number }, 'viewCount').and.returnValue(3);
+    component.followLast = true;
+    const mk = (i: number) => ({
+      dt: `2026-01-01T10:${String(i).padStart(2, '0')}:00`,
+      open_price: i, high_price: i + 1, low_price: i - 1, close_price: i, volume: 1,
+    });
+    component.candles = [mk(0), mk(1), mk(2), mk(3), mk(4)];
+    component.ngOnChanges({
+      candles: { currentValue: component.candles, previousValue: [], firstChange: true, isFirstChange: () => true },
+    });
+    expect((component as unknown as { viewStart: number }).viewStart).toBe(2);
+
+    component.candles = [...component.candles, mk(5), mk(6)];
+    component.ngOnChanges({
+      candles: { currentValue: component.candles, previousValue: [mk(0)], firstChange: false, isFirstChange: () => false },
+    });
+    expect((component as unknown as { viewStart: number }).viewStart).toBe(4);
+    const visible = component.candles.slice(4, 7);
+    expect(visible[visible.length - 1].dt).toContain('10:06:00');
+  });
 });

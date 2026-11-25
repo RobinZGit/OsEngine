@@ -171,6 +171,8 @@ export interface ChartIndicatorSeries {
   color: string;
   on_price_scale: boolean;
   is_threshold: boolean;
+  /** Краткое описание индикатора для подписи на графике/панели. */
+  description?: string;
   points: { dt: string; value: number }[];
 }
 

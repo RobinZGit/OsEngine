@@ -83,6 +83,15 @@
         [disabled]="candles.length === 0"
         (click)="panRight($event)"
       >▶</button>
+      <button
+        type="button"
+        class="chart-btn"
+        [class.chart-btn-active]="chartReversed"
+        [title]="chartReversed ? 'Направление: новые свечи слева (нажмите для обычного)' : 'Направление: новые свечи справа (нажмите чтобы развернуть)'"
+        aria-label="Переключить направление графика"
+        [disabled]="candles.length === 0"
+        (click)="toggleChartDirection($event)"
+      >⇄</button>
       @if (hasTradeNav) {
         <button
           type="button"

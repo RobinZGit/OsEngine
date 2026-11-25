@@ -64,25 +64,26 @@ interface IndicatorDef {
   period: number;
   onPrice: boolean;
   hasPeriod: boolean;
+  desc: string;
 }
 
 const INDICATOR_DEFS: IndicatorDef[] = [
-  { code: 'SMA', name: 'SMA — Простое скользящее среднее', period: 20, onPrice: true, hasPeriod: true },
-  { code: 'EMA', name: 'EMA — Экспоненциальное среднее', period: 20, onPrice: true, hasPeriod: true },
-  { code: 'WMA', name: 'WMA — Взвешенное среднее', period: 20, onPrice: true, hasPeriod: true },
-  { code: 'HMA', name: 'HMA — Среднее Халла', period: 20, onPrice: true, hasPeriod: true },
-  { code: 'BB', name: 'BB — Полосы Боллинджера', period: 20, onPrice: true, hasPeriod: true },
-  { code: 'DONCHIAN', name: 'Donchian — Канал Дончиана', period: 20, onPrice: true, hasPeriod: true },
-  { code: 'VWAP', name: 'VWAP — Средневзвешенная по объёму', period: 1, onPrice: true, hasPeriod: false },
-  { code: 'RSI', name: 'RSI — Индекс относительной силы', period: 14, onPrice: false, hasPeriod: true },
-  { code: 'MACD', name: 'MACD — Схождение/расхождение средних', period: 12, onPrice: false, hasPeriod: true },
-  { code: 'STOCH', name: 'Stoch — Стохастик', period: 14, onPrice: false, hasPeriod: true },
-  { code: 'ATR', name: 'ATR — Средний истинный диапазон', period: 14, onPrice: false, hasPeriod: true },
-  { code: 'CCI', name: 'CCI — Индекс товарного канала', period: 20, onPrice: false, hasPeriod: true },
-  { code: 'ADX', name: 'ADX — Индекс направленного движения', period: 14, onPrice: false, hasPeriod: true },
-  { code: 'ROC', name: 'ROC — Скорость изменения', period: 12, onPrice: false, hasPeriod: true },
-  { code: 'OBV', name: 'OBV — Балансовый объём', period: 1, onPrice: false, hasPeriod: false },
-  { code: 'MFI', name: 'MFI — Индекс денежного потока', period: 14, onPrice: false, hasPeriod: true },
+  { code: 'SMA', name: 'SMA — Простое скользящее среднее', period: 20, onPrice: true, hasPeriod: true , desc: 'Средняя цена за период' },
+  { code: 'EMA', name: 'EMA — Экспоненциальное среднее', period: 20, onPrice: true, hasPeriod: true , desc: 'Средняя с весом к новым ценам' },
+  { code: 'WMA', name: 'WMA — Взвешенное среднее', period: 20, onPrice: true, hasPeriod: true , desc: 'Средняя с линейным весом' },
+  { code: 'HMA', name: 'HMA — Среднее Халла', period: 20, onPrice: true, hasPeriod: true , desc: 'Быстрая сглаженная средняя' },
+  { code: 'BB', name: 'BB — Полосы Боллинджера', period: 20, onPrice: true, hasPeriod: true , desc: 'Полосы волатильности вокруг средней' },
+  { code: 'DONCHIAN', name: 'Donchian — Канал Дончиана', period: 20, onPrice: true, hasPeriod: true , desc: 'Канал максимумов и минимумов' },
+  { code: 'VWAP', name: 'VWAP — Средневзвешенная по объёму', period: 1, onPrice: true, hasPeriod: false , desc: 'Средняя цена по объёму' },
+  { code: 'RSI', name: 'RSI — Индекс относительной силы', period: 14, onPrice: false, hasPeriod: true , desc: 'Сила роста и падения (0-100)' },
+  { code: 'MACD', name: 'MACD — Схождение/расхождение средних', period: 12, onPrice: false, hasPeriod: true , desc: 'Разница быстрых и медленных средних' },
+  { code: 'STOCH', name: 'Stoch — Стохастик', period: 14, onPrice: false, hasPeriod: true , desc: 'Положение цены в диапазоне' },
+  { code: 'ATR', name: 'ATR — Средний истинный диапазон', period: 14, onPrice: false, hasPeriod: true , desc: 'Средний диапазон колебаний' },
+  { code: 'CCI', name: 'CCI — Индекс товарного канала', period: 20, onPrice: false, hasPeriod: true , desc: 'Отклонение цены от средней' },
+  { code: 'ADX', name: 'ADX — Индекс направленного движения', period: 14, onPrice: false, hasPeriod: true , desc: 'Сила тренда без направления' },
+  { code: 'ROC', name: 'ROC — Скорость изменения', period: 12, onPrice: false, hasPeriod: true , desc: 'Скорость изменения цены' },
+  { code: 'OBV', name: 'OBV — Балансовый объём', period: 1, onPrice: false, hasPeriod: false , desc: 'Накопленный объём по направлению' },
+  { code: 'MFI', name: 'MFI — Индекс денежного потока', period: 14, onPrice: false, hasPeriod: true , desc: 'Давление денег по объёму (0-100)' },
 ];
 
 interface LocalIndicator {
@@ -1235,6 +1236,16 @@ export class TrainerComponent implements OnInit, OnDestroy {
   indicatorLabel(code: IndicatorCode): string {
     return this.indicatorDefs.find((d) => d.code === code)?.name ?? code;
   }
+  indicatorShort(code: IndicatorCode, period?: number): string {
+    const def = this.indicatorDefs.find((d) => d.code === code);
+    if (!def) return String(code);
+    return def.hasPeriod ? `${code}(${period ?? def.period})` : String(code);
+  }
+  indicatorHint(code: IndicatorCode): string {
+    const def = this.indicatorDefs.find((d) => d.code === code);
+    if (!def) return String(code);
+    return `${def.name}\n${def.desc}`;
+  }
   indicatorHasPeriod(code: IndicatorCode): boolean {
     return this.indicatorDefs.find((d) => d.code === code)?.hasPeriod ?? true;
   }
@@ -1272,7 +1283,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
       const period = Math.max(2, Math.floor(Number(ind.period) || 20));
       const label = def?.hasPeriod ? `${ind.type}(${period})` : ind.type;
       const mk = (line_code: string, line_name: string, color: string, points: Pt[], on_price_scale = onPrice): ChartIndicatorSeries => ({
-        indicator_code: ind.type, line_code, line_name, color, on_price_scale, is_threshold: false, points,
+        indicator_code: ind.type, line_code, line_name, color, on_price_scale, is_threshold: false, description: def?.desc || '', points,
       });
       switch (ind.type) {
         case 'SMA': out.push(mk('VALUE', label, ind.color, calcSma(candles, period))); break;

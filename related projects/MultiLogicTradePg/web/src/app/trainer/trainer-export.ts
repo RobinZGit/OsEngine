@@ -77,14 +77,20 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
 .info .lbl{font-size:11px;color:var(--muted);text-transform:uppercase}.info .val{font-size:24px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.1}.info .pct{font-size:15px;margin-left:4px;font-weight:900}.info .hold{font-size:12px;color:var(--muted);margin-top:2px}.info .annual{font-size:14px;font-weight:900;margin-top:2px}
 .chart-wrap{height:52vh;min-height:260px;padding:8px 10px}.chart-wrap canvas{width:100%;height:100%;display:block;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
 .meta{padding:6px 12px;font-size:12px;color:var(--muted);border-top:1px solid #f1f5f9;display:flex;gap:12px;flex-wrap:wrap}
+.ind-topbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-top:1px solid #f1f5f9;background:#f8fafc}
+.ind-topbar-label{font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;white-space:nowrap}
 .ind-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-top:1px solid #f1f5f9}
 .ind-bar select,.ind-bar input{height:30px;border:1px solid #cbd5e1;border-radius:6px;padding:0 6px;font-size:12px}
 .ind-bar input[type=number]{width:72px}
-.ind-chips{display:flex;gap:6px;flex-wrap:wrap}
-.ind-chip{display:inline-flex;gap:4px;align-items:center;padding:2px 8px;border:1px solid #cbd5e1;border-radius:999px;font-size:12px;background:#fff}
-.ind-chip .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.ind-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.ind-chip{position:relative;display:inline-flex;gap:4px;align-items:center;padding:2px 8px;border:1px solid #cbd5e1;border-radius:999px;font-size:12px;background:#fff;cursor:default}
+.ind-chip .dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.ind-chip .abbr{font-weight:700;color:#1e293b;white-space:nowrap}
 .ind-chip button{border:none;background:none;color:#64748b;cursor:pointer;font-size:14px;line-height:1;padding:0 0 0 2px}
 .ind-chip button:hover{color:#dc2626}
+.ind-chip[data-hint]:hover::after{content:attr(data-hint);position:absolute;left:0;top:calc(100% + 6px);z-index:30;background:#1f2937;color:#fff;font-size:12px;font-weight:500;line-height:1.35;padding:8px 10px;border-radius:8px;white-space:pre-line;min-width:180px;max-width:320px;box-shadow:0 8px 24px rgba(0,0,0,.18);pointer-events:none}
+.ind-chip[data-hint]:hover::before{content:'';position:absolute;left:14px;top:calc(100% + 2px);border:4px solid transparent;border-bottom-color:#1f2937;z-index:31;pointer-events:none}
+.ind-empty-hint{font-size:12px;color:#94a3b8}
 
 @media(max-width:900px){.chart-wrap{height:46vh;min-height:240px}.tca{min-width:92px}.info{min-width:130px}.bar{max-width:100%}}
 </style>
@@ -100,6 +106,7 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
     <div class="field" id="secNameField" style="display:none"><span>Бумага</span><div id="secNameText" style="height:30px;display:flex;align-items:center;padding:0 2px;font-size:13px;font-weight:700;color:var(--text)"></div></div>
     <label class="field"><span>Таймфрейм</span><select id="tfSel" onchange="changeTf(+this.value)"></select></label>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:flex-end">
+      <label class="field"><span>Направление</span><button class="btn" id="dirBtn" onclick="toggleDirection()" title="Переключить направление графика">Справа → Слева</button></label>
       <label class="field"><span>Скорость</span><div class="speed"><select id="speedSel" onchange="setSpeed(+this.value)"></select><div class="sbtns"><button class="sbtn" onclick="speedUp()">+</button><button class="sbtn" onclick="speedDown()">−</button></div></div></label>
     </div>
   </div>
@@ -120,11 +127,12 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
     <div class="chart-wrap"><canvas id="chart"></canvas></div>
     <div class="meta"><span>Свечи: <b id="cCount">0/0</b></span><span>Комиссия: ${data.defaults.commissionPct}%</span><span>Задержка: ${data.defaults.executionDelaySec}с</span><span id="markLegend">Сделки: ▲ покупка, ▼ продажа, ◆ закрытие, пунктир — момент сделки</span></div>
     <div class="ind-bar">
-      <span style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase">Индикаторы</span>
+      <span style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;white-space:nowrap">Индикаторы</span>
+      <div class="ind-chips" id="indChips"></div>
+      <span style="flex:1"></span>
       <select id="indType"></select>
       <input id="indPeriod" type="number" min="2" max="500" value="20" />
       <button class="btn" onclick="addIndicator()">Добавить</button>
-      <div class="ind-chips" id="indChips"></div>
     </div>
   </div>
 </div>
@@ -145,6 +153,7 @@ const state={
   markers:[],
   indicators: (DATA.defaultIndicators||[]).map(x=>({uid:x.uid,type:x.type,period:+x.period||20,color:x.color||'#2563eb'})),
   indicatorSeries: [],
+  reversed: false,
 };
 function secData(){ return DATA.securities.find(s=>String(s.id)===String(state.secId)) || DATA.securities[0] || null; }
 function tfData(){ const sec=secData(); return sec ? (sec.byTf[String(state.tfId)] || null) : null; }
@@ -186,22 +195,22 @@ function annualPct(){
 
 
 const IND_DEFS=[
-  {code:'SMA',name:'SMA - Простое скользящее среднее',period:20,onPrice:true,hasPeriod:true},
-  {code:'EMA',name:'EMA - Экспоненциальное среднее',period:20,onPrice:true,hasPeriod:true},
-  {code:'WMA',name:'WMA - Взвешенное среднее',period:20,onPrice:true,hasPeriod:true},
-  {code:'HMA',name:'HMA - Среднее Халла',period:20,onPrice:true,hasPeriod:true},
-  {code:'BB',name:'BB - Полосы Боллинджера',period:20,onPrice:true,hasPeriod:true},
-  {code:'DONCHIAN',name:'Donchian - Канал Дончиана',period:20,onPrice:true,hasPeriod:true},
-  {code:'VWAP',name:'VWAP - Средняя по объёму',period:1,onPrice:true,hasPeriod:false},
-  {code:'RSI',name:'RSI - Индекс относительной силы',period:14,onPrice:false,hasPeriod:true},
-  {code:'MACD',name:'MACD - Схождение/расхождение',period:12,onPrice:false,hasPeriod:true},
-  {code:'STOCH',name:'Stoch - Стохастик',period:14,onPrice:false,hasPeriod:true},
-  {code:'ATR',name:'ATR - Средний истинный диапазон',period:14,onPrice:false,hasPeriod:true},
-  {code:'CCI',name:'CCI - Индекс товарного канала',period:20,onPrice:false,hasPeriod:true},
-  {code:'ADX',name:'ADX - Индекс направленного движения',period:14,onPrice:false,hasPeriod:true},
-  {code:'ROC',name:'ROC - Скорость изменения',period:12,onPrice:false,hasPeriod:true},
-  {code:'OBV',name:'OBV - Балансовый объём',period:1,onPrice:false,hasPeriod:false},
-  {code:'MFI',name:'MFI - Индекс денежного потока',period:14,onPrice:false,hasPeriod:true},
+  {code:'SMA',name:'SMA - Простое скользящее среднее',period:20,onPrice:true,hasPeriod:true,desc:'Средняя цена за период'},
+  {code:'EMA',name:'EMA - Экспоненциальное среднее',period:20,onPrice:true,hasPeriod:true,desc:'Средняя с весом к новым ценам'},
+  {code:'WMA',name:'WMA - Взвешенное среднее',period:20,onPrice:true,hasPeriod:true,desc:'Средняя с линейным весом'},
+  {code:'HMA',name:'HMA - Среднее Халла',period:20,onPrice:true,hasPeriod:true,desc:'Быстрая сглаженная средняя'},
+  {code:'BB',name:'BB - Полосы Боллинджера',period:20,onPrice:true,hasPeriod:true,desc:'Полосы волатильности вокруг средней'},
+  {code:'DONCHIAN',name:'Donchian - Канал Дончиана',period:20,onPrice:true,hasPeriod:true,desc:'Канал максимумов и минимумов'},
+  {code:'VWAP',name:'VWAP - Средняя по объёму',period:1,onPrice:true,hasPeriod:false,desc:'Средняя цена по объёму'},
+  {code:'RSI',name:'RSI - Индекс относительной силы',period:14,onPrice:false,hasPeriod:true,desc:'Сила роста и падения (0-100)'},
+  {code:'MACD',name:'MACD - Схождение/расхождение',period:12,onPrice:false,hasPeriod:true,desc:'Разница быстрых и медленных средних'},
+  {code:'STOCH',name:'Stoch - Стохастик',period:14,onPrice:false,hasPeriod:true,desc:'Положение цены в диапазоне'},
+  {code:'ATR',name:'ATR - Средний истинный диапазон',period:14,onPrice:false,hasPeriod:true,desc:'Средний диапазон колебаний'},
+  {code:'CCI',name:'CCI - Индекс товарного канала',period:20,onPrice:false,hasPeriod:true,desc:'Отклонение цены от средней'},
+  {code:'ADX',name:'ADX - Индекс направленного движения',period:14,onPrice:false,hasPeriod:true,desc:'Сила тренда без направления'},
+  {code:'ROC',name:'ROC - Скорость изменения',period:12,onPrice:false,hasPeriod:true,desc:'Скорость изменения цены'},
+  {code:'OBV',name:'OBV - Балансовый объём',period:1,onPrice:false,hasPeriod:false,desc:'Накопленный объём по направлению'},
+  {code:'MFI',name:'MFI - Индекс денежного потока',period:14,onPrice:false,hasPeriod:true,desc:'Давление денег по объёму (0-100)'},
 ];
 const IND_PALETTE=['#2563eb','#f59e0b','#8b5cf6','#06b6d4','#22c55e','#ef4444','#3b82f6','#ec4899','#14b8a6','#84cc16'];
 let indColorIdx=(DATA.defaultIndicators||[]).length;
@@ -234,7 +243,7 @@ function rebuildIndicators(){
     const onPrice=!!def.onPrice;
     const period=Math.max(2, Math.floor(+ind.period||def.period||20));
     const label=def.hasPeriod? (ind.type+'('+period+')') : ind.type;
-    const mk=(lineCode,lineName,color,values,on_price_scale)=>({uid:ind.uid,lineCode,lineName,color,values,onPrice:on_price_scale!==undefined?on_price_scale:onPrice});
+    const mk=(lineCode,lineName,color,values,on_price_scale)=>({uid:ind.uid,lineCode,lineName,color,values,onPrice:on_price_scale!==undefined?on_price_scale:onPrice,description:def.desc||''});
     switch(ind.type){
       case 'SMA': out.push(mk('VALUE',label,ind.color,smaArr(closes,period))); break;
       case 'EMA': out.push(mk('VALUE',label,ind.color,emaArr(closes,period))); break;
@@ -261,12 +270,16 @@ function rebuildIndicators(){
 function renderIndicatorChips(){
   const el=document.getElementById('indChips'); if(!el) return;
   el.innerHTML='';
+  if(!state.indicators.length){
+    const empty=document.createElement('span'); empty.className='ind-empty-hint'; empty.textContent='Нет индикаторов'; el.appendChild(empty); return;
+  }
   for(const ind of state.indicators){
     const def=IND_DEFS.find(d=>d.code===ind.type);
     const label=def&&def.hasPeriod? (ind.type+'('+ind.period+')') : ind.type;
-    const chip=document.createElement('span'); chip.className='ind-chip';
-    chip.innerHTML='<span class="dot" style="background:'+ind.color+'"></span><span>'+label+'</span>';
-    const btn=document.createElement('button'); btn.type='button'; btn.textContent='×'; btn.onclick=()=>removeIndicator(ind.uid);
+    const hint=def ? (def.name+'\\n'+(def.desc||'')) : ind.type;
+    const chip=document.createElement('span'); chip.className='ind-chip'; chip.title=hint; chip.dataset.hint=hint; chip.style.borderColor=ind.color;
+    chip.innerHTML='<span class="dot" style="background:'+ind.color+'"></span><span class="abbr">'+label+'</span>';
+    const btn=document.createElement('button'); btn.type='button'; btn.textContent='×'; btn.title='Убрать индикатор'; btn.onclick=(e)=>{ e.stopPropagation(); removeIndicator(ind.uid); };
     chip.appendChild(btn); el.appendChild(chip);
   }
 }
@@ -334,6 +347,7 @@ function changeTf(tfId){ if(+tfId===+state.tfId) return; state.tfId=+tfId; reset
 function setSpeed(ms){ state.speedMs=+ms; document.getElementById('speedSel').value=String(state.speedMs); if(state.playing){ stopTimer(); startTimer(); } }
 function speedUp(){ const i=SPEEDS.findIndex(s=>s[0]===state.speedMs); setSpeed(SPEEDS[Math.max(0,i-1)][0]); }
 function speedDown(){ const i=SPEEDS.findIndex(s=>s[0]===state.speedMs); setSpeed(SPEEDS[Math.min(SPEEDS.length-1,i+1)][0]); }
+function toggleDirection(){ state.reversed=!state.reversed; const b=document.getElementById('dirBtn'); if(b) b.textContent=state.reversed?'Слева → Справа':'Справа → Слева'; render(); }
 
 function startTimer(){ stopTimer(); state.timer=setInterval(tick, state.speedMs); }
 function stopTimer(){ if(state.timer){ clearInterval(state.timer); state.timer=null; } }
@@ -484,7 +498,8 @@ function drawChart(){
   const left=10, right=64, topPad=10, bottomPad=20;
   const cw=W-left-right;
   const xStep=cw/Math.max(1,slice.length);
-  const xAt=i=>left+i*xStep+xStep/2;
+  const xIdx=i=>state.reversed?(slice.length-1-i):i;
+  const xAt=i=>left+xIdx(i)*xStep+xStep/2;
 
   const onPriceSeries = state.indicatorSeries.filter(s=>s.onPrice);
   const offPriceGroups = [];
