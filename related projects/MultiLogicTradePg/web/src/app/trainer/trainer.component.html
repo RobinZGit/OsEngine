@@ -96,7 +96,7 @@
         </label>
         <label class="setup-field">
           <span>Таймфрейм</span>
-          <select [(ngModel)]="timeframeId">
+          <select [ngModel]="timeframeId" (ngModelChange)="onTimeframeChange($event)">
             @for (tf of timeframes; track tf.id) { <option [ngValue]="tf.id">{{ tf.tf }}</option> }
           </select>
         </label>
@@ -185,6 +185,14 @@
             }
           </div>
         </div>
+        <label class="setup-field compact">
+          <span>Сигн. тейк, %</span>
+          <input class="narrow-num" type="number" step="0.1" min="0" [(ngModel)]="signalTpPct" />
+        </label>
+        <label class="setup-field compact">
+          <span>Сигн. стоп, %</span>
+          <input class="narrow-num" type="number" step="0.1" min="0" [(ngModel)]="signalSlPct" />
+        </label>
       </div>
       @if (battleMode) {
         <div class="battle-live-hint">БОЙ: график в реальном времени, скорость/задержка не влияют.</div>
@@ -203,7 +211,13 @@
           <div class="block-head-left">
             <button type="button" class="block-del" (click)="removeBlock(b)" title="Удалить блок">✕</button>
             <div class="block-title-wrap">
-              <div class="block-title">{{ b.securityName }}</div>
+              <div class="block-title-row">
+                <div class="block-title">{{ b.securityName }}</div>
+                <div class="block-current-pnl" [ngClass]="[pnlClass(b.position !== 'flat' ? unrealizedPnl(b) : b.lastPnl), signalAlertClass(b)]" (click)="refreshBattlePrice(b)" title="Текущий результат сделки · клик — обновить цену">
+                  {{ b.position !== 'flat' ? formatPnl(unrealizedPnl(b)) : formatPnl(b.lastPnl) }}
+                  <span class="block-current-pnl-pct">{{ b.position !== 'flat' ? formatPct(unrealizedPnlPct(b)) : formatPct(b.lastPnlPct) }}</span>
+                </div>
+              </div>
               @if (b.position !== 'flat') {
                 <span class="pos-badge" [class.pos-long]="b.position === 'long'" [class.pos-short]="b.position === 'short'">
                   {{ b.position === 'long' ? 'LONG' : 'SHORT' }} {{ formatPrice(b.entryPrice) }}
@@ -230,13 +244,6 @@
 
             <button type="button" class="tca-btn tca-start" (click)="onStartPauseClick(b)" [disabled]="b.loading">{{ startPauseLabel(b) }}</button>
             <button type="button" class="tca-btn tca-reset" (click)="resetBlock(b)" [disabled]="b.loading || !b.started">Сначала</button>
-            <div class="tca-info tca-result" (click)="refreshBattlePrice(b)" title="Обновить цену по последней котировке">
-              <div class="tca-lbl">Результат сделки</div>
-              <div class="tca-val" [ngClass]="pnlClass(b.position !== 'flat' ? unrealizedPnl(b) : b.lastPnl)">
-                {{ b.position !== 'flat' ? formatPnl(unrealizedPnl(b)) : formatPnl(b.lastPnl) }}
-                <span class="tca-pct">{{ b.position !== 'flat' ? formatPct(unrealizedPnlPct(b)) : formatPct(b.lastPnlPct) }}</span>
-              </div>
-            </div>
             <div class="tca-info tca-total">
               <div class="tca-lbl">Итоговый финрез</div>
               <div class="tca-val" [ngClass]="pnlClass(totalPnlWithUnrealized(b))">
@@ -279,7 +286,7 @@
             <span class="block-details-summary-title">Добавить индикатор / сделки</span>
             <span class="ind-chips ind-chips-summary" (click)="$event.stopPropagation()">
               @for (ind of b.indicators; track trackByInd($index, ind)) {
-                <span class="ind-chip" [style.borderColor]="ind.color" [title]="indicatorHint(ind.type)" [attr.data-hint]="indicatorHint(ind.type)">
+                <span class="ind-chip" [style.borderColor]="ind.color" [attr.data-hint]="indicatorHint(ind.type)">
                   <span class="ind-dot" [style.background]="ind.color"></span>
                   <span class="ind-chip-abbr">{{ indicatorShort(ind.type, ind.period) }}</span>
                   <button type="button" class="ind-remove" (click)="removeIndicator(b, ind.uid); $event.stopPropagation()" title="Убрать индикатор">×</button>

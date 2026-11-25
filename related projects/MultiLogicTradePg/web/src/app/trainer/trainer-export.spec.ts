@@ -39,7 +39,7 @@ describe('trainer-export', () => {
       defaultIndicators: [
         { uid: 'i1', type: 'SMA', period: 9, color: '#2563eb' },
       ],
-      defaults: { commissionPct: 0.03, executionDelaySec: 0, speedMs: 1000 },
+      defaults: { commissionPct: 0.03, executionDelaySec: 0, speedMs: 1000, signalTpPct: 0.4, signalSlPct: 0.2 },
       securities: [
         {
           id: 1, name: 'SEC1', exchangeName: 'MOEX',
@@ -90,7 +90,7 @@ describe('trainer-export', () => {
       version: 3, exportedAt: '2026-11-25T12:00:00.000Z',
       defaultSecurityId: 1,
       defaultIndicators: [],
-      defaults: { commissionPct: 0.03, executionDelaySec: 0, speedMs: 1000 },
+      defaults: { commissionPct: 0.03, executionDelaySec: 0, speedMs: 1000, signalTpPct: 0.4, signalSlPct: 0.2 },
       securities: [mk(1, 'SEC1'), mk(2, 'SEC2')],
     };
     const html = buildTrainerExportHtml(data);

@@ -141,15 +141,15 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
 
   private chartPadding(): { top: number; right: number; bottom: number; left: number } {
     if (this.compact && !this.fullscreen) {
-      return { top: 4, right: 6, bottom: 16, left: 60 };
+      return this.chartReversed
+        ? { top: 4, right: 60, bottom: 16, left: 6 }
+        : { top: 4, right: 6, bottom: 16, left: 60 };
     }
     const s = this.labelScale;
-    return {
-      top: Math.round(28 * s),
-      right: 10,
-      bottom: Math.round(22 * s),
-      left: Math.round(60 * s),
-    };
+    const yAxis = Math.round(60 * s);
+    return this.chartReversed
+      ? { top: Math.round(28 * s), right: yAxis, bottom: Math.round(22 * s), left: 10 }
+      : { top: Math.round(28 * s), right: 10, bottom: Math.round(22 * s), left: yAxis };
   }
 
   get hasTradeNav(): boolean {
@@ -728,19 +728,34 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     const visible = this.candles.slice(this.viewStart, this.viewStart + count);
     if (visible.length === 0) return;
 
-    const showOsc = this.hasOscillatorPanel();
+    const offGroups: { key: string; series: ChartIndicatorSeries[] }[] = [];
+    {
+      const m = new Map<string, ChartIndicatorSeries[]>();
+      for (const s of this.indicatorSeries) {
+        if (s.on_price_scale) continue;
+        const k = s.uid || s.indicator_code || s.line_code;
+        if (!m.has(k)) m.set(k, []);
+        m.get(k)!.push(s);
+      }
+      for (const [key, series] of m) offGroups.push({ key, series });
+    }
     const showPnl = this.equityPoints.length > 0;
-    // Отдельная полоса PnL под ценой (и под OSC, если есть) — не конкурирует с ценой.
-    const pnlRatio = showPnl ? (showOsc ? 0.2 : 0.26) : 0;
-    const oscRatio = showOsc ? (showPnl ? 0.2 : 0.28) : 0;
+    const pnlRatio = showPnl ? (offGroups.length ? 0.18 : 0.26) : 0;
+    const indRatio = offGroups.length > 0 ? 0.34 : 0;
     const usableBottom = cssH - pad.bottom;
     const priceTop = pad.top;
-    const priceBottom = usableBottom - cssH * (oscRatio + pnlRatio);
-    const priceH = priceBottom - priceTop;
-    const oscTop = priceBottom + 4;
-    const oscBottom = showOsc ? usableBottom - cssH * pnlRatio : priceBottom;
-    const oscH = Math.max(0, oscBottom - oscTop);
-    const pnlTop = showPnl ? (showOsc ? oscBottom : priceBottom) + 4 : usableBottom;
+    const priceBottom = usableBottom - cssH * (indRatio + pnlRatio);
+    const priceH = Math.max(this.px(80), priceBottom - priceTop);
+    const indTop = priceTop + priceH + (offGroups.length ? 4 : 0);
+    const indBottom = showPnl ? usableBottom - cssH * pnlRatio : usableBottom;
+    const indTotalH = Math.max(0, indBottom - indTop);
+    const paneGap = 3;
+    const paneH = offGroups.length
+      ? Math.max(this.px(28), Math.floor((indTotalH - paneGap * (offGroups.length - 1)) / offGroups.length))
+      : 0;
+    const pnlTop = showPnl
+      ? (offGroups.length ? indTop + paneH * offGroups.length + paneGap * Math.max(0, offGroups.length - 1) + 4 : priceTop + priceH + 4)
+      : usableBottom;
     const pnlBottom = usableBottom;
     const pnlH = Math.max(0, pnlBottom - pnlTop);
 
@@ -793,9 +808,16 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       ctx.moveTo(pad.left, y);
       ctx.lineTo(cssW - pad.right, y);
       ctx.stroke();
-      ctx.fillStyle = '#374151';
-      ctx.font = `800 ${this.px(11)}px system-ui, sans-serif`;
-      ctx.fillText(p.toFixed(2), 4, y + Math.round(axisSize * 0.35));
+      ctx.fillStyle = '#0f172a';
+      ctx.font = `900 ${this.px(11)}px system-ui, sans-serif`;
+      if (this.chartReversed) {
+        ctx.textAlign = 'left';
+        ctx.fillText(p.toFixed(2), cssW - pad.right + 4, y + Math.round(axisSize * 0.35));
+      } else {
+        ctx.textAlign = 'right';
+        ctx.fillText(p.toFixed(2), pad.left - 4, y + Math.round(axisSize * 0.35));
+      }
+      ctx.textAlign = 'left';
     }
 
     this.drawReferenceLevel(
@@ -865,57 +887,113 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     this.drawStopMarkers(ctx, visible, yScale, pad.left, cw, priceTop, priceBottom);
     this.drawTradeMarkers(ctx, visible, yScale, pad.left, cw, priceTop, priceBottom);
 
-    if (showOsc && oscH > 20) {
-      ctx.strokeStyle = '#d1d5db';
-      ctx.beginPath();
-      ctx.moveTo(pad.left, oscTop);
-      ctx.lineTo(cssW - pad.right, oscTop);
-      ctx.stroke();
+    for (let gi = 0; gi < offGroups.length; gi++) {
+      const g = offGroups[gi];
+      const pTop = indTop + gi * (paneH + paneGap);
+      const pBottom = pTop + paneH;
+      if (paneH < this.px(20)) continue;
 
-      const oscSeries = this.indicatorSeries.filter((s) => !s.on_price_scale);
-      let oscMin = Infinity;
-      let oscMax = -Infinity;
-      for (const s of oscSeries) {
+      ctx.fillStyle = '#fafafa';
+      ctx.fillRect(pad.left, pTop, cssW - pad.left - pad.right, paneH);
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.strokeRect(pad.left, pTop, cssW - pad.left - pad.right, paneH);
+
+      let oMin = Infinity;
+      let oMax = -Infinity;
+      for (const s of g.series) {
         for (const c of visible) {
           const v = this.valueAtDt(s, c.dt);
           if (v != null && Number.isFinite(v)) {
-            oscMin = Math.min(oscMin, v);
-            oscMax = Math.max(oscMax, v);
+            if (v < oMin) oMin = v;
+            if (v > oMax) oMax = v;
           }
         }
       }
-      if (!Number.isFinite(oscMin) || !Number.isFinite(oscMax)) {
-        oscMin = 0;
-        oscMax = 100;
+      if (!Number.isFinite(oMin) || !Number.isFinite(oMax)) { oMin = 0; oMax = 1; }
+      if (oMin === oMax) { oMin -= 1; oMax += 1; }
+      const oPad = (oMax - oMin) * 0.08 || 1;
+      oMin -= oPad; oMax += oPad;
+      const yOsc = (v: number) => pTop + paneH - ((v - oMin) / (oMax - oMin)) * paneH;
+
+      ctx.strokeStyle = '#eef2f7';
+      ctx.lineWidth = 1;
+      for (let k = 0; k <= 2; k++) {
+        const yy = pTop + (paneH * k) / 2;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, yy);
+        ctx.lineTo(cssW - pad.right, yy);
+        ctx.stroke();
       }
-      oscMin = Math.min(oscMin, 0);
-      oscMax = Math.max(oscMax, 0);
-      const oscPad = (oscMax - oscMin) * 0.08 || 1;
-      oscMin -= oscPad;
-      oscMax += oscPad;
-      const yOsc = (v: number) => oscTop + oscH - ((v - oscMin) / (oscMax - oscMin)) * oscH;
 
-      this.drawReferenceLevel(
-        ctx,
-        yOsc,
-        0,
-        oscMin,
-        oscMax,
-        pad.left,
-        cssW - pad.right,
-        '0'
-      );
+      this.drawReferenceLevel(ctx, yOsc, 0, oMin, oMax, pad.left, cssW - pad.right, '0');
 
-      for (const s of oscSeries.filter((x) => x.is_threshold)) {
+      const wm = g.series[0]?.description || g.series[0]?.shortLabel || g.series[0]?.indicator_code || g.series[0]?.line_name || '';
+      if (wm) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(71,85,105,0.24)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const maxW = Math.max(40, cssW - pad.left - pad.right - 24);
+        let fontSize = Math.max(this.px(18), Math.floor(paneH * 0.34));
+        const lineHFactor = 1.25;
+        const words = wm.split(/\s+/).filter(Boolean);
+        const wrap = (fs: number): string[] => {
+          ctx.font = `bold ${fs}px system-ui, sans-serif`;
+          const lines: string[] = [];
+          let line = '';
+          for (const w of words) {
+            const test = line ? line + ' ' + w : w;
+            if (ctx.measureText(test).width <= maxW || !line) line = test;
+            else { lines.push(line); line = w; }
+          }
+          if (line) lines.push(line);
+          return lines;
+        };
+        let lines = wrap(fontSize);
+        while (lines.length * fontSize * lineHFactor > paneH * 0.86 && fontSize > this.px(11)) {
+          fontSize -= 1;
+          lines = wrap(fontSize);
+        }
+        ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
+        const totalH = lines.length * fontSize * lineHFactor;
+        let y = pTop + paneH / 2 - totalH / 2 + (fontSize * lineHFactor) / 2;
+        const cx = pad.left + (cssW - pad.left - pad.right) / 2;
+        for (const ln of lines) { ctx.fillText(ln, cx, y, maxW); y += fontSize * lineHFactor; }
+        ctx.restore();
+      }
+
+      for (const s of g.series.filter((x) => x.is_threshold)) {
         this.drawThresholdLine(ctx, s, yOsc, pad.left, cssW - pad.right);
       }
-      for (const s of oscSeries.filter((x) => !x.is_threshold)) {
+      for (const s of g.series.filter((x) => !x.is_threshold)) {
         this.drawLineSeries(ctx, visible, s, yOsc, pad.left, cw);
       }
 
-      ctx.fillStyle = '#9ca3af';
-      ctx.font = `${this.px(9)}px system-ui, sans-serif`;
-      ctx.fillText('OSC', 4, oscTop + this.px(10));
+      ctx.fillStyle = '#0f172a';
+      ctx.font = `900 ${this.px(10)}px system-ui, sans-serif`;
+      ctx.textBaseline = 'alphabetic';
+      if (this.chartReversed) {
+        ctx.textAlign = 'right';
+        ctx.fillText(oMax.toFixed(2), pad.left - 4, pTop + this.px(10));
+        ctx.fillText(oMin.toFixed(2), pad.left - 4, pBottom - 3);
+      } else {
+        ctx.textAlign = 'left';
+        ctx.fillText(oMax.toFixed(2), cssW - pad.right + 4, pTop + this.px(10));
+        ctx.fillText(oMin.toFixed(2), cssW - pad.right + 4, pBottom - 3);
+      }
+      ctx.textAlign = 'left';
+
+      let plx = pad.left + 4;
+      const ply = pTop + this.px(10);
+      for (const s of g.series) {
+        ctx.fillStyle = s.color;
+        ctx.fillRect(plx, ply - this.px(3), this.px(8), this.px(3));
+        ctx.fillStyle = '#334155';
+        ctx.font = `${this.px(9)}px system-ui, sans-serif`;
+        ctx.fillText(s.line_name, plx + this.px(11), ply);
+        plx += ctx.measureText(s.line_name).width + this.px(20);
+        if (plx > cssW - pad.right - 30) break;
+      }
     }
 
     if (showPnl && pnlH > 24) {
@@ -1154,12 +1232,16 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
       }
     }
     if (samples.length === 0) {
-      ctx.fillStyle = '#7c3aed';
-      ctx.font = `600 ${this.px(10)}px system-ui, sans-serif`;
-      ctx.fillText('PnL', left + 4, top + this.px(14));
+      const onRight = this.chartReversed;
+      ctx.fillStyle = '#5b21b6';
+      ctx.font = `800 ${this.px(10)}px system-ui, sans-serif`;
+      ctx.textAlign = onRight ? 'left' : 'right';
+      ctx.fillText('PnL', onRight ? right + 4 : left - 4, top + this.px(14));
       ctx.fillStyle = '#a78bfa';
       ctx.font = `${this.px(9)}px system-ui, sans-serif`;
-      ctx.fillText('нет закрытий в окне', left + 36, top + this.px(14));
+      ctx.textAlign = onRight ? 'left' : 'right';
+      ctx.fillText('нет закрытий в окне', onRight ? right + 4 : left - 4, top + this.px(26));
+      ctx.textAlign = 'left';
       return;
     }
 
@@ -1231,16 +1313,19 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     }
     ctx.stroke();
 
-    const axisSize = this.px(9);
-    ctx.fillStyle = '#7c3aed';
-    ctx.font = `600 ${this.px(10)}px system-ui, sans-serif`;
-    ctx.fillText('PnL', 4, top + this.px(12));
-    ctx.font = `800 ${this.px(10)}px system-ui, sans-serif`;
+    const onRight = this.chartReversed;
     ctx.fillStyle = '#5b21b6';
-    ctx.fillText(this.formatPnlAxis(maxE), 4, top + this.px(22));
-    ctx.fillText(this.formatPnlAxis(minE), 4, bottom - 2);
+    ctx.font = `800 ${this.px(10)}px system-ui, sans-serif`;
+    ctx.textAlign = onRight ? 'left' : 'right';
+    const ax = onRight ? right + 4 : left - 4;
+    ctx.fillText('PnL', ax, top + this.px(12));
+    ctx.font = `900 ${this.px(10)}px system-ui, sans-serif`;
+    ctx.fillText(this.formatPnlAxis(maxE), ax, top + this.px(22));
+    ctx.fillText(this.formatPnlAxis(minE), ax, bottom - 2);
     const lastV = samples[samples.length - 1].v;
-    ctx.fillText(this.formatPnlAxis(lastV), right - this.px(36), top + this.px(12));
+    ctx.textAlign = onRight ? 'right' : 'left';
+    ctx.fillText(this.formatPnlAxis(lastV), onRight ? left - 4 : right + 4, top + this.px(12));
+    ctx.textAlign = 'left';
   }
 
   private formatPnlAxis(v: number): string {
@@ -1500,7 +1585,7 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     pad: { left: number }
   ): void {
     if (this.compact && !this.fullscreen) return;
-    const drawn = this.indicatorSeries.filter((s) => !s.is_threshold);
+    const drawn = this.indicatorSeries.filter((s) => !s.is_threshold && !s.on_price_scale);
     let x = pad.left;
     const y = this.px(18);
     const legendSize = this.px(9);

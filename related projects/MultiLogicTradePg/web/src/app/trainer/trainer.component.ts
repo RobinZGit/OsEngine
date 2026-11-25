@@ -68,22 +68,22 @@ interface IndicatorDef {
 }
 
 const INDICATOR_DEFS: IndicatorDef[] = [
-  { code: 'SMA', name: 'SMA — Простое скользящее среднее', period: 20, onPrice: true, hasPeriod: true , desc: 'Средняя цена за период' },
-  { code: 'EMA', name: 'EMA — Экспоненциальное среднее', period: 20, onPrice: true, hasPeriod: true , desc: 'Средняя с весом к новым ценам' },
-  { code: 'WMA', name: 'WMA — Взвешенное среднее', period: 20, onPrice: true, hasPeriod: true , desc: 'Средняя с линейным весом' },
-  { code: 'HMA', name: 'HMA — Среднее Халла', period: 20, onPrice: true, hasPeriod: true , desc: 'Быстрая сглаженная средняя' },
-  { code: 'BB', name: 'BB — Полосы Боллинджера', period: 20, onPrice: true, hasPeriod: true , desc: 'Полосы волатильности вокруг средней' },
-  { code: 'DONCHIAN', name: 'Donchian — Канал Дончиана', period: 20, onPrice: true, hasPeriod: true , desc: 'Канал максимумов и минимумов' },
-  { code: 'VWAP', name: 'VWAP — Средневзвешенная по объёму', period: 1, onPrice: true, hasPeriod: false , desc: 'Средняя цена по объёму' },
-  { code: 'RSI', name: 'RSI — Индекс относительной силы', period: 14, onPrice: false, hasPeriod: true , desc: 'Сила роста и падения (0-100)' },
-  { code: 'MACD', name: 'MACD — Схождение/расхождение средних', period: 12, onPrice: false, hasPeriod: true , desc: 'Разница быстрых и медленных средних' },
-  { code: 'STOCH', name: 'Stoch — Стохастик', period: 14, onPrice: false, hasPeriod: true , desc: 'Положение цены в диапазоне' },
-  { code: 'ATR', name: 'ATR — Средний истинный диапазон', period: 14, onPrice: false, hasPeriod: true , desc: 'Средний диапазон колебаний' },
-  { code: 'CCI', name: 'CCI — Индекс товарного канала', period: 20, onPrice: false, hasPeriod: true , desc: 'Отклонение цены от средней' },
-  { code: 'ADX', name: 'ADX — Индекс направленного движения', period: 14, onPrice: false, hasPeriod: true , desc: 'Сила тренда без направления' },
-  { code: 'ROC', name: 'ROC — Скорость изменения', period: 12, onPrice: false, hasPeriod: true , desc: 'Скорость изменения цены' },
-  { code: 'OBV', name: 'OBV — Балансовый объём', period: 1, onPrice: false, hasPeriod: false , desc: 'Накопленный объём по направлению' },
-  { code: 'MFI', name: 'MFI — Индекс денежного потока', period: 14, onPrice: false, hasPeriod: true , desc: 'Давление денег по объёму (0-100)' },
+  { code: 'SMA', name: 'SMA — Простое скользящее среднее', period: 20, onPrice: true, hasPeriod: true, desc: 'Сглаживает цену, показывает средний уровень за период. Сам по себе не даёт сигналов перекупленности/перепроданности.' },
+  { code: 'EMA', name: 'EMA — Экспоненциальное среднее', period: 20, onPrice: true, hasPeriod: true, desc: 'Сглаживает цену с большим весом последних свечей. Быстрее SMA реагирует на изменения, но зон перекупленности/перепроданности не даёт.' },
+  { code: 'WMA', name: 'WMA — Взвешенное среднее', period: 20, onPrice: true, hasPeriod: true, desc: 'Скользящая средняя с линейным весом к новым ценам. Реагирует быстрее SMA, но сам по себе не показывает перекупленность/перепроданность.' },
+  { code: 'HMA', name: 'HMA — Среднее Халла', period: 20, onPrice: true, hasPeriod: true, desc: 'Быстрая и сглаженная средняя Халла. Хорошо показывает направление тренда с меньшим запаздыванием, но не даёт зон перекупленности.' },
+  { code: 'BB', name: 'BB — Полосы Боллинджера', period: 20, onPrice: true, hasPeriod: true, desc: 'Полосы волатильности вокруг SMA. У верхней полосы — возможна перекупленность, у нижней — перепроданность; сужение полос означает низкую волатильность.' },
+  { code: 'DONCHIAN', name: 'Donchian — Канал Дончиана', period: 20, onPrice: true, hasPeriod: true, desc: 'Канал максимумов и минимумов за период. Пробой верхней границы указывает на силу роста, нижней — на силу падения; внутри канала — диапазон.' },
+  { code: 'VWAP', name: 'VWAP — Средневзвешенная по объёму', period: 1, onPrice: true, hasPeriod: false, desc: 'Средняя цена с учётом объёма. Выше VWAP — перевес покупателей, ниже — продавцов; часто используется как ориентир справедливой цены.' },
+  { code: 'RSI', name: 'RSI — Индекс относительной силы', period: 14, onPrice: false, hasPeriod: true, desc: 'Импульс в диапазоне 0–100. Обычно выше 70 — перекупленность, ниже 30 — перепроданность; середина диапазона — нейтральная зона.' },
+  { code: 'MACD', name: 'MACD — Схождение/расхождение средних', period: 12, onPrice: false, hasPeriod: true, desc: 'Разница быстрых и медленных EMA. Пересечение линии MACD с сигнальной или нулём показывает смену импульса; гистограмма отражает его силу.' },
+  { code: 'STOCH', name: 'Stoch — Стохастик', period: 14, onPrice: false, hasPeriod: true, desc: 'Положение цены в диапазоне 0–100. Обычно выше 80 — перекупленность, ниже 20 — перепроданность; пересечение %K и %D даёт дополнительный сигнал.' },
+  { code: 'ATR', name: 'ATR — Средний истинный диапазон', period: 14, onPrice: false, hasPeriod: true, desc: 'Показывает среднюю волатильность, но не направление цены. Рост ATR — рынок стал активнее; полезен для оценки стопов и размера позиции.' },
+  { code: 'CCI', name: 'CCI — Индекс товарного канала', period: 20, onPrice: false, hasPeriod: true, desc: 'Отклонение цены от средней. Обычно выше +100 — сильный рост/возможная перекупленность, ниже −100 — сильное падение/возможная перепроданность.' },
+  { code: 'ADX', name: 'ADX — Индекс направленного движения', period: 14, onPrice: false, hasPeriod: true, desc: 'Показывает силу тренда (0–100), но не его направление. Обычно выше 25 — тренд сильный, ниже 20 — флет/слабый тренд.' },
+  { code: 'ROC', name: 'ROC — Скорость изменения', period: 12, onPrice: false, hasPeriod: true, desc: 'Показывает скорость изменения цены в %. Выше 0 — цена выросла относительно N свечей назад, ниже 0 — снизилась; резкие значения = сильный импульс.' },
+  { code: 'OBV', name: 'OBV — Балансовый объём', period: 1, onPrice: false, hasPeriod: false, desc: 'Накопленный объём по направлению цены. Рост OBV подтверждает рост цены; расхождение OBV и цены может предупреждать о возможном развороте.' },
+  { code: 'MFI', name: 'MFI — Индекс денежного потока', period: 14, onPrice: false, hasPeriod: true, desc: 'Денежный поток в диапазоне 0–100 с учётом объёма. Обычно выше 80 — перекупленность, ниже 20 — перепроданность.' },
 ];
 
 interface LocalIndicator {
@@ -136,6 +136,7 @@ interface TrainerBlock {
   reportLoading: boolean;
   sessionKey: string | null;
   timer: ReturnType<typeof setInterval> | null;
+  loadSeq: number;
 }
 
 function createBlock(securityId: number | null, securityName: string): TrainerBlock {
@@ -183,6 +184,7 @@ function createBlock(securityId: number | null, securityName: string): TrainerBl
     reportLoading: false,
     sessionKey: null,
     timer: null,
+    loadSeq: 0,
   };
 }
 
@@ -235,6 +237,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
 
   commissionPct = 0.03;
   executionDelaySec = 30;
+  signalTpPct = 0.4;
+  signalSlPct = 0.2;
 
   loading = false;
   loadingError: string | null = null;
@@ -453,6 +457,15 @@ export class TrainerComponent implements OnInit, OnDestroy {
     if (this.exchangeId != null) this.loadSecurities(this.exchangeId);
   }
 
+  onTimeframeChange(tfId: number | null): void {
+    if (tfId === this.timeframeId) return;
+    this.timeframeId = tfId;
+    for (const b of this.blocks) {
+      void this.startBlock(b);
+    }
+    this.cdr.markForCheck();
+  }
+
 
   addBlock(): void {
     if (this.addSecurityId == null) return;
@@ -556,6 +569,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
   // ---- block start / load ----
   async startBlock(b: TrainerBlock): Promise<void> {
     if (b.securityId == null || this.timeframeId == null) return;
+    const seq = ++b.loadSeq;
     if (b.started && !this.battleMode) this.saveSession(b);
     this.stopBlockTimer(b);
     b.sessionKey = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -595,10 +609,12 @@ export class TrainerComponent implements OnInit, OnDestroy {
       const tfSec = this.timeframes.find(t => t.id === this.timeframeId)?.sec ?? 300;
       const desiredCandles = Math.max(260, Math.round((1200 * 300) / Math.max(1, tfSec)));
       let candles = await this.loadHistory(b.securityId, this.timeframeId, b);
+      if (seq !== b.loadSeq) return;
       if (candles.length < desiredCandles) {
         this.setDataLoading(`Загрузка цен: ${b.securityName}`, 45);
-        candles = await this.autoLoadPrices(b.securityId, this.timeframeId, b, desiredCandles);
+        candles = await this.autoLoadPrices(b.securityId, this.timeframeId, b, desiredCandles, seq);
       }
+      if (seq !== b.loadSeq) return;
       if (candles.length === 0) {
         throw new Error('Нет исторических свечей по выбранному инструменту и таймфрейму. Проверьте, что данные загружены на вкладке «Данные».');
       }
@@ -613,18 +629,21 @@ export class TrainerComponent implements OnInit, OnDestroy {
       this.rebuildIndicators(b);
       this.setDataLoading(`Готово: ${b.securityName}`, 100);
     } catch (e: any) {
+      if (seq !== b.loadSeq) return;
       console.error('Trainer start error', e);
       b.loadingError = e?.error?.error || e?.error?.message || e?.message || 'Ошибка загрузки данных';
       b.started = false;
       this.reportDataLoadIssue('error', 'Тренажёр: ошибка загрузки', String(b.loadingError), { block: b.securityName });
     } finally {
-      b.loading = false;
-      this.endDataLoading();
-      this.cdr.markForCheck();
+      if (seq === b.loadSeq) {
+        b.loading = false;
+        this.endDataLoading();
+        this.cdr.markForCheck();
+      }
     }
   }
 
-  private async autoLoadPrices(securityId: number, timeframeId: number, b: TrainerBlock, desiredMin = 1): Promise<PriceCandle[]> {
+  private async autoLoadPrices(securityId: number, timeframeId: number, b: TrainerBlock, desiredMin = 1, seq?: number): Promise<PriceCandle[]> {
     const tfSec = this.timeframes.find(t => t.id === timeframeId)?.sec ?? 300;
     const daysBack = Math.max(365, Math.ceil((desiredMin * tfSec) / 86400) + 30);
     const to = new Date();
@@ -632,14 +651,18 @@ export class TrainerComponent implements OnInit, OnDestroy {
     const dateFrom = this.toDateStr(from);
     const dateTo = this.toDateStr(to);
     const res: any = await firstValueFrom(this.securitiesApi.loadPrices({ security_id: securityId, timeframe_id: timeframeId, date_from: dateFrom, date_to: dateTo }));
+    if (seq != null && seq !== b.loadSeq) return [];
     if (res && res.ok === false) throw new Error(res?.error || 'Не удалось загрузить цены');
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 2000));
+      if (seq != null && seq !== b.loadSeq) return [];
       if (!b.started) return [];
       this.setDataLoading(`Загрузка цен: ${b.securityName}`, Math.min(84, 45 + i * 1.3));
       const candles = await this.loadHistory(securityId, timeframeId, b);
+      if (seq != null && seq !== b.loadSeq) return [];
       if (candles.length >= desiredMin) return candles;
     }
+    if (seq != null && seq !== b.loadSeq) return [];
     return await this.loadHistory(securityId, timeframeId, b);
   }
 
@@ -1283,7 +1306,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
       const period = Math.max(2, Math.floor(Number(ind.period) || 20));
       const label = def?.hasPeriod ? `${ind.type}(${period})` : ind.type;
       const mk = (line_code: string, line_name: string, color: string, points: Pt[], on_price_scale = onPrice): ChartIndicatorSeries => ({
-        indicator_code: ind.type, line_code, line_name, color, on_price_scale, is_threshold: false, description: def?.desc || '', points,
+        uid: ind.uid, indicator_code: ind.type, line_code, line_name, color, on_price_scale, is_threshold: false, description: def?.desc || '', shortLabel: label, points,
       });
       switch (ind.type) {
         case 'SMA': out.push(mk('VALUE', label, ind.color, calcSma(candles, period))); break;
@@ -1741,6 +1764,17 @@ export class TrainerComponent implements OnInit, OnDestroy {
     if (n == null || n === 0) return 'pnl-flat';
     return n > 0 ? 'pnl-pos' : 'pnl-neg';
   }
+
+  signalAlertClass(b: TrainerBlock): string {
+    if (b.position === 'flat') return '';
+    const pct = this.toNumber(this.unrealizedPnlPct(b));
+    if (pct == null) return '';
+    const tp = this.toNumber(this.signalTpPct);
+    const sl = this.toNumber(this.signalSlPct);
+    if (tp != null && tp > 0 && pct >= tp) return 'signal-tp';
+    if (sl != null && sl > 0 && pct <= -sl) return 'signal-sl';
+    return '';
+  }
   toNumber(v: number | string | null | undefined): number | null {
     if (v == null || v === '') return null;
     const n = typeof v === 'number' ? v : Number(v);
@@ -2131,7 +2165,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
         securities,
         defaultSecurityId: securities[0].id,
         defaultIndicators,
-        defaults: { commissionPct: this.commissionPct, executionDelaySec: this.executionDelaySec, speedMs: this.speedMs },
+        defaults: { commissionPct: this.commissionPct, executionDelaySec: this.executionDelaySec, speedMs: this.speedMs, signalTpPct: this.signalTpPct, signalSlPct: this.signalSlPct },
       };
 
       const html = buildTrainerExportHtml(data);

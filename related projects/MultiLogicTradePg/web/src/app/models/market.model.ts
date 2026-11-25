@@ -165,14 +165,18 @@ export interface IndicatorValueRow {
 }
 
 export interface ChartIndicatorSeries {
+  /** Уникальный id экземпляра индикатора (для раздельных панелей). */
+  uid?: string;
   indicator_code: string;
   line_code: string;
   line_name: string;
   color: string;
   on_price_scale: boolean;
   is_threshold: boolean;
-  /** Краткое описание индикатора для подписи на графике/панели. */
+  /** Краткое описание индикатора для подсказки/водяного знака. */
   description?: string;
+  /** Короткая метка индикатора для водяного знака панели (напр. RSI(14)). */
+  shortLabel?: string;
   points: { dt: string; value: number }[];
 }
 

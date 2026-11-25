@@ -1,8 +1,8 @@
 ﻿{
     "product":  "MultiLogicTradePg",
     "title":  "MultiLogic Trade",
-    "version":  "1.0.600",
-    "build":  600,
-    "built":  "2026-11-25 15:32:55",
-    "git":  "727540d4"
+    "version":  "1.0.609",
+    "build":  609,
+    "built":  "2026-11-25 17:31:20",
+    "git":  "5dc5c340"
 }

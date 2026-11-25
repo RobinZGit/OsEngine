@@ -29,7 +29,7 @@ export interface TrainerExportData {
   securities: ExportSecurityData[];
   defaultSecurityId: number | null;
   defaultIndicators: ExportIndicatorInstance[];
-  defaults: { commissionPct: number; executionDelaySec: number; speedMs: number };
+  defaults: { commissionPct: number; executionDelaySec: number; speedMs: number; signalTpPct?: number; signalSlPct?: number };
 }
 
 export function buildExportTfData(tfId: number, tf: string, sec: number, candles: PriceCandle[]): ExportTfData {
@@ -60,6 +60,18 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
 .card{background:var(--card);border:1px solid var(--border);border-radius:12px}
 .top{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap}
 .title{margin:0;font-size:26px;font-weight:800;line-height:1}.sub{font-size:12px;color:var(--muted);margin-top:2px}
+.head-pnl{display:inline-flex;align-items:baseline;gap:4px;padding:4px 10px;border-radius:8px;background:#f8fafc;border:1px solid var(--border);font-variant-numeric:tabular-nums}
+.head-pnl .val{font-size:22px;font-weight:900;line-height:1}.head-pnl .pct{font-size:14px;font-weight:800}
+.head-pnl .val.pos,.head-pnl .pct.pos{color:#00c853}.head-pnl .val.neg,.head-pnl .pct.neg{color:#ff1744}
+.head-pnl.signal-tp,.head-pnl.signal-sl{font-size:28px;padding:5px 12px;border-width:2px;animation:signal-blink .45s steps(2,start) infinite}
+.head-pnl.signal-tp{background:rgba(0,200,83,.12);border-color:#00c853;box-shadow:0 0 0 2px rgba(0,200,83,.25),0 0 12px rgba(0,200,83,.35)}
+.head-pnl.signal-tp .val,.head-pnl.signal-sl .val{font-size:28px}
+.head-pnl.signal-tp .pct,.head-pnl.signal-sl .pct{font-size:16px}
+.head-pnl.signal-tp .val,.head-pnl.signal-tp .pct{color:#00e676}
+.head-pnl.signal-sl{background:rgba(255,23,68,.10);border-color:#ff1744;box-shadow:0 0 0 2px rgba(255,23,68,.22),0 0 12px rgba(255,23,68,.30)}
+.head-pnl.signal-sl .val,.head-pnl.signal-sl .pct{color:#ff1744}
+@keyframes signal-blink{to{visibility:hidden}}
+.head-price{font-size:11px;color:var(--muted);margin-left:8px;font-weight:600}
 .btn{height:34px;padding:0 12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-weight:700;cursor:pointer}.btn:hover:not(:disabled){background:#f8fafc}.btn:disabled{opacity:.45;cursor:default}
 .btn-dark{background:#111827;color:#fff;border-color:#111827}
 .total{padding:8px 14px;min-width:210px;min-height:0;display:flex;flex-direction:column;justify-content:center}.total .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700}.total .val{font-size:34px;font-weight:900;line-height:1.05}.total .meta{font-size:13px;font-weight:800;padding:0;border:none;display:block;margin-top:2px}
@@ -99,15 +111,17 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
 <div class="page" id="page">
   <div class="top">
     <div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><h1 class="title">Тренажёр</h1></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h1 class="title">Тренажёр</h1><div class="head-pnl" id="headPnlWrap"><span class="val flat" id="lastPnl">—</span><span class="pct" id="lastPnlPct"></span><span class="head-price">Цена: <span id="curPrice">—</span></span></div></div>
       <div class="sub" id="subTitle"></div>
       <div class="bar">
     <label class="field" id="secField"><span>Бумага</span><select id="secSel" onchange="changeSec(+this.value)"></select></label>
     <div class="field" id="secNameField" style="display:none"><span>Бумага</span><div id="secNameText" style="height:30px;display:flex;align-items:center;padding:0 2px;font-size:13px;font-weight:700;color:var(--text)"></div></div>
     <label class="field"><span>Таймфрейм</span><select id="tfSel" onchange="changeTf(+this.value)"></select></label>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:flex-end">
-      <label class="field"><span>Направление</span><button class="btn" id="dirBtn" onclick="toggleDirection()" title="Переключить направление графика">Справа → Слева</button></label>
       <label class="field"><span>Скорость</span><div class="speed"><select id="speedSel" onchange="setSpeed(+this.value)"></select><div class="sbtns"><button class="sbtn" onclick="speedUp()">+</button><button class="sbtn" onclick="speedDown()">−</button></div></div></label>
+      <label class="field"><span>Сигн. тейк, %</span><input id="signalTpInp" type="number" step="0.1" min="0" value="${esc(String(data.defaults.signalTpPct ?? 0.4))}" onchange="state.signalTpPct=Math.max(0,+this.value||0);updateHeader()" style="width:72px"></label>
+      <label class="field"><span>Сигн. стоп, %</span><input id="signalSlInp" type="number" step="0.1" min="0" value="${esc(String(data.defaults.signalSlPct ?? 0.2))}" onchange="state.signalSlPct=Math.max(0,+this.value||0);updateHeader()" style="width:72px"></label>
+      <label class="field"><span>&nbsp;</span><button class="btn" id="dirBtn" onclick="toggleDirection()" title="Переключить направление графика" style="min-width:36px;font-size:16px;line-height:1;padding:0 10px">⇄</button></label>
     </div>
   </div>
     </div>
@@ -119,7 +133,6 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
       <button class="tca sell" id="sellBtn" onclick="sell()"><span class="main">ПРОДАТЬ</span><span class="sub" id="sellSub">ШОРТ</span></button>
       <button class="tca start" id="startBtn" onclick="startPause()"><span class="main" id="startMain">Начать</span><span class="sub" id="startSub">пауза</span></button>
       <button class="tca reset" id="resetBtn" onclick="resetBlock()" disabled><span class="main">СНАЧАЛА</span><span class="sub">сброс</span></button>
-      <div class="info"><div class="lbl">Результат сделки</div><div><span class="val flat" id="lastPnl">—</span><span class="pct" id="lastPnlPct"></span></div><div class="hold" id="lastPriceRow">Цена: <span id="curPrice">—</span></div></div>
       <div class="info"><div class="lbl">Итоговый финрез</div><div><span class="val flat" id="totalPnl">—</span><span class="pct" id="totalPnlPct"></span></div><div class="annual flat" id="annualRow">Годовых: —</div></div>
       <div class="info"><div class="lbl">Время удержания</div><div class="val flat" id="holdVal">—</div><div class="hold" id="avgHold">Ср.: —</div></div>
     </div>
@@ -146,6 +159,8 @@ const state={
   speedMs: DATA.defaults.speedMs||1000,
   commissionPct: +DATA.defaults.commissionPct||0.03,
   delaySec: Math.max(0,+DATA.defaults.executionDelaySec||0),
+  signalTpPct: Math.max(0, +DATA.defaults.signalTpPct || 0.4),
+  signalSlPct: Math.max(0, +DATA.defaults.signalSlPct || 0.2),
   playing:false, started:false, finished:false, timer:null,
   playIndex:0, visibleCount:0,
   position:'flat', entryPrice:null, entryIdx:null, entryWallMs:null, entryDt:null, qty:1, entryCommission:0,
@@ -195,22 +210,22 @@ function annualPct(){
 
 
 const IND_DEFS=[
-  {code:'SMA',name:'SMA - Простое скользящее среднее',period:20,onPrice:true,hasPeriod:true,desc:'Средняя цена за период'},
-  {code:'EMA',name:'EMA - Экспоненциальное среднее',period:20,onPrice:true,hasPeriod:true,desc:'Средняя с весом к новым ценам'},
-  {code:'WMA',name:'WMA - Взвешенное среднее',period:20,onPrice:true,hasPeriod:true,desc:'Средняя с линейным весом'},
-  {code:'HMA',name:'HMA - Среднее Халла',period:20,onPrice:true,hasPeriod:true,desc:'Быстрая сглаженная средняя'},
-  {code:'BB',name:'BB - Полосы Боллинджера',period:20,onPrice:true,hasPeriod:true,desc:'Полосы волатильности вокруг средней'},
-  {code:'DONCHIAN',name:'Donchian - Канал Дончиана',period:20,onPrice:true,hasPeriod:true,desc:'Канал максимумов и минимумов'},
-  {code:'VWAP',name:'VWAP - Средняя по объёму',period:1,onPrice:true,hasPeriod:false,desc:'Средняя цена по объёму'},
-  {code:'RSI',name:'RSI - Индекс относительной силы',period:14,onPrice:false,hasPeriod:true,desc:'Сила роста и падения (0-100)'},
-  {code:'MACD',name:'MACD - Схождение/расхождение',period:12,onPrice:false,hasPeriod:true,desc:'Разница быстрых и медленных средних'},
-  {code:'STOCH',name:'Stoch - Стохастик',period:14,onPrice:false,hasPeriod:true,desc:'Положение цены в диапазоне'},
-  {code:'ATR',name:'ATR - Средний истинный диапазон',period:14,onPrice:false,hasPeriod:true,desc:'Средний диапазон колебаний'},
-  {code:'CCI',name:'CCI - Индекс товарного канала',period:20,onPrice:false,hasPeriod:true,desc:'Отклонение цены от средней'},
-  {code:'ADX',name:'ADX - Индекс направленного движения',period:14,onPrice:false,hasPeriod:true,desc:'Сила тренда без направления'},
-  {code:'ROC',name:'ROC - Скорость изменения',period:12,onPrice:false,hasPeriod:true,desc:'Скорость изменения цены'},
-  {code:'OBV',name:'OBV - Балансовый объём',period:1,onPrice:false,hasPeriod:false,desc:'Накопленный объём по направлению'},
-  {code:'MFI',name:'MFI - Индекс денежного потока',period:14,onPrice:false,hasPeriod:true,desc:'Давление денег по объёму (0-100)'},
+  {code:'SMA',name:'SMA - Простое скользящее среднее',period:20,onPrice:true,hasPeriod:true,desc:'Сглаживает цену, показывает средний уровень за период. Сам по себе не даёт сигналов перекупленности/перепроданности.'},
+  {code:'EMA',name:'EMA - Экспоненциальное среднее',period:20,onPrice:true,hasPeriod:true,desc:'Сглаживает цену с большим весом последних свечей. Быстрее SMA реагирует на изменения, но зон перекупленности/перепроданности не даёт.'},
+  {code:'WMA',name:'WMA - Взвешенное среднее',period:20,onPrice:true,hasPeriod:true,desc:'Скользящая средняя с линейным весом к новым ценам. Реагирует быстрее SMA, но сам по себе не показывает перекупленность/перепроданность.'},
+  {code:'HMA',name:'HMA - Среднее Халла',period:20,onPrice:true,hasPeriod:true,desc:'Быстрая и сглаженная средняя Халла. Хорошо показывает направление тренда с меньшим запаздыванием, но не даёт зон перекупленности.'},
+  {code:'BB',name:'BB - Полосы Боллинджера',period:20,onPrice:true,hasPeriod:true,desc:'Полосы волатильности вокруг SMA. У верхней полосы — возможна перекупленность, у нижней — перепроданность; сужение полос означает низкую волатильность.'},
+  {code:'DONCHIAN',name:'Donchian - Канал Дончиана',period:20,onPrice:true,hasPeriod:true,desc:'Канал максимумов и минимумов за период. Пробой верхней границы указывает на силу роста, нижней — на силу падения; внутри канала — диапазон.'},
+  {code:'VWAP',name:'VWAP - Средняя по объёму',period:1,onPrice:true,hasPeriod:false,desc:'Средняя цена с учётом объёма. Выше VWAP — перевес покупателей, ниже — продавцов; часто используется как ориентир справедливой цены.'},
+  {code:'RSI',name:'RSI - Индекс относительной силы',period:14,onPrice:false,hasPeriod:true,desc:'Импульс в диапазоне 0–100. Обычно выше 70 — перекупленность, ниже 30 — перепроданность; середина диапазона — нейтральная зона.'},
+  {code:'MACD',name:'MACD - Схождение/расхождение',period:12,onPrice:false,hasPeriod:true,desc:'Разница быстрых и медленных EMA. Пересечение линии MACD с сигнальной или нулём показывает смену импульса; гистограмма отражает его силу.'},
+  {code:'STOCH',name:'Stoch - Стохастик',period:14,onPrice:false,hasPeriod:true,desc:'Положение цены в диапазоне 0–100. Обычно выше 80 — перекупленность, ниже 20 — перепроданность; пересечение %K и %D даёт дополнительный сигнал.'},
+  {code:'ATR',name:'ATR - Средний истинный диапазон',period:14,onPrice:false,hasPeriod:true,desc:'Показывает среднюю волатильность, но не направление цены. Рост ATR — рынок стал активнее; полезен для оценки стопов и размера позиции.'},
+  {code:'CCI',name:'CCI - Индекс товарного канала',period:20,onPrice:false,hasPeriod:true,desc:'Отклонение цены от средней. Обычно выше +100 — сильный рост/возможная перекупленность, ниже −100 — сильное падение/возможная перепроданность.'},
+  {code:'ADX',name:'ADX - Индекс направленного движения',period:14,onPrice:false,hasPeriod:true,desc:'Показывает силу тренда (0–100), но не его направление. Обычно выше 25 — тренд сильный, ниже 20 — флет/слабый тренд.'},
+  {code:'ROC',name:'ROC - Скорость изменения',period:12,onPrice:false,hasPeriod:true,desc:'Показывает скорость изменения цены в %. Выше 0 — цена выросла относительно N свечей назад, ниже 0 — снизилась; резкие значения = сильный импульс.'},
+  {code:'OBV',name:'OBV - Балансовый объём',period:1,onPrice:false,hasPeriod:false,desc:'Накопленный объём по направлению цены. Рост OBV подтверждает рост цены; расхождение OBV и цены может предупреждать о возможном развороте.'},
+  {code:'MFI',name:'MFI - Индекс денежного потока',period:14,onPrice:false,hasPeriod:true,desc:'Денежный поток в диапазоне 0–100 с учётом объёма. Обычно выше 80 — перекупленность, ниже 20 — перепроданность.'},
 ];
 const IND_PALETTE=['#2563eb','#f59e0b','#8b5cf6','#06b6d4','#22c55e','#ef4444','#3b82f6','#ec4899','#14b8a6','#84cc16'];
 let indColorIdx=(DATA.defaultIndicators||[]).length;
@@ -243,7 +258,7 @@ function rebuildIndicators(){
     const onPrice=!!def.onPrice;
     const period=Math.max(2, Math.floor(+ind.period||def.period||20));
     const label=def.hasPeriod? (ind.type+'('+period+')') : ind.type;
-    const mk=(lineCode,lineName,color,values,on_price_scale)=>({uid:ind.uid,lineCode,lineName,color,values,onPrice:on_price_scale!==undefined?on_price_scale:onPrice,description:def.desc||''});
+    const mk=(lineCode,lineName,color,values,on_price_scale)=>({uid:ind.uid,lineCode,lineName,color,values,onPrice:on_price_scale!==undefined?on_price_scale:onPrice,description:def.desc||'',indLabel:label});
     switch(ind.type){
       case 'SMA': out.push(mk('VALUE',label,ind.color,smaArr(closes,period))); break;
       case 'EMA': out.push(mk('VALUE',label,ind.color,emaArr(closes,period))); break;
@@ -277,7 +292,7 @@ function renderIndicatorChips(){
     const def=IND_DEFS.find(d=>d.code===ind.type);
     const label=def&&def.hasPeriod? (ind.type+'('+ind.period+')') : ind.type;
     const hint=def ? (def.name+'\\n'+(def.desc||'')) : ind.type;
-    const chip=document.createElement('span'); chip.className='ind-chip'; chip.title=hint; chip.dataset.hint=hint; chip.style.borderColor=ind.color;
+    const chip=document.createElement('span'); chip.className='ind-chip'; chip.dataset.hint=hint; chip.style.borderColor=ind.color;
     chip.innerHTML='<span class="dot" style="background:'+ind.color+'"></span><span class="abbr">'+label+'</span>';
     const btn=document.createElement('button'); btn.type='button'; btn.textContent='×'; btn.title='Убрать индикатор'; btn.onclick=(e)=>{ e.stopPropagation(); removeIndicator(ind.uid); };
     chip.appendChild(btn); el.appendChild(chip);
@@ -347,7 +362,7 @@ function changeTf(tfId){ if(+tfId===+state.tfId) return; state.tfId=+tfId; reset
 function setSpeed(ms){ state.speedMs=+ms; document.getElementById('speedSel').value=String(state.speedMs); if(state.playing){ stopTimer(); startTimer(); } }
 function speedUp(){ const i=SPEEDS.findIndex(s=>s[0]===state.speedMs); setSpeed(SPEEDS[Math.max(0,i-1)][0]); }
 function speedDown(){ const i=SPEEDS.findIndex(s=>s[0]===state.speedMs); setSpeed(SPEEDS[Math.min(SPEEDS.length-1,i+1)][0]); }
-function toggleDirection(){ state.reversed=!state.reversed; const b=document.getElementById('dirBtn'); if(b) b.textContent=state.reversed?'Слева → Справа':'Справа → Слева'; render(); }
+function toggleDirection(){ state.reversed=!state.reversed; render(); }
 
 function startTimer(){ stopTimer(); state.timer=setInterval(tick, state.speedMs); }
 function stopTimer(){ if(state.timer){ clearInterval(state.timer); state.timer=null; } }
@@ -446,6 +461,10 @@ function render(){
   const showUnreal = state.position!=='flat';
   const lpMoney = showUnreal ? unrealizedMoney() : state.lastPnlMoney;
   const lpPct = showUnreal ? unrealizedPct() : state.lastPnlPct;
+  const sigTp = Math.max(0, +state.signalTpPct||0);
+  const sigSl = Math.max(0, +state.signalSlPct||0);
+  const sigAlert = showUnreal ? ((lpPct!=null && sigTp>0 && lpPct>=sigTp) ? 'signal-tp' : (lpPct!=null && sigSl>0 && lpPct<=-sigSl) ? 'signal-sl' : '') : '';
+  const headPnlWrap=document.getElementById('headPnlWrap'); if(headPnlWrap) headPnlWrap.className='head-pnl'+(sigAlert?' '+sigAlert:'');
   const lastPnl=document.getElementById('lastPnl'); lastPnl.textContent=fmtMoney(lpMoney); lastPnl.className='val '+pnlClass(lpMoney);
   const lastPnlPctEl=document.getElementById('lastPnlPct'); lastPnlPctEl.textContent = lpPct==null ? '' : fmtPct(lpPct); lastPnlPctEl.className='pct '+pnlClass(lpPct);
 
@@ -495,7 +514,10 @@ function drawChart(){
   const windowSize=140;
   const start=Math.max(0,n-windowSize);
   const slice=all.slice(start,n);
-  const left=10, right=64, topPad=10, bottomPad=20;
+  const axisPad=64, sidePad=10;
+  const left = state.reversed ? axisPad : sidePad;
+  const right = state.reversed ? sidePad : axisPad;
+  const topPad=10, bottomPad=20;
   const cw=W-left-right;
   const xStep=cw/Math.max(1,slice.length);
   const xIdx=i=>state.reversed?(slice.length-1-i):i;
@@ -507,11 +529,23 @@ function drawChart(){
   for(const s of state.indicatorSeries){ if(s.onPrice) continue; if(!offByUid.has(s.uid)) offByUid.set(s.uid, []); offByUid.get(s.uid).push(s); }
   for(const [uid, arr] of offByUid) offPriceGroups.push({uid, series:arr});
 
-  const paneH = offPriceGroups.length ? Math.max(55, Math.min(90, Math.floor((H*0.28)/offPriceGroups.length))) : 0;
-  const panesTotalH = paneH * offPriceGroups.length;
-  const gap = offPriceGroups.length ? 6 : 0;
+  const nPanes = offPriceGroups.length;
+  const gap = nPanes ? 4 : 0;
+  const gapsTotal = gap * nPanes;
+  const availH = H - topPad - bottomPad;
+  const minPriceH = 110;
+  const minPaneH = 32;
+  let paneH = 0;
+  if (nPanes > 0) {
+    const maxForPanes = Math.max(0, availH - minPriceH - gapsTotal);
+    const desired = Math.floor(availH * 0.36);
+    const panesTotal = Math.min(maxForPanes, Math.max(minPaneH * nPanes, desired));
+    paneH = Math.max(minPaneH, Math.floor(panesTotal / nPanes));
+    if (paneH * nPanes > maxForPanes) paneH = Math.max(minPaneH, Math.floor(maxForPanes / nPanes));
+  }
+  const panesTotalH = paneH * nPanes;
   const priceTop = topPad;
-  const priceH = Math.max(120, H - topPad - bottomPad - panesTotalH - gap*offPriceGroups.length);
+  const priceH = Math.max(80, availH - panesTotalH - gapsTotal);
   const priceBottom = priceTop + priceH;
 
   // price y range
@@ -525,7 +559,7 @@ function drawChart(){
 
   // grid
   ctx.strokeStyle='#e2e8f0'; ctx.lineWidth=1;
-  for(let g=0;g<=4;g++){ const y=priceTop+priceH*g/4; ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(W-right,y); ctx.stroke(); const pv=maxP-(maxP-minP)*g/4; ctx.fillStyle='#64748b'; ctx.font='11px Segoe UI,Arial'; ctx.fillText(fmtPrice(pv), W-right+4, y+4); }
+  for(let g=0;g<=4;g++){ const y=priceTop+priceH*g/4; ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(W-right,y); ctx.stroke(); const pv=maxP-(maxP-minP)*g/4; ctx.fillStyle='#0f172a'; ctx.font='bold 12px Segoe UI,Arial'; if(state.reversed){ ctx.textAlign='right'; ctx.fillText(fmtPrice(pv), left-4, y+4); } else { ctx.textAlign='left'; ctx.fillText(fmtPrice(pv), W-right+4, y+4); } ctx.textAlign='left'; }
 
   // candles
   const bodyW=Math.max(1, Math.min(12, xStep*0.62));
@@ -563,11 +597,9 @@ function drawChart(){
   // entry line
   if(state.position!=='flat' && state.entryPrice!=null){ ctx.strokeStyle=state.position==='long'?'#16a34a':'#dc2626'; ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(left,yPrice(state.entryPrice)); ctx.lineTo(W-right,yPrice(state.entryPrice)); ctx.stroke(); ctx.setLineDash([]); }
   // last price
-  const last=slice[slice.length-1]; if(last){ const y=yPrice(last[4]); ctx.strokeStyle='#64748b'; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(W-right,y); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle='#111827'; ctx.fillRect(W-right,y-8,64,16); ctx.fillStyle='#fff'; ctx.font='11px Segoe UI,Arial'; ctx.fillText(fmtPrice(last[4]), W-right+3, y+4); }
+  const last=slice[slice.length-1]; if(last){ const y=yPrice(last[4]); ctx.strokeStyle='#64748b'; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(W-right,y); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle='#111827'; ctx.font='bold 11px Segoe UI,Arial'; if(state.reversed){ ctx.fillRect(0,y-8,left-2,16); ctx.fillStyle='#fff'; ctx.textAlign='right'; ctx.fillText(fmtPrice(last[4]), left-4, y+4); ctx.textAlign='left'; } else { ctx.fillRect(W-right,y-8,64,16); ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.fillText(fmtPrice(last[4]), W-right+3, y+4); } }
 
-  // legend for on-price
-  let lx=left, ly=priceTop+10;
-  for(const s of onPriceSeries){ ctx.fillStyle=s.color; ctx.fillRect(lx,ly-3,10,3); ctx.fillStyle='#0f172a'; ctx.font='11px Segoe UI,Arial'; ctx.fillText(s.lineName, lx+14, ly+1); lx += ctx.measureText(s.lineName).width + 28; if(lx > W-right-40){ lx=left; ly+=14; } }
+  // on-price indicators: no on-chart labels/watermarks; hint is on the chip toolbar.
 
   // off-price panes
   let paneTop = priceBottom + gap;
@@ -587,10 +619,34 @@ function drawChart(){
     for(let k=0;k<=2;k++){ const yy=pTop+pH*k/2; ctx.beginPath(); ctx.moveTo(left,yy); ctx.lineTo(W-right,yy); ctx.stroke(); }
     // zero line if in range
     if(mn<0 && mx>0){ ctx.strokeStyle='#cbd5e1'; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(left,yP(0)); ctx.lineTo(W-right,yP(0)); ctx.stroke(); ctx.setLineDash([]); }
+    // watermark hint
+    const wm = (g.series[0] && (g.series[0].description || g.series[0].indLabel || g.series[0].lineName)) || '';
+    if (wm) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(71,85,105,0.24)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const maxW = Math.max(40, cw - 24);
+      let fontSize = Math.max(18, Math.floor(pH * 0.34));
+      const lh = 1.25;
+      const words = wm.split(/\s+/).filter(Boolean);
+      const wrap = (fs) => { ctx.font = 'bold ' + fs + 'px Segoe UI,Arial'; const lines=[]; let line=''; for (const w of words) { const test=line?line+' '+w:w; if (ctx.measureText(test).width<=maxW || !line) line=test; else { lines.push(line); line=w; } } if(line) lines.push(line); return lines; };
+      let lines = wrap(fontSize);
+      while (lines.length * fontSize * lh > pH * 0.86 && fontSize > 11) { fontSize -= 1; lines = wrap(fontSize); }
+      ctx.font = 'bold ' + fontSize + 'px Segoe UI,Arial';
+      const totalH = lines.length * fontSize * lh;
+      let wy = pTop + pH / 2 - totalH / 2 + (fontSize * lh) / 2;
+      const wcx = left + cw / 2;
+      for (const ln of lines) { ctx.fillText(ln, wcx, wy, maxW); wy += fontSize * lh; }
+      ctx.restore();
+    }
     // series
     for(const s of g.series){ ctx.strokeStyle=s.color; ctx.lineWidth=1.4; ctx.beginPath(); let st=false; for(let i=start;i<n;i++){ const v=s.values[i]; if(v==null) continue; const x=xAt(i-start), y=yP(v); if(!st){ ctx.moveTo(x,y); st=true; } else ctx.lineTo(x,y); } if(st) ctx.stroke(); }
     // labels
-    ctx.fillStyle='#64748b'; ctx.font='10px Segoe UI,Arial'; ctx.fillText(fmtPrice(mx), W-right+4, pTop+10); ctx.fillText(fmtPrice(mn), W-right+4, pBottom-3);
+    ctx.fillStyle='#0f172a'; ctx.font='bold 11px Segoe UI,Arial';
+    if(state.reversed){ ctx.textAlign='right'; ctx.fillText(fmtPrice(mx), left-4, pTop+10); ctx.fillText(fmtPrice(mn), left-4, pBottom-3); }
+    else { ctx.textAlign='left'; ctx.fillText(fmtPrice(mx), W-right+4, pTop+10); ctx.fillText(fmtPrice(mn), W-right+4, pBottom-3); }
+    ctx.textAlign='left';
     let plx=left+4, ply=pTop+11; for(const s of g.series){ ctx.fillStyle=s.color; ctx.fillRect(plx,ply-3,8,3); ctx.fillStyle='#334155'; ctx.font='10px Segoe UI,Arial'; ctx.fillText(s.lineName, plx+11, ply+1); plx += ctx.measureText(s.lineName).width + 22; if(plx>W-right-30){ plx=left+4; ply+=12; } }
     paneTop += pH + gap;
   }
