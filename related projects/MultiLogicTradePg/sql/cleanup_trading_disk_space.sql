@@ -162,6 +162,7 @@ DECLARE
     v_test_trades_deleted INTEGER := 0;
     v_rating_test_deleted INTEGER := 0;
     v_backtest_runs_deleted INTEGER := 0;
+    v_indicator_values_deleted INTEGER := 0;
     v_indicator_cleanup JSONB;
     v_got_lock BOOLEAN := FALSE;
     v_lock_key BIGINT := hashtext('multilogictrade_disk_cleanup');
@@ -267,6 +268,16 @@ BEGIN
             GET DIAGNOSTICS v_tech_deleted = ROW_COUNT;
         END IF;
 
+        -- Очищаем рассчитанные значения индикаторов (кэш), чтобы освободить диск.
+        DELETE FROM indicator_values;
+        GET DIAGNOSTICS v_indicator_values_deleted = ROW_COUNT;
+
+        -- Сбрасываем состояние фонового предрасчёта.
+        UPDATE indicator_precalc_state
+        SET current_activity = NULL, last_status = 'cleaned', last_message = 'Очищено кнопкой очистки диска',
+            processed_count = 0, updated_at = CURRENT_TIMESTAMP
+        WHERE id = TRUE;
+
         -- Release lock before indicator trim (same lock key inside that function).
         PERFORM pg_advisory_unlock(v_lock_key);
         v_got_lock := FALSE;
@@ -284,7 +295,8 @@ BEGIN
             'test_trades_deleted', v_test_trades_deleted,
             'rating_test_history_deleted', v_rating_test_deleted,
             'backtest_runs_deleted', v_backtest_runs_deleted,
-            'indicator_values', v_indicator_cleanup,
+            'indicator_values_deleted', v_indicator_values_deleted,
+            'indicator_values_cleanup', v_indicator_cleanup,
             'tech_log_deleted', v_tech_deleted,
             'keep_days_active', GREATEST(COALESCE(p_keep_days_active, 90), 1),
             'keep_days_other', GREATEST(COALESCE(p_keep_days_other, 14), 1),

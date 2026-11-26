@@ -236,6 +236,29 @@ app.put('/api/settings/cleanup', async (req, res) => {
   }
 });
 
+app.get('/api/settings/indicator-precalc-bg', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT indicator_precalc_bg_enabled() AS enabled'
+    );
+    res.json({ enabled: Boolean(rows[0]?.enabled) });
+  } catch (err) {
+    console.error('GET /api/settings/indicator-precalc-bg', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/settings/indicator-precalc-bg', async (req, res) => {
+  const enabled = Boolean(req.body?.enabled);
+  try {
+    await pool.query('CALL set_indicator_precalc_bg($1)', [enabled]);
+    res.json({ ok: true, enabled });
+  } catch (err) {
+    console.error('PUT /api/settings/indicator-precalc-bg', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/settings/order-channel', async (_req, res) => {
   try {
     const { rows } = await pool.query(

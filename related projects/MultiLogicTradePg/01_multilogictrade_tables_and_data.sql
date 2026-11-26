@@ -727,6 +727,8 @@ INSERT INTO parameter_types (name, short_name, value_type, default_value) VALUES
     ('Техническое логирование', 'APP_TECH_LOGGING', 'boolean', '0'),
     ('Очистка лишних данных (диск)', 'APP_CLEANUP_DISK', 'boolean', '1'),
     ('Последняя автоочистка диска', 'APP_CLEANUP_LAST_AT', 'text', ''),
+    ('Фоновые расчеты индикаторов (по рейтингу)', 'APP_INDICATOR_PRECALC_BG', 'boolean', '1'),
+    ('Последний фоновый предрасчёт индикаторов', 'APP_INDICATOR_PRECALC_LAST_AT', 'text', ''),
     ('Heartbeat UI trade runner', 'APP_TRADE_RUNNER_HB', 'text', ''),
     ('Trade runner требует открытый UI', 'APP_TRADE_RUNNER_REQUIRE_UI', 'boolean', '0'),
     ('Trade runner last OK', 'APP_TRADE_RUNNER_LAST_OK', 'text', ''),
@@ -1409,8 +1411,13 @@ CREATE INDEX IF NOT EXISTS idx_indicator_values_indicator_id ON indicator_values
 CREATE INDEX IF NOT EXISTS idx_indicator_values_security_id ON indicator_values(security_id);
 CREATE INDEX IF NOT EXISTS idx_indicator_values_timeframe_id ON indicator_values(timeframe_id);
 CREATE INDEX IF NOT EXISTS idx_indicator_values_dt ON indicator_values(dt);
+ALTER TABLE indicator_values ADD COLUMN IF NOT EXISTS param_profile_id INTEGER;
+DROP INDEX IF EXISTS idx_indicator_values_unique;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_indicator_values_unique
-    ON indicator_values(indicator_id, indicator_value_type_id, security_id, timeframe_id, dt);
+    ON indicator_values(indicator_id, indicator_value_type_id, security_id, timeframe_id, dt, COALESCE(param_profile_id, 0));
+CREATE INDEX IF NOT EXISTS idx_indicator_values_lookup
+    ON indicator_values(indicator_id, security_id, timeframe_id, dt DESC, COALESCE(param_profile_id, 0));
+CREATE INDEX IF NOT EXISTS idx_indicator_values_param_profile_id ON indicator_values(param_profile_id);
 
 -- ============================================
 -- Таблицы торговой логики (заготовка)
@@ -5706,6 +5713,86 @@ COMMENT ON TABLE indicator_rating_universe IS
 '#1006: универсум бумаг рейтинга индикатора в разрезе ТФ (переживает очистку сэмплов). Питает создание логики из лучших рейтингов — привязывает к новой логике все бумаги, по которым был посчитан рейтинг.';
 COMMENT ON COLUMN indicator_rating_universe.signals_count IS
 'Сумма сигналов по разрезам этой бумаги в этом ТФ (информационно, из indicator_rating_sample)';
+
+-- ============================================
+-- Фоновый предрасчёт индикаторов: профили параметров и состояние
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS indicator_param_profiles (
+    id SERIAL PRIMARY KEY,
+    indicator_id INTEGER NOT NULL REFERENCES indicators(id) ON DELETE CASCADE,
+    profile_key VARCHAR(40) NOT NULL DEFAULT 'default',
+    param_period INTEGER,
+    param_fast_period INTEGER,
+    param_slow_period INTEGER,
+    param_signal_period INTEGER,
+    param_std_dev NUMERIC(10, 4),
+    param_k_period INTEGER,
+    param_d_period INTEGER,
+    param_smooth INTEGER,
+    is_default BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_indicator_param_profiles_indicator_key UNIQUE (indicator_id, profile_key)
+);
+
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS indicator_id INTEGER REFERENCES indicators(id) ON DELETE CASCADE;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS profile_key VARCHAR(40) NOT NULL DEFAULT 'default';
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS param_period INTEGER;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS param_fast_period INTEGER;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS param_slow_period INTEGER;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS param_signal_period INTEGER;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS param_std_dev NUMERIC(10, 4);
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS param_k_period INTEGER;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS param_d_period INTEGER;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS param_smooth INTEGER;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE indicator_param_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_indicator_param_profiles_default
+    ON indicator_param_profiles(indicator_id)
+    WHERE is_default = TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_indicator_param_profiles_lookup
+    ON indicator_param_profiles(
+        indicator_id, param_period, param_fast_period, param_slow_period, param_signal_period,
+        param_std_dev, param_k_period, param_d_period, param_smooth
+    );
+
+COMMENT ON TABLE indicator_param_profiles IS
+'Профили параметров индикаторов для предрасчёта/хранения значений. По умолчанию используется default/average профиль.';
+COMMENT ON COLUMN indicator_param_profiles.profile_key IS
+'Ключ профиля (default, avg, custom...). Для фонового предрасчёта используется default.';
+COMMENT ON COLUMN indicator_param_profiles.is_default IS
+'Профиль по умолчанию/средний для фонового предрасчёта значений индикатора.';
+
+ALTER TABLE indicator_values ADD COLUMN IF NOT EXISTS param_profile_id INTEGER REFERENCES indicator_param_profiles(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_indicator_values_param_profile_id ON indicator_values(param_profile_id);
+
+ALTER TABLE security_indicator_series ADD COLUMN IF NOT EXISTS param_profile_id INTEGER REFERENCES indicator_param_profiles(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_security_indicator_series_param_profile_id ON security_indicator_series(param_profile_id);
+
+CREATE TABLE IF NOT EXISTS indicator_precalc_state (
+    id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    last_run_at TIMESTAMP,
+    last_ok_at TIMESTAMP,
+    last_status TEXT,
+    last_message TEXT,
+    current_activity TEXT,
+    cursor_indicator_id INTEGER,
+    cursor_security_id INTEGER,
+    cursor_timeframe_id INTEGER,
+    processed_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE indicator_precalc_state ADD COLUMN IF NOT EXISTS current_activity TEXT;
+
+INSERT INTO indicator_precalc_state (id) VALUES (TRUE) ON CONFLICT (id) DO NOTHING;
+
+COMMENT ON TABLE indicator_precalc_state IS
+'Состояние фонового предрасчёта значений индикаторов (курсор/статус, прерываемый процесс).';
 
 -- ============================================
 -- Таблицы: trainer_sessions / trainer_trades (результаты вкладки «Тренажёр»)

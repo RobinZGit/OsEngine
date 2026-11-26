@@ -116,6 +116,19 @@ export class SettingsService {
     );
   }
 
+  getIndicatorPrecalcBgSetting(): Observable<{ enabled: boolean }> {
+    return this.http.get<{ enabled: boolean }>(
+      `${this.appConfig.apiUrl}/settings/indicator-precalc-bg`
+    );
+  }
+
+  saveIndicatorPrecalcBgSetting(enabled: boolean): Observable<{ ok: boolean; enabled: boolean }> {
+    return this.http.put<{ ok: boolean; enabled: boolean }>(
+      `${this.appConfig.apiUrl}/settings/indicator-precalc-bg`,
+      { enabled }
+    );
+  }
+
   getOrderChannel(): Observable<{
     channel: 'postgres' | 'node';
     node_url?: string;

@@ -153,6 +153,8 @@ const ratingBlock =
   read('sql/logic_signal_and_rating.sql').trimEnd() +
   '\n\n' +
   read('sql/indicator_rating.sql').trimEnd() +
+  '\n\n' +
+  read('sql/indicator_precalc_bg.sql').trimEnd() +
   '\n\n';
 const portfolioSignalsBlock =
   '-- @include sql/logic_portfolio_signals.sql\n' +

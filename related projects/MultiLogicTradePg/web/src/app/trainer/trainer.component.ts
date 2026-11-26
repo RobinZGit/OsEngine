@@ -123,7 +123,7 @@ interface TrainerBlock {
   lastAnnualPct: number | null;
   tradeMarkers: ChartTradeMarker[];
   signalMarkers: ChartTradeMarker[];
-  pendingOrder: { side: 'long' | 'short'; action: 'open' | 'close'; requestedDt: string; executeAtMs: number } | null;
+  pendingOrder: { side: 'long' | 'short'; action: 'open' | 'close'; requestedDt: string; executeAtMs: number; fillPrice: number } | null;
   executionDelaySumSec: number;
   executionDelayCount: number;
   playbackStartDt: string | null;
@@ -1190,25 +1190,47 @@ export class TrainerComponent implements OnInit, OnDestroy {
     }
   }
 
+  private calcSlipFillPrice(b: TrainerBlock, closeCur: number, delaySec: number): number {
+    // Простое проскальзывание: close текущей свечи + (open следующей - close) * clamp(delaySec/tfSec,0,1).
+    // Без промежуточных/M1 цен — только close текущего и open следующего бара того же ТФ.
+    if (!Number.isFinite(closeCur) || closeCur <= 0) return closeCur;
+    const tfSec = Math.max(1, this.timeframes.find((t) => t.id === this.timeframeId)?.sec ?? 300);
+    const ratio = Math.min(1, Math.max(0, delaySec / tfSec));
+    if (ratio <= 0) return closeCur;
+    const nextBar = b.allCandles[b.playIndex];
+    const nextOpen = Number(nextBar?.open_price);
+    if (!Number.isFinite(nextOpen) || nextOpen <= 0) return closeCur;
+    return closeCur + (nextOpen - closeCur) * ratio;
+  }
   private queueOrExecute(b: TrainerBlock, side: 'long' | 'short', action: 'open' | 'close', dt: string): void {
     const delaySec = Math.max(0, Number(this.executionDelaySec) || 0);
-    if (delaySec <= 0) { this.executeOrder(b, side, action, this.currentPrice(b)!, this.currentDt(b)!, dt); return; }
+    const closeCur = this.currentPrice(b);
+    const curDt = this.currentDt(b);
+    if (closeCur == null || curDt == null) return;
+    const fillPrice = this.calcSlipFillPrice(b, closeCur, delaySec);
+    if (delaySec <= 0) { this.executeOrder(b, side, action, fillPrice, curDt, dt); return; }
     const nowMs = dtToMs(dt);
-    if (!Number.isFinite(nowMs) || nowMs <= 0) { this.executeOrder(b, side, action, this.currentPrice(b)!, this.currentDt(b)!, dt); return; }
-    b.pendingOrder = { side, action, requestedDt: dt, executeAtMs: nowMs + delaySec * 1000 };
+    if (!Number.isFinite(nowMs) || nowMs <= 0) { this.executeOrder(b, side, action, fillPrice, curDt, dt); return; }
+    b.pendingOrder = { side, action, requestedDt: dt, executeAtMs: nowMs + delaySec * 1000, fillPrice };
     this.cdr.markForCheck();
   }
   private tryExecutePendingOrder(b: TrainerBlock): void {
-    const p = b.pendingOrder; const price = this.currentPrice(b); const dt = this.currentDt(b);
-    if (!p || price == null || dt == null) return;
+    const p = b.pendingOrder; const dt = this.currentDt(b);
+    if (!p || dt == null) return;
     const nowMs = dtToMs(dt);
     if (!Number.isFinite(nowMs)) return;
-    if (nowMs >= p.executeAtMs) { b.pendingOrder = null; this.executeOrder(b, p.side, p.action, price, dt, p.requestedDt); }
+    if (nowMs >= p.executeAtMs) {
+      b.pendingOrder = null;
+      const fillPrice = Number.isFinite(p.fillPrice) ? p.fillPrice : (this.currentPrice(b) ?? NaN);
+      if (Number.isFinite(fillPrice)) this.executeOrder(b, p.side, p.action, fillPrice, dt, p.requestedDt);
+    }
   }
   private flushPendingOrder(b: TrainerBlock): void {
-    const p = b.pendingOrder; const price = this.currentPrice(b); const dt = this.currentDt(b);
-    if (!p || price == null || dt == null) return;
-    b.pendingOrder = null; this.executeOrder(b, p.side, p.action, price, dt, p.requestedDt);
+    const p = b.pendingOrder; const dt = this.currentDt(b);
+    if (!p || dt == null) return;
+    b.pendingOrder = null;
+    const fillPrice = Number.isFinite(p.fillPrice) ? p.fillPrice : (this.currentPrice(b) ?? NaN);
+    if (Number.isFinite(fillPrice)) this.executeOrder(b, p.side, p.action, fillPrice, dt, p.requestedDt);
   }
   private executeOrder(b: TrainerBlock, side: 'long' | 'short', action: 'open' | 'close', price: number, dt: string, requestedDt: string): void {
     const reqMs = dtToMs(requestedDt); const execMs = dtToMs(dt);

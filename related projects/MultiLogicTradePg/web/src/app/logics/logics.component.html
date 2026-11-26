@@ -101,6 +101,7 @@
           [class.process-chip-warn]="p.type === 'postgres'"
           [class.process-chip-link]="!!p.logic_id && p.type !== 'trade'"
           [class.process-chip-work]="p.type === 'trade'"
+          [class.process-chip-precalc]="p.type === 'indicator_precalc_bg'"
           [class.process-chip-real]="isProcessLogicReal(p)"
           [style.--bt-p]="processProgressFraction(p)"
           [attr.role]="p.logic_id ? 'button' : null"
@@ -401,17 +402,17 @@
 
             <th class="col-logic sortable-col" [style.width.px]="thWidth('col-logic')" title="Нажмите — сортировка по названию логики" (click)="toggleSort('name')">Логика <span class="sort-indicator">{{ sortIndicator('name') }}</span><span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-logic')" (dblclick)="resetColumnWidth('col-logic')"></span></th>
 
-            <th class="col-account-id" [style.width.px]="thWidth('col-account-id')">acc_id<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-account-id')" (dblclick)="resetColumnWidth('col-account-id')"></span></th>
-
             <th class="col-account" [style.width.px]="thWidth('col-account')">Счёт<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-account')" (dblclick)="resetColumnWidth('col-account')"></span></th>
 
             <th class="col-account-type" [style.width.px]="thWidth('col-account-type')">Тип<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-account-type')" (dblclick)="resetColumnWidth('col-account-type')"></span></th>
 
-            <th class="col-broker" [style.width.px]="thWidth('col-broker')">Брокер<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-broker')" (dblclick)="resetColumnWidth('col-broker')"></span></th>
-
-            <th class="col-active" [style.width.px]="thWidth('col-active')">Актив.<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-active')" (dblclick)="resetColumnWidth('col-active')"></span></th>
-
             <th class="col-timeframe" title="Таймфрейм логики (из параметров торговли)" [style.width.px]="thWidth('col-timeframe')">Таймфрейм<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-timeframe')" (dblclick)="resetColumnWidth('col-timeframe')"></span></th>
+
+            <th
+              class="col-equity-spark"
+              [style.width.px]="thWidth('col-equity-spark')"
+              title="Мини-график эквити портфеля (тест, от начала до конца). Во время тестирования обновляется."
+            >Эквити<span class="col-resizer" title="Потянуть — изменить ширину; двойной клик — сброс" (mousedown)="startColumnResize($event, 'col-equity-spark')" (dblclick)="resetColumnWidth('col-equity-spark')"></span></th>
 
             <th
               class="col-combat-pnl sortable-col"
@@ -580,8 +581,6 @@
                 </span>
               </td>
 
-              <td class="col-account-id">{{ row.account_id }}</td>
-
               <td class="col-account" [title]="row.account_code + ' — ' + row.account_name">{{ row.account_code }} — {{ row.account_name }}</td>
 
               <td class="col-account-type">
@@ -594,11 +593,31 @@
 
               </td>
 
-              <td class="col-broker">{{ row.broker_code }}</td>
-
-              <td class="col-active">{{ row.account_is_active ? 'да' : 'нет' }}</td>
-
               <td class="col-timeframe">{{ row.timeframe }}</td>
+
+              <td class="col-equity-spark">
+                @if (equitySparkline(row); as spark) {
+                  <svg
+                    class="equity-sparkline"
+                    viewBox="0 0 100 24"
+                    preserveAspectRatio="none"
+                    [attr.aria-label]="isBacktestRunning(row.id) ? 'Эквити теста' : (row.is_enabled ? 'Эквити боя' : 'Эквити портфеля')"
+                  >
+                    <polyline
+                      [attr.points]="spark.points"
+                      fill="none"
+                      [attr.stroke]="spark.color"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                      stroke-linecap="round"
+                    ></polyline>
+                  </svg>
+                } @else if (isBacktestRunning(row.id) || row.is_enabled) {
+                  <span class="equity-sparkline-empty" title="Эквити загружается…">…</span>
+                } @else {
+                  <span class="equity-sparkline-empty">—</span>
+                }
+              </td>
 
               <td class="col-combat-pnl">
                 @if (hasCombatFinancialResult(row.id)) {
@@ -756,7 +775,7 @@
 
               <tr class="logic-detail-row">
 
-                <td colspan="14">
+                <td colspan="13">
 
                   <div class="logic-signals-panel" (click)="$event.stopPropagation()">
 

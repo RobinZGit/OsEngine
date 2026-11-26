@@ -515,11 +515,14 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_code TEXT;
     v_script TEXT;
+    v_calc_kind TEXT;
     v_series TEXT;
     v_period INTEGER;
     v_std NUMERIC;
+    v_ind_val NUMERIC;
+    v_tf_sec INTEGER;
 BEGIN
-    SELECT upper(i.code), i.script INTO v_code, v_script
+    SELECT upper(i.code), i.script, i.calc_kind INTO v_code, v_script, v_calc_kind
     FROM indicators i WHERE i.id = p_indicator_id;
     IF v_code IS NULL THEN
         RETURN NULL;
@@ -548,6 +551,39 @@ BEGIN
     END IF;
 
     IF v_script IS NULL OR btrim(v_script) = '' THEN
+        -- JS/custom indicators: no SQL on-the-fly eval; fallback to precomputed indicator_values.
+        IF lower(COALESCE(v_calc_kind, '')) = 'js' OR EXISTS (
+            SELECT 1 FROM indicators ii WHERE ii.id = p_indicator_id
+              AND ii.js_code IS NOT NULL AND btrim(ii.js_code) <> ''
+        ) THEN
+            SELECT iv.value INTO v_ind_val
+            FROM indicator_values iv
+            JOIN indicator_value_types ivt ON ivt.id = iv.indicator_value_type_id
+            WHERE iv.security_id = p_security_id
+              AND iv.timeframe_id = p_tf_id
+              AND iv.indicator_id = p_indicator_id
+              AND upper(ivt.code) = upper(COALESCE(v_series, 'VALUE'))
+              AND iv.dt = p_bar_dt
+            LIMIT 1;
+
+            IF v_ind_val IS NULL THEN
+                SELECT t.sec INTO v_tf_sec FROM timeframes t WHERE t.id = p_tf_id;
+                IF v_tf_sec IS NOT NULL THEN
+                    SELECT iv.value INTO v_ind_val
+                    FROM indicator_values iv
+                    JOIN indicator_value_types ivt ON ivt.id = iv.indicator_value_type_id
+                    WHERE iv.security_id = p_security_id
+                      AND iv.timeframe_id = p_tf_id
+                      AND iv.indicator_id = p_indicator_id
+                      AND upper(ivt.code) = upper(COALESCE(v_series, 'VALUE'))
+                      AND iv.dt > p_bar_dt - make_interval(secs => v_tf_sec)
+                      AND iv.dt <= p_bar_dt
+                    ORDER BY iv.dt DESC
+                    LIMIT 1;
+                END IF;
+            END IF;
+            RETURN v_ind_val;
+        END IF;
         RETURN NULL;
     END IF;
     RETURN exec_indicator_script(

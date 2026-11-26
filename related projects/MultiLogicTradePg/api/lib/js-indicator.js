@@ -394,25 +394,26 @@ async function computeJsIndicatorSeries(client, opts) {
   return results;
 }
 
-async function upsertIndicatorValues(client, { indicatorId, valueTypeId, securityId, timeframeId, rows }) {
+async function upsertIndicatorValues(client, { indicatorId, valueTypeId, securityId, timeframeId, rows, paramProfileId = null }) {
   if (!rows || rows.length === 0) return 0;
   let affected = 0;
   const chunkSize = 500;
+  const profileId = paramProfileId == null ? null : Number(paramProfileId);
   for (let off = 0; off < rows.length; off += chunkSize) {
     const chunk = rows.slice(off, off + chunkSize);
-    const params = [indicatorId, valueTypeId, securityId, timeframeId];
-    let p = 5;
+    const params = [indicatorId, valueTypeId, securityId, timeframeId, profileId];
+    let p = 6;
     const tuples = [];
     for (const r of chunk) {
       if (r.value == null || !Number.isFinite(Number(r.value))) continue;
       params.push(r.dt, Number(r.value));
-      tuples.push(`($1,$2,$3,$4,$${p}::timestamp,$${p + 1}::numeric)`);
+      tuples.push(`($1,$2,$3,$4,$${p}::timestamp,$${p + 1}::numeric,$5::integer)`);
       p += 2;
     }
     if (tuples.length === 0) continue;
-    const sql = `INSERT INTO indicator_values (indicator_id, indicator_value_type_id, security_id, timeframe_id, dt, value)
+    const sql = `INSERT INTO indicator_values (indicator_id, indicator_value_type_id, security_id, timeframe_id, dt, value, param_profile_id)
                  VALUES ${tuples.join(',')}
-                 ON CONFLICT (indicator_id, indicator_value_type_id, security_id, timeframe_id, dt)
+                 ON CONFLICT (indicator_id, indicator_value_type_id, security_id, timeframe_id, dt, (COALESCE(param_profile_id, 0)))
                  DO UPDATE SET value = EXCLUDED.value`;
     const res = await client.query(sql, params);
     affected += res.rowCount || 0;

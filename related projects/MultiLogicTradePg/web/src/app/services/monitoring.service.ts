@@ -67,10 +67,25 @@ export interface DbHangRow {
   kind: string;
 }
 
+export interface BackgroundProcessRow {
+  key: string;
+  name: string;
+  enabled: boolean | null;
+  running: boolean;
+  last_run_at?: string | null;
+  last_ok_at?: string | null;
+  last_status?: string | null;
+  last_message?: string | null;
+  processed_count?: number;
+  updated_at?: string | null;
+  kind?: string;
+}
+
 export interface MonitoringHangs {
   thresholdSec: number;
   dbActive: DbHangRow[];
   recent: ErrorLogRow[];
+  backgroundProcesses?: BackgroundProcessRow[];
 }
 
 export interface ClientMonitorEvent {

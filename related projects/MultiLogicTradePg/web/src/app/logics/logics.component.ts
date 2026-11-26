@@ -229,6 +229,20 @@ export class LogicsComponent implements OnInit, OnDestroy {
   private testEquityInFlight = new Set<number>();
   /** Last equity fetch start time — allow retry if hung past timeout. */
   private testEquityStartedAt = new Map<number, number>();
+  /** Боевая эквити для мини-графика в списке логик. */
+  combatEquityByLogic = new Map<
+    number,
+    {
+      total: Array<{ dt: string; value: number }>;
+      commission: Array<{ dt: string; value: number }>;
+      initial_balance: number;
+      long: Array<{ dt: string; value: number }>;
+      short: Array<{ dt: string; value: number }>;
+      active_securities: Array<{ dt: string; value: number }>;
+    }
+  >();
+  private combatEquityInFlight = new Set<number>();
+  private combatEquityStartedAt = new Map<number, number>();
   /** Стабильные ссылки для шаблона (без filter на каждый CD). */
   private testTradesViewByLogic = new Map<number, LogicTradeRow[]>();
   private signalIndicatorIdsByLogic = new Map<number, number[]>();
@@ -5447,9 +5461,16 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
         if (testing) {
           this.loadTestTradesPanelForLogic(id);
         }
-      } else if (!testing) {
-        this.testEquityByLogic.delete(id);
+      } else if (testing) {
+        // Тест идёт — тестовая эквити чаще.
+        this.loadTestEquityForLogic(id);
+      } else if (row.is_enabled) {
+        // Бой включён, тест не идёт — боевая эквити реже.
+        if (this.pollTick % 5 === 0) {
+          this.loadCombatEquityForLogic(id);
+        }
       }
+      // Бой выключен и тест не идёт — не перерисовываем, оставляем последнее значение.
       if (!testing && (testOpen || (this.expandedLogics.has(id) && heavyTick))) {
         this.loadTestTradesForLogic(id, true);
       }
@@ -5565,6 +5586,119 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     return this.testEquityByLogic.get(Number(logicId))?.active_securities ?? null;
   }
 
+  private loadCombatEquityForLogic(logicId: number): void {
+    const id = Number(logicId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const now = Date.now();
+    if (this.combatEquityInFlight.has(id)) {
+      const started = this.combatEquityStartedAt.get(id) ?? 0;
+      if (now - started < 35_000) return;
+      this.combatEquityInFlight.delete(id);
+    }
+    this.combatEquityInFlight.add(id);
+    this.combatEquityStartedAt.set(id, now);
+    this.logicsService
+      .getLogicTradesEquityCurve(id, false, null)
+      .pipe(
+        timeout(25_000),
+        takeUntil(this.destroy$),
+        finalize(() => {
+          this.combatEquityInFlight.delete(id);
+          this.combatEquityStartedAt.delete(id);
+        })
+      )
+      .subscribe({
+        next: (resp) => {
+          this.combatEquityByLogic.set(id, {
+            total: resp.total ?? [],
+            commission: resp.commission ?? [],
+            initial_balance: Number(resp.initial_balance) || 1_000_000,
+            long: resp.long ?? [],
+            short: resp.short ?? [],
+            active_securities: resp.active_securities ?? [],
+          });
+          this.cdr.markForCheck();
+        },
+        error: () => {
+          /* timeout / network — finalize clears inFlight */
+        },
+      });
+  }
+
+  /** Начальная отрисовка мини-графиков: загрузить недостающие данные один раз. */
+  private ensureInitialEquitySparklines(): void {
+    for (const row of this.logics) {
+      const testing = this.isBacktestRunning(row.id);
+      if (testing) {
+        if (!this.testEquityByLogic.has(row.id) && !this.testEquityInFlight.has(row.id)) {
+          this.loadTestEquityForLogic(row.id);
+        }
+      } else if (row.is_enabled) {
+        if (!this.combatEquityByLogic.has(row.id) && !this.combatEquityInFlight.has(row.id)) {
+          this.loadCombatEquityForLogic(row.id);
+        }
+      } else if (this.testPnlByLogic.has(row.id)) {
+        if (!this.testEquityByLogic.has(row.id) && !this.testEquityInFlight.has(row.id)) {
+          this.loadTestEquityForLogic(row.id);
+        }
+      } else if (!this.combatEquityByLogic.has(row.id) && !this.combatEquityInFlight.has(row.id)) {
+        this.loadCombatEquityForLogic(row.id);
+      }
+    }
+  }
+
+  /** Мини-график эквити для списка логик: грубая полилиния от начала до конца. */
+  equitySparkline(row: LogicRow): { points: string; color: string; positive: boolean } | null {
+    const testing = this.isBacktestRunning(row.id);
+    let total: Array<{ dt: string; value: number }> | null | undefined;
+    if (testing) {
+      total = this.testEquityByLogic.get(row.id)?.total;
+    } else if (row.is_enabled) {
+      total = this.combatEquityByLogic.get(row.id)?.total;
+    } else {
+      total = this.testEquityByLogic.get(row.id)?.total;
+      if (!total || total.length < 2) {
+        total = this.combatEquityByLogic.get(row.id)?.total;
+      }
+    }
+    if (!total || total.length < 2) return null;
+    // Грубое приближение: не более 48 точек, чтобы SVG был лёгким.
+    const maxPts = 48;
+    const step = total.length <= maxPts ? 1 : (total.length - 1) / (maxPts - 1);
+    const sampled: number[] = [];
+    for (let i = 0; i < maxPts && Math.round(i * step) < total.length; i++) {
+      const idx = Math.min(total.length - 1, Math.round(i * step));
+      sampled.push(Number(total[idx].value) || 0);
+    }
+    if (sampled.length < 2) return null;
+    let min = sampled[0];
+    let max = sampled[0];
+    for (const v of sampled) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const span = max - min || 1;
+    const w = 100;
+    const h = 24;
+    const padY = 2;
+    const innerH = h - padY * 2;
+    const points = sampled
+      .map((v, i) => {
+        const x = (i / (sampled.length - 1)) * w;
+        const y = padY + (1 - (v - min) / span) * innerH;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+    const last = sampled[sampled.length - 1];
+    const positive = last >= 0;
+    return {
+      points,
+      color: positive ? '#22c55e' : '#ef4444',
+      positive,
+    };
+  }
+
   private refreshPnlSummaries(): void {
     // Test PnL column: реже во время активных прогонов (колонка не критична mid-run).
     if (this.backtestPollIds.size === 0 || this.pollTick % 3 === 0) {
@@ -5615,18 +5749,24 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
             date_to: r.date_to ?? null,
           });
           // If equity curve lags FinRes (common with two concurrent tests), force refresh.
+          const row = this.logics.find((l) => l.id === logicId);
+          const testing = this.isBacktestRunning(logicId);
+          const canRefresh = testing || !!row?.is_enabled;
           const eq = this.testEquityByLogic.get(logicId);
           const eqLast =
             eq?.total?.length ? eq.total[eq.total.length - 1]?.value : null;
           const fr = Number.isFinite(pnl) ? pnl : 0;
-          if (
+          const needsSparkline = canRefresh && !eq && !this.testEquityInFlight.has(logicId);
+          const lagsOpenPanel =
+            canRefresh &&
             this.expandedTestTradesBlocks.has(logicId) &&
             (eqLast == null || Math.abs(Number(eqLast) - fr) > 1) &&
-            !this.testEquityInFlight.has(logicId)
-          ) {
+            !this.testEquityInFlight.has(logicId);
+          if (needsSparkline || lagsOpenPanel) {
             this.loadTestEquityForLogic(logicId);
           }
         }
+        this.ensureInitialEquitySparklines();
         this.cdr.markForCheck();
       },
       error: () => {
@@ -5659,6 +5799,7 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
           });
         }
         this.combatPnlByLogic = next;
+        this.ensureInitialEquitySparklines();
       },
       error: () => {
         this.combatPnlInFlight = false;

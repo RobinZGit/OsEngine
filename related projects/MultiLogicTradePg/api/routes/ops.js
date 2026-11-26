@@ -297,6 +297,38 @@ app.get('/api/processes', async (_req, res) => {
       });
     }
 
+    // Фоновый предрасчёт индикаторов: показываем всегда (особым статусом), но не первым.
+    try {
+      const { isIndicatorPrecalcRunning } = require('../maintenance-scheduler');
+      const bgRows = await pool.query(`
+        SELECT
+          indicator_precalc_bg_enabled() AS enabled,
+          s.last_run_at, s.last_ok_at, s.last_status, s.last_message,
+          s.current_activity, s.processed_count, s.updated_at
+        FROM indicator_precalc_state s
+        WHERE s.id = TRUE
+        LIMIT 1
+      `);
+      const s = bgRows.rows[0] || {};
+      const enabled = Boolean(s.enabled);
+      const running = Boolean(isIndicatorPrecalcRunning()) || s.last_status === 'running';
+      const act = btrimStr(s.current_activity) || btrimStr(s.last_message) || null;
+      rows.push({
+        type: 'indicator_precalc_bg',
+        label: 'Фоновый предрасчёт индикаторов',
+        status: !enabled ? 'disabled' : (running ? 'running' : (s.last_status || 'idle')),
+        detail: act || (!enabled ? 'Выключено в настройках' : 'Ожидание следующего шага'),
+        age: s.last_run_at ? String(s.last_run_at) : null,
+      });
+    } catch (_e) {
+      rows.push({
+        type: 'indicator_precalc_bg',
+        label: 'Фоновый предрасчёт индикаторов',
+        status: 'unavailable',
+        detail: 'Требуется обновление БД (01/02): indicator_precalc_state',
+      });
+    }
+
     res.json({ rows });
   } catch (err) {
     console.error('GET /api/processes', err);

@@ -16,11 +16,13 @@ export class AppSettingsPanelComponent implements OnChanges {
   @Output() closed = new EventEmitter<void>();
 
   cleanupEnabled = false;
+  indicatorPrecalcBgEnabled = true;
   orderChannel: 'postgres' | 'node' = 'node';
   orderNodeUrl: string | null = null;
   uiActive: boolean | null = null;
   loading = false;
   saving = false;
+  savingIndicatorPrecalcBg = false;
   savingChannel = false;
   cleaning = false;
   error: string | null = null;
@@ -41,9 +43,11 @@ export class AppSettingsPanelComponent implements OnChanges {
     forkJoin({
       cleanup: this.settings.getCleanupSetting(),
       channel: this.settings.getOrderChannel(),
+      indicatorPrecalcBg: this.settings.getIndicatorPrecalcBgSetting(),
     }).subscribe({
-      next: ({ cleanup, channel }) => {
+      next: ({ cleanup, channel, indicatorPrecalcBg }) => {
         this.cleanupEnabled = !!cleanup.enabled;
+        this.indicatorPrecalcBgEnabled = !!indicatorPrecalcBg.enabled;
         this.orderChannel = channel.channel === 'node' ? 'node' : 'postgres';
         this.orderNodeUrl = channel.node_url ?? null;
         this.uiActive = typeof channel.ui_active === 'boolean' ? channel.ui_active : null;
@@ -89,6 +93,23 @@ export class AppSettingsPanelComponent implements OnChanges {
       error: (err) => {
         this.error = err?.error?.error || err?.message || 'Не удалось сохранить настройку';
         this.saving = false;
+        this.load();
+      },
+    });
+  }
+
+  onIndicatorPrecalcBgToggle(enabled: boolean): void {
+    this.indicatorPrecalcBgEnabled = enabled;
+    this.savingIndicatorPrecalcBg = true;
+    this.error = null;
+    this.settings.saveIndicatorPrecalcBgSetting(enabled).subscribe({
+      next: (r) => {
+        this.indicatorPrecalcBgEnabled = !!r.enabled;
+        this.savingIndicatorPrecalcBg = false;
+      },
+      error: (err) => {
+        this.error = err?.error?.error || err?.message || 'Не удалось сохранить настройку';
+        this.savingIndicatorPrecalcBg = false;
         this.load();
       },
     });

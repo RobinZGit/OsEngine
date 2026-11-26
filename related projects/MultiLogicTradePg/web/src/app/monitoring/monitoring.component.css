@@ -361,3 +361,26 @@
 .mon-hangs { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #fcd34d; background: #fffbeb; border-radius: 8px; }
 .mon-hangs .mon-empty { padding: 8px 0; color: #92400e; font-size: 0.82rem; }
 .mon-hangs-table { margin-top: 6px; }
+
+
+.mon-bg-processes .mon-bg-row td {
+  background: #f8fafc;
+}
+.mon-bg-processes .mon-bg-indicator-precalc td {
+  background: #eef2ff;
+  color: #3730a3;
+}
+.mon-bg-processes .mon-bg-indicator-precalc .mon-detail {
+  color: #4338ca;
+}
+.mon-bg-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+.mon-bg-running { background: #dcfce7; color: #166534; }
+.mon-bg-ok { background: #e0e7ff; color: #3730a3; }
+.mon-bg-off { background: #fee2e2; color: #991b1b; }
+.mon-bg-idle { background: #f3f4f6; color: #374151; }

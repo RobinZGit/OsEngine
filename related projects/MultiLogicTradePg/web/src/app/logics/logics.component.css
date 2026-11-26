@@ -565,6 +565,19 @@
   outline-offset: 0;
 }
 
+.process-chip-precalc {
+  border-color: #a78bfa;
+  background: #f5f3ff;
+  color: #5b21b6;
+}
+.process-chip-precalc .process-dot {
+  background: #8b5cf6;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.18);
+}
+.process-chip-precalc .process-status {
+  color: #6d28d9;
+}
+
 .process-error {
   border-color: #fca5a5;
   background: #fef2f2;
@@ -1549,12 +1562,6 @@ tbody tr.logic-main-row:hover {
   min-width: 9rem;
 }
 
-.col-account-id {
-  width: 3.5rem;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
 .col-account {
   width: 9.5rem;
   white-space: nowrap;
@@ -1565,29 +1572,35 @@ tbody tr.logic-main-row:hover {
   white-space: nowrap;
 }
 
-.col-broker {
-  width: 4.2rem;
-  white-space: nowrap;
-}
-
-.col-active {
-  width: 3.6rem;
-  text-align: center;
-  white-space: nowrap;
-}
-
 .col-timeframe {
   width: 5.8rem;
   text-align: center;
   white-space: nowrap;
 }
 
+.col-equity-spark {
+  width: 5.5rem;
+  min-width: 4.5rem;
+  padding: 0.15rem 0.25rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.equity-sparkline {
+  display: block;
+  width: 100%;
+  height: 22px;
+}
+
+.equity-sparkline-empty {
+  color: var(--text-muted, #888);
+  font-size: 0.75rem;
+}
+
 /* When space is tight, hide secondary columns first — keep name, checkboxes, icons. */
 @media (max-width: 1180px) {
-  .table-wrap > table .col-account-id,
-  .table-wrap > table .col-active,
-  .table-wrap > table .col-broker,
-  .table-wrap > table .col-timeframe {
+  .table-wrap > table .col-timeframe,
+  .table-wrap > table .col-equity-spark {
     display: none;
   }
 

@@ -2257,12 +2257,12 @@ $$;
 COMMENT ON FUNCTION logic_backtest_exec_ts(INTEGER, TIMESTAMP, NUMERIC) IS
 '#1083: executed_at теста = bar_dt + timeframe.sec + exec_delay_sec';
 
--- #1083: исполнение сигнального филла с задержкой от закрытия бара.
--- p_base — цена закрытия сигнального бара (fallback). При задержке > 0 цена
--- берётся из close M1-бара в момент исполнения; если M1 нет — из open_price
--- следующего бара того же ТФ; последний fallback — p_base.
--- DROP нужен для переименования входного параметра (p_slippage_pct → p_exec_delay_sec):
--- CREATE OR REPLACE не позволяет менять имена аргументов.
+-- #1083/#slippage-simple: исполнение сигнального филла без M1/промежуточных цен.
+-- p_base — цена закрытия сигнального бара. При задержке > 0 берём open следующего
+-- бара того же ТФ и линейно интерполируем между close текущего бара и open следующего:
+--   ratio = LEAST(1, GREATEST(0, exec_delay_sec / tf_sec))
+--   fill  = close_cur + (open_next - close_cur) * ratio
+-- Если следующего бара нет — fallback на p_base (close сигнального бара).
 DROP FUNCTION IF EXISTS logic_backtest_fill_at(BIGINT, INTEGER, INTEGER, TIMESTAMP, NUMERIC, NUMERIC);
 CREATE OR REPLACE FUNCTION logic_backtest_fill_at(
     p_run_id BIGINT,
@@ -2275,9 +2275,9 @@ CREATE OR REPLACE FUNCTION logic_backtest_fill_at(
 RETURNS NUMERIC
 LANGUAGE plpgsql VOLATILE AS $$
 DECLARE
-    v_exec_ts TIMESTAMP;
-    v_m1_id INTEGER;
-    v_price NUMERIC;
+    v_tf_sec NUMERIC;
+    v_ratio NUMERIC;
+    v_next_open NUMERIC;
 BEGIN
     IF p_base IS NULL THEN
         RETURN NULL;
@@ -2286,38 +2286,29 @@ BEGIN
         RETURN p_base;
     END IF;
 
-    v_exec_ts := logic_backtest_exec_ts(p_timeframe_id, p_bar_dt, p_exec_delay_sec);
+    SELECT COALESCE(t.sec, 300) INTO v_tf_sec
+    FROM timeframes t WHERE t.id = p_timeframe_id;
+    v_tf_sec := COALESCE(NULLIF(v_tf_sec, 0), 300);
+    v_ratio := LEAST(1, GREATEST(0, COALESCE(p_exec_delay_sec, 0) / v_tf_sec));
 
-    SELECT id INTO v_m1_id FROM timeframes WHERE tf = 'M1' LIMIT 1;
-    IF v_m1_id IS NOT NULL THEN
-        SELECT close_price INTO v_price
-        FROM prices
-        WHERE security_id = p_security_id
-          AND timeframe_id = v_m1_id
-          AND dt = date_trunc('minute', v_exec_ts)
-        LIMIT 1;
-        IF v_price IS NOT NULL AND v_price > 0 THEN
-            RETURN round(v_price, 6);
-        END IF;
-    END IF;
-
-    SELECT open_price INTO v_price
-    FROM prices
-    WHERE security_id = p_security_id
-      AND timeframe_id = p_timeframe_id
-      AND dt > p_bar_dt
-    ORDER BY dt
+    SELECT p.open_price INTO v_next_open
+    FROM prices p
+    WHERE p.security_id = p_security_id
+      AND p.timeframe_id = p_timeframe_id
+      AND p.dt > p_bar_dt
+    ORDER BY p.dt
     LIMIT 1;
-    IF v_price IS NOT NULL AND v_price > 0 THEN
-        RETURN round(v_price, 6);
+
+    IF v_next_open IS NULL OR v_next_open <= 0 THEN
+        RETURN p_base;
     END IF;
 
-    RETURN p_base;
+    RETURN round(p_base + (v_next_open - p_base) * v_ratio, 6);
 END;
 $$;
 
 COMMENT ON FUNCTION logic_backtest_fill_at(BIGINT, INTEGER, INTEGER, TIMESTAMP, NUMERIC, NUMERIC) IS
-'#1083: исполнение через N сек после закрытия бара: close M1 в момент исполнения, иначе open следующего бара ТФ, иначе цена сигнала';
+'Простое проскальзывание: close текущего бара + (open следующего бара того же ТФ - close) * clamp(exec_delay_sec/tf_sec,0,1); без M1/промежуточных цен';
 
 CREATE OR REPLACE FUNCTION logic_backtest_process_signals(
     p_run_id BIGINT,

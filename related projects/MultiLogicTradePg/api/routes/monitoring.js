@@ -344,10 +344,59 @@ module.exports = function registerMonitoringRoutes(app, ctx) {
         [recentLimit]
       );
 
+      // Фоновые процессы (известные сервисные воркеры) — для отображения в мониторинге.
+      let backgroundProcesses = [];
+      try {
+        const { rows: bgRows } = await pool.query(`
+          SELECT
+            indicator_precalc_bg_enabled() AS precalc_enabled,
+            s.last_run_at,
+            s.last_ok_at,
+            s.last_status,
+            s.last_message,
+            s.processed_count,
+            s.updated_at
+          FROM indicator_precalc_state s
+          WHERE s.id = TRUE
+          LIMIT 1
+        `);
+        const p = bgRows[0] || {};
+        let runningNow = false;
+        try {
+          const { isIndicatorPrecalcRunning } = require('../maintenance-scheduler');
+          runningNow = Boolean(isIndicatorPrecalcRunning());
+        } catch (_e) {}
+        backgroundProcesses.push({
+          key: 'indicator_precalc_bg',
+          name: 'Фоновый предрасчёт индикаторов',
+          enabled: Boolean(p.precalc_enabled),
+          running: runningNow,
+          last_run_at: p.last_run_at,
+          last_ok_at: p.last_ok_at,
+          last_status: p.last_status || null,
+          last_message: p.last_message || null,
+          processed_count: Number(p.processed_count) || 0,
+          updated_at: p.updated_at,
+          kind: 'background',
+        });
+      } catch (_e) {
+        // Таблица/функции могут отсутствовать до обновления БД.
+        backgroundProcesses.push({
+          key: 'indicator_precalc_bg',
+          name: 'Фоновый предрасчёт индикаторов',
+          enabled: null,
+          running: false,
+          last_status: 'unavailable',
+          last_message: 'Требуется обновление БД (01/02)',
+          kind: 'background',
+        });
+      }
+
       res.json({
         thresholdSec,
         dbActive,
         recent: recentRows,
+        backgroundProcesses,
       });
     } catch (err) {
       console.error('GET /api/monitoring/hangs', err);

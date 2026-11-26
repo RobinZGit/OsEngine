@@ -157,6 +157,42 @@
         </tbody>
       </table>
     }
+
+    @if ((hangs?.backgroundProcesses?.length ?? 0) > 0) {
+      <div class="mon-chart-title" style="margin-top:10px">
+        Фоновые процессы
+      </div>
+      <table class="mon-table mon-hangs-table mon-bg-processes">
+        <thead>
+          <tr>
+            <th>Процесс</th>
+            <th>Статус</th>
+            <th>Последний запуск</th>
+            <th>Детали</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of hangs!.backgroundProcesses; track p.key) {
+            <tr class="mon-bg-row" [class.mon-bg-indicator-precalc]="p.key === 'indicator_precalc_bg'">
+              <td>{{ p.name }}</td>
+              <td>
+                @if (p.running) { <span class="mon-bg-status mon-bg-running">выполняется</span> }
+                @else if (p.enabled === false) { <span class="mon-bg-status mon-bg-off">выключен</span> }
+                @else if (p.last_status === 'ok' || p.last_status === 'partial') { <span class="mon-bg-status mon-bg-ok">ожидание</span> }
+                @else { <span class="mon-bg-status mon-bg-idle">{{ p.last_status || 'ожидание' }}</span> }
+              </td>
+              <td>{{ p.last_run_at ? (p.last_run_at | date:'dd.MM HH:mm:ss') : '—' }}</td>
+              <td class="col-msg">
+                <div class="mon-sub mon-detail">
+                  {{ p.last_message || '' }}
+                  @if (p.processed_count != null) { <span> · обработано: {{ p.processed_count }}</span> }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
   </section>
 
   <section class="monitoring-chart">

@@ -14,6 +14,39 @@
         <p class="muted">Загрузка…</p>
       } @else {
         <section class="settings-block">
+          <h3 class="block-title">Очистка диска</h3>
+          <button
+            type="button"
+            class="btn-cleanup"
+            (click)="runCleanupNow()"
+            [disabled]="cleaning"
+          >
+            {{ cleaning ? 'Очистка…' : 'Очистить сейчас' }}
+          </button>
+          <p class="hint">
+            Очищает: все рассчитанные значения индикаторов (кэш indicator_values),
+            старые цены (для неактивных бумаг — по короткому окну; для активных — до ~90 дней),
+            тестовые сделки/прогоны бэктестов и историю рейтинга тестов (кроме последних по логике/активных),
+            устаревший tech log. Также сбрасывает состояние фонового предрасчёта индикаторов.
+            Не блокирует БД надолго: advisory lock + lock/statement timeout; при конфликте с тестом попробуйте позже.
+          </p>
+          <label class="check-row">
+            <input
+              type="checkbox"
+              [ngModel]="cleanupEnabled"
+              (ngModelChange)="onCleanupToggle($event)"
+              [disabled]="saving"
+            />
+            <span>
+              Автоматическая профилактическая очистка (раз в сутки / при старте API, если прошло &gt;24 ч)
+            </span>
+          </label>
+          @if (saving) {
+            <p class="muted">Сохранение…</p>
+          }
+        </section>
+
+        <section class="settings-block">
           <h3 class="block-title">Канал HTTPS к T-Bank</h3>
           <div class="radio-group" role="radiogroup" aria-label="Канал заявок">
             <label class="radio-row">
@@ -63,37 +96,26 @@
           }
         </section>
 
-        <section class="settings-block">
-          <h3 class="block-title">Очистка диска</h3>
+                <section class="settings-block">
+          <h3 class="block-title">Фоновые расчёты индикаторов</h3>
           <label class="check-row">
             <input
               type="checkbox"
-              [ngModel]="cleanupEnabled"
-              (ngModelChange)="onCleanupToggle($event)"
-              [disabled]="saving"
+              [ngModel]="indicatorPrecalcBgEnabled"
+              (ngModelChange)="onIndicatorPrecalcBgToggle($event)"
+              [disabled]="savingIndicatorPrecalcBg"
             />
             <span>
-              Очищать лишние данные (цены/тесты/логи), не нужные для торговли и активных
-              индикаторов
+              фоновые расчеты индикаторов начиная с самых рейтинговых рассчитывать и кончая менее рейтинговыми
             </span>
           </label>
           <p class="hint">
-            По умолчанию выключено. Галочка — предпочтение: при включении очистка идёт по
-            расписанию (раз в сутки — pg_cron 03:30 или Node fallback) и при старте API
-            (через ~15 с, если прошло &gt;24 ч). Кнопка ниже — сразу. Удаляются старые цены,
-            тестовые сделки/прогоны, устаревший tech log; цены для активных серий индикаторов
-            и бумаг включённых логик сохраняются за окно (~90 дней). На большой БД очистка
-            берёт advisory lock; при конфликте с боем — ошибка lock_timeout, повторите позже.
+            По умолчанию включено. Некритичный фоновый процесс: считает значения индикаторов по умолчанию
+            (средние параметры) по доступным ценам, при необходимости постепенно догружает цены.
+            Приоритет: старшие таймфреймы к младшим, индикаторы с более высоким рейтингом раньше.
+            Процесс прерывается, если может замедлить торговлю, тесты или другие задачи.
           </p>
-          <button
-            type="button"
-            class="btn-cleanup"
-            (click)="runCleanupNow()"
-            [disabled]="cleaning"
-          >
-            {{ cleaning ? 'Очистка…' : 'Очистить сейчас' }}
-          </button>
-          @if (saving) {
+          @if (savingIndicatorPrecalcBg) {
             <p class="muted">Сохранение…</p>
           }
         </section>
