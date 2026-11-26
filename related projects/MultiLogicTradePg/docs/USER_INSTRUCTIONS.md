@@ -1194,11 +1194,17 @@
 Коммит: [0c1daef4](https://github.com/RobinZGit/OsEngine/commit/0c1daef4adc34bdc7555dfafadc53b744831f91c)
 
 184. Проскальзывание/задержка исполнения в тесте и тренажёре упрощены: без M1/промежуточных цен. Формула исполнения: `fill = close_cur + (open_next - close_cur) * clamp(exec_delay_sec/tf_sec, 0..1)`, где `close_cur` — close сигнальной свечи, `open_next` — open следующей свечи того же ТФ. При `delay<=0` или отсутствии следующего бара — fallback на `close_cur`. `executed_at` и галочка «Задержка исполнения» сохранены. Обновлены `logic_backtest_fill_at` (локальная БД + `sql/logic_backtest_runner.sql` + `02_multilogictrade_functions_and_procedures.sql`), тренажёр (`web/src/app/trainer/trainer.component.ts`), help/schema-подсказки. Контрольные бэктесты 649/47371 normal и 650/47372 inverted (2026-11-10..2026-11-23, M5, 34 бумаги, `exec_delay_sec=0`) дали те же результаты, что 647/648.
+Коммит: [67ee75a1](https://github.com/RobinZGit/OsEngine/commit/67ee75a1d17c80a73fdeec1b0abd79890709c408)
 
 185. Список логик: убраны колонки `acc_id`, `Брокер`, `Актив.`; перед финансовыми колонками добавлена компактная колонка `Эквити` с мини-графиком эквити портфеля (грубая полилиния, до 48 точек, тонкая яркая линия, цвет по последнему значению). Источник: тест идёт — тестовая эквити, чаще; тест не идёт, бой включён — боевая эквити, реже; тест не идёт, бой выключен — тестовая, если есть, иначе боевая. При входе/загрузке недостающие графики догружаются; при выключенном бое без теста последнее значение сохраняется. Используется существующий `/api/logic-trades/equity-curve` (`is_test=1|0`).
+Коммит: [67ee75a1](https://github.com/RobinZGit/OsEngine/commit/67ee75a1d17c80a73fdeec1b0abd79890709c408)
 
 186. Индикатор `SMA_TREND_SLOPE` (id 13663, `calc_kind='js'`): в `js_code` добавлены подробные русские комментарии по блокам/переменным/возвращаемым сериям; логика расчёта не менялась.
+Коммит: [67ee75a1](https://github.com/RobinZGit/OsEngine/commit/67ee75a1d17c80a73fdeec1b0abd79890709c408)
 
 187. Research-файлы разложены в `docs/research/`: `RESEARCH_classic_indicator_derivatives.html` (с рабочего стола) и `Отчет_матричный_предиктор_цен_и_доходностей_M15_H1_H4_D1.html` (из корня проекта).
+Коммит: [67ee75a1](https://github.com/RobinZGit/OsEngine/commit/67ee75a1d17c80a73fdeec1b0abd79890709c408)
 
 188. В рабочем дереве выложены и сопутствующие изменения фонового предрасчёта индикаторов/мониторинга/настроек (уже присутствовали как незакоммиченные изменения): `sql/indicator_precalc_bg.sql` + включение в sync/02/01, scheduler/maintenance шаги, API monitoring/ops/settings, UI настроек/мониторинга, cleanup удаляет `indicator_values` и сбрасывает состояние precalc, `logic_opt` calc fallback для JS-индикаторов на `indicator_values`. При выкладке обновлены установщики **1.0.616 / Build 616** и релиз `deepseek`.
+
+Коммит: [67ee75a1](https://github.com/RobinZGit/OsEngine/commit/67ee75a1d17c80a73fdeec1b0abd79890709c408)
