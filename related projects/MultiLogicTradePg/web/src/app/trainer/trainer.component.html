@@ -185,14 +185,7 @@
             }
           </div>
         </div>
-        <label class="setup-field compact">
-          <span>Сигн. тейк, %</span>
-          <input class="narrow-num" type="number" step="0.1" min="0" [(ngModel)]="signalTpPct" />
-        </label>
-        <label class="setup-field compact">
-          <span>Сигн. стоп, %</span>
-          <input class="narrow-num" type="number" step="0.1" min="0" [(ngModel)]="signalSlPct" />
-        </label>
+
       </div>
       @if (battleMode) {
         <div class="battle-live-hint">БОЙ: график в реальном времени, скорость/задержка не влияют.</div>
@@ -213,9 +206,13 @@
             <div class="block-title-wrap">
               <div class="block-title-row">
                 <div class="block-title">{{ b.securityName }}</div>
-                <div class="block-current-pnl" [ngClass]="[pnlClass(b.position !== 'flat' ? unrealizedPnl(b) : b.lastPnl), signalAlertClass(b)]" (click)="refreshBattlePrice(b)" title="Текущий результат сделки · клик — обновить цену">
-                  {{ b.position !== 'flat' ? formatPnl(unrealizedPnl(b)) : formatPnl(b.lastPnl) }}
-                  <span class="block-current-pnl-pct">{{ b.position !== 'flat' ? formatPct(unrealizedPnlPct(b)) : formatPct(b.lastPnlPct) }}</span>
+                <div class="block-current-pnl" [ngClass]="[pnlClass(b.position !== 'flat' ? unrealizedPnl(b) : b.lastPnl), signalAlertClass(b), b.signalCloseFlash?.phase === 'blink' ? 'signal-blink-finres' : '', b.signalCloseFlash?.phase === 'text' ? 'signal-close-text signal-close-' + b.signalCloseFlash!.kind : '']" (click)="refreshBattlePrice(b)" title="Текущий результат сделки · клик — обновить цену">
+                  @if (b.signalCloseFlash?.phase === 'text') {
+                    <span class="signal-close-msg">{{ b.signalCloseFlash!.text }}</span>
+                  } @else {
+                    {{ b.position !== 'flat' ? formatPnl(unrealizedPnl(b)) : formatPnl(b.lastPnl) }}
+                    <span class="block-current-pnl-pct">{{ b.position !== 'flat' ? formatPct(unrealizedPnlPct(b)) : formatPct(b.lastPnlPct) }}</span>
+                  }
                 </div>
               </div>
               @if (b.position !== 'flat') {
@@ -241,6 +238,23 @@
               <span class="tca-sub">{{ b.position !== 'flat' ? positionHoldingText(b) : 'ШОРТ' }}</span>
 
             </button>
+
+            <div class="signal-toggles">
+              <div class="signal-toggle-item">
+                <button type="button" class="signal-toggle-btn signal-toggle-tp" [class.active]="signalTpAuto" (click)="signalTpAuto = !signalTpAuto" [title]="signalTpAuto ? 'Авто тейк-профит: включён (лимит по цене срабатывания)' : 'Авто тейк-профит: выключен (только сигнал)'">
+                  <span class="signal-toggle-check">{{ signalTpAuto ? '☑' : '☐' }}</span>
+                  <span class="signal-toggle-label">TP</span>
+                </button>
+                <input class="signal-toggle-pct" type="number" step="0.1" min="0" [(ngModel)]="signalTpPct" title="Сигнальный тейк-профит, %" />
+              </div>
+              <div class="signal-toggle-item">
+                <button type="button" class="signal-toggle-btn signal-toggle-sl" [class.active]="signalSlAuto" (click)="signalSlAuto = !signalSlAuto" [title]="signalSlAuto ? 'Авто стоп-лосс: включён (лимит по цене срабатывания)' : 'Авто стоп-лосс: выключен (только сигнал)'">
+                  <span class="signal-toggle-check">{{ signalSlAuto ? '☑' : '☐' }}</span>
+                  <span class="signal-toggle-label">SL</span>
+                </button>
+                <input class="signal-toggle-pct" type="number" step="0.1" min="0" [(ngModel)]="signalSlPct" title="Сигнальный стоп-лосс, %" />
+              </div>
+            </div>
 
             <button type="button" class="tca-btn tca-start" (click)="onStartPauseClick(b)" [disabled]="b.loading">{{ startPauseLabel(b) }}</button>
             <button type="button" class="tca-btn tca-reset" (click)="resetBlock(b)" [disabled]="b.loading || !b.started">Сначала</button>

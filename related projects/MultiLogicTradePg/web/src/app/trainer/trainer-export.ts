@@ -29,7 +29,7 @@ export interface TrainerExportData {
   securities: ExportSecurityData[];
   defaultSecurityId: number | null;
   defaultIndicators: ExportIndicatorInstance[];
-  defaults: { commissionPct: number; executionDelaySec: number; speedMs: number; signalTpPct?: number; signalSlPct?: number };
+  defaults: { commissionPct: number; executionDelaySec: number; speedMs: number; signalTpPct?: number; signalSlPct?: number; signalTpAuto?: boolean; signalSlAuto?: boolean };
 }
 
 export function buildExportTfData(tfId: number, tf: string, sec: number, candles: PriceCandle[]): ExportTfData {
@@ -87,6 +87,20 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
 .buy{background:#16a34a;color:#fff}.sell{background:#dc2626;color:#fff}.start{background:#2563eb;color:#fff}.reset{background:#475569;color:#fff}.close-btn{background:#0f172a;color:#fff}
 .info{display:flex;flex-direction:column;justify-content:center;padding:6px 12px;border-radius:10px;background:#fff;border:1px solid var(--border);min-width:160px;min-height:64px}
 .info .lbl{font-size:11px;color:var(--muted);text-transform:uppercase}.info .val{font-size:24px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.1}.info .pct{font-size:15px;margin-left:4px;font-weight:900}.info .hold{font-size:12px;color:var(--muted);margin-top:2px}.info .annual{font-size:14px;font-weight:900;margin-top:2px}
+.signal-toggles{display:flex;flex-direction:row;gap:3px;align-items:stretch;min-height:64px;flex:0 0 auto}
+.signal-toggle-item{display:flex;flex-direction:column;align-items:stretch;gap:0;flex:0 0 56px;width:56px;min-width:56px}
+.signal-toggle-btn{display:inline-flex;align-items:center;justify-content:center;gap:2px;flex:1 1 auto;min-height:38px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:8px 8px 0 0;background:#f8fafc;color:#475569;font-family:inherit;font-size:11px;font-weight:800;line-height:1;cursor:pointer;white-space:nowrap}
+.signal-toggle-btn:hover{filter:brightness(.98)}
+.signal-toggle-btn .signal-toggle-check{font-size:13px;line-height:1}
+.signal-toggle-btn.signal-toggle-tp.active{background:rgba(22,163,74,.22);border-color:#16a34a;color:#15803d;box-shadow:inset 0 0 0 1px rgba(22,163,74,.18)}
+.signal-toggle-btn.signal-toggle-sl.active{background:rgba(220,38,38,.18);border-color:#dc2626;color:#b91c1c;box-shadow:inset 0 0 0 1px rgba(220,38,38,.14)}
+.signal-toggle-pct{width:100%;min-width:0;height:24px;padding:0 2px;border:1px solid #cbd5e1;border-top:none;border-radius:0 0 8px 8px;font-size:12px;font-weight:800;color:#1e293b;text-align:center;background:#fff;font-family:inherit;line-height:1}
+.signal-toggle-pct:focus{outline:none;border-color:#94a3b8}
+.head-pnl.signal-blink-finres{animation:signal-blink .22s steps(2,start) 3}
+.head-pnl.signal-close-text{font-size:14px;padding:4px 10px}
+.head-pnl.signal-close-text.signal-close-tp{color:#166534;background:rgba(22,163,74,.14);border-color:rgba(22,163,74,.35)}
+.head-pnl.signal-close-text.signal-close-sl{color:#991b1b;background:rgba(220,38,38,.12);border-color:rgba(220,38,38,.32)}
+.head-pnl.signal-close-text .val{font-size:14px;font-weight:900}
 .chart-wrap{height:52vh;min-height:260px;padding:8px 10px}.chart-wrap canvas{width:100%;height:100%;display:block;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
 .meta{padding:6px 12px;font-size:12px;color:var(--muted);border-top:1px solid #f1f5f9;display:flex;gap:12px;flex-wrap:wrap}
 .ind-topbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-top:1px solid #f1f5f9;background:#f8fafc}
@@ -119,8 +133,7 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
     <label class="field"><span>Таймфрейм</span><select id="tfSel" onchange="changeTf(+this.value)"></select></label>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:flex-end">
       <label class="field"><span>Скорость</span><div class="speed"><select id="speedSel" onchange="setSpeed(+this.value)"></select><div class="sbtns"><button class="sbtn" onclick="speedUp()">+</button><button class="sbtn" onclick="speedDown()">−</button></div></div></label>
-      <label class="field"><span>Сигн. тейк, %</span><input id="signalTpInp" type="number" step="0.1" min="0" value="${esc(String(data.defaults.signalTpPct ?? 0.4))}" onchange="state.signalTpPct=Math.max(0,+this.value||0);updateHeader()" style="width:72px"></label>
-      <label class="field"><span>Сигн. стоп, %</span><input id="signalSlInp" type="number" step="0.1" min="0" value="${esc(String(data.defaults.signalSlPct ?? 0.2))}" onchange="state.signalSlPct=Math.max(0,+this.value||0);updateHeader()" style="width:72px"></label>
+
       <label class="field"><span>&nbsp;</span><button class="btn" id="dirBtn" onclick="toggleDirection()" title="Переключить направление графика" style="min-width:36px;font-size:16px;line-height:1;padding:0 10px">⇄</button></label>
     </div>
   </div>
@@ -131,6 +144,16 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
     <div class="actions">
       <button class="tca buy" id="buyBtn" onclick="buy()"><span class="main">КУПИТЬ</span><span class="sub" id="buySub">ЛОНГ</span></button>
       <button class="tca sell" id="sellBtn" onclick="sell()"><span class="main">ПРОДАТЬ</span><span class="sub" id="sellSub">ШОРТ</span></button>
+      <div class="signal-toggles">
+        <div class="signal-toggle-item">
+          <button class="signal-toggle-btn signal-toggle-tp" id="signalTpBtn" onclick="toggleSignalAuto('tp')" title="Авто тейк-профит"><span class="signal-toggle-check" id="signalTpCheck">☐</span><span class="signal-toggle-label">TP</span></button>
+          <input class="signal-toggle-pct" id="signalTpPctInp" type="number" step="0.1" min="0" value="${esc(String(data.defaults.signalTpPct ?? 0.4))}" onchange="state.signalTpPct=Math.max(0,+this.value||0);render()" title="Сигнальный тейк-профит, %" />
+        </div>
+        <div class="signal-toggle-item">
+          <button class="signal-toggle-btn signal-toggle-sl" id="signalSlBtn" onclick="toggleSignalAuto('sl')" title="Авто стоп-лосс"><span class="signal-toggle-check" id="signalSlCheck">☐</span><span class="signal-toggle-label">SL</span></button>
+          <input class="signal-toggle-pct" id="signalSlPctInp" type="number" step="0.1" min="0" value="${esc(String(data.defaults.signalSlPct ?? 0.2))}" onchange="state.signalSlPct=Math.max(0,+this.value||0);render()" title="Сигнальный стоп-лосс, %" />
+        </div>
+      </div>
       <button class="tca start" id="startBtn" onclick="startPause()"><span class="main" id="startMain">Начать</span><span class="sub" id="startSub">пауза</span></button>
       <button class="tca reset" id="resetBtn" onclick="resetBlock()" disabled><span class="main">СНАЧАЛА</span><span class="sub">сброс</span></button>
       <div class="info"><div class="lbl">Итоговый финрез</div><div><span class="val flat" id="totalPnl">—</span><span class="pct" id="totalPnlPct"></span></div><div class="annual flat" id="annualRow">Годовых: —</div></div>
@@ -161,6 +184,8 @@ const state={
   delaySec: Math.max(0,+DATA.defaults.executionDelaySec||0),
   signalTpPct: Math.max(0, +DATA.defaults.signalTpPct || 0.4),
   signalSlPct: Math.max(0, +DATA.defaults.signalSlPct || 0.2),
+  signalTpAuto: !!DATA.defaults.signalTpAuto,
+  signalSlAuto: !!DATA.defaults.signalSlAuto,
   playing:false, started:false, finished:false, timer:null,
   playIndex:0, visibleCount:0,
   position:'flat', entryPrice:null, entryIdx:null, entryWallMs:null, entryDt:null, qty:1, entryCommission:0,
@@ -169,6 +194,7 @@ const state={
   indicators: (DATA.defaultIndicators||[]).map(x=>({uid:x.uid,type:x.type,period:+x.period||20,color:x.color||'#2563eb'})),
   indicatorSeries: [],
   reversed: false,
+  signalCloseFlash: null,
 };
 function secData(){ return DATA.securities.find(s=>String(s.id)===String(state.secId)) || DATA.securities[0] || null; }
 function tfData(){ const sec=secData(); return sec ? (sec.byTf[String(state.tfId)] || null) : null; }
@@ -352,6 +378,7 @@ function resetForTf(){
   state.playing=false; state.started=false; state.finished=false;
   state.position='flat'; state.entryPrice=null; state.entryIdx=null; state.entryWallMs=null; state.entryDt=null; state.qty=1; state.entryCommission=0;
   state.trades=[]; state.totalPnlMoney=0; state.lastPnlMoney=null; state.lastPnlPct=null; state.pending=null; state.markers=[];
+  state.signalCloseFlash=null;
   rebuildIndicators();
   render();
 }
@@ -383,6 +410,7 @@ function tick(){
   if(state.visibleCount>=c.length){ state.playing=false; state.finished=true; stopTimer(); render(); return; }
   state.visibleCount++;
   maybeExecutePending();
+  maybeAutoCloseBySignal();
   if(state.visibleCount>=c.length){ state.playing=false; state.finished=true; stopTimer(); }
   render();
 }
@@ -446,6 +474,41 @@ function sell(){ if(state.pending||!state.started) return; const p=curPrice(); i
   scheduleOrder('short','open');
 }
 
+function toggleSignalAuto(kind){
+  if(kind==='tp') state.signalTpAuto=!state.signalTpAuto;
+  if(kind==='sl') state.signalSlAuto=!state.signalSlAuto;
+  render();
+}
+function signalLimitPrice(targetPct){
+  if(state.position==='flat' || state.entryPrice==null) return null;
+  const entry=+state.entryPrice; const dir=state.position==='long'?1:-1;
+  const cRate=Math.max(0,+state.commissionPct||0)/100;
+  const denom=dir-cRate;
+  if(Math.abs(denom)<1e-12) return null;
+  return entry*(targetPct/100 + dir + cRate)/denom;
+}
+function maybeAutoCloseBySignal(){
+  if(state.position==='flat' || state.pending) return;
+  const pct = unrealizedPct();
+  if(pct==null) return;
+  const dt = curDt(); if(dt==null) return;
+  const tp=Math.max(0,+state.signalTpPct||0);
+  const sl=Math.max(0,+state.signalSlPct||0);
+  const tpHit = state.signalTpAuto && tp>0 && pct>=tp;
+  const slHit = state.signalSlAuto && sl>0 && pct<=-sl;
+  if(!tpHit && !slHit) return;
+  const kind = tpHit ? 'tp' : 'sl';
+  const targetPct = tpHit ? tp : -sl;
+  const limitPrice = signalLimitPrice(targetPct);
+  if(limitPrice==null || !Number.isFinite(limitPrice) || limitPrice<=0) return;
+  const flashText = kind==='tp' ? 'Сработал тейк-профит' : 'Сработал стоп-лосс';
+  const flash = { kind, text: flashText, phase:'blink', until: Date.now()+1800 };
+  state.signalCloseFlash = flash;
+  setTimeout(()=>{ if(state.signalCloseFlash===flash){ state.signalCloseFlash={...flash, phase:'text'}; render(); } }, 650);
+  setTimeout(()=>{ if(state.signalCloseFlash && state.signalCloseFlash.text===flashText && state.signalCloseFlash.phase==='text'){ state.signalCloseFlash=null; render(); } }, 1850);
+  executeOrder(state.position==='long'?'short':'long','close',dt,limitPrice);
+}
+
 function render(){
   const c=candles();
   const totalMoney=totalPnlMoney();
@@ -464,9 +527,16 @@ function render(){
   const sigTp = Math.max(0, +state.signalTpPct||0);
   const sigSl = Math.max(0, +state.signalSlPct||0);
   const sigAlert = showUnreal ? ((lpPct!=null && sigTp>0 && lpPct>=sigTp) ? 'signal-tp' : (lpPct!=null && sigSl>0 && lpPct<=-sigSl) ? 'signal-sl' : '') : '';
-  const headPnlWrap=document.getElementById('headPnlWrap'); if(headPnlWrap) headPnlWrap.className='head-pnl'+(sigAlert?' '+sigAlert:'');
-  const lastPnl=document.getElementById('lastPnl'); lastPnl.textContent=fmtMoney(lpMoney); lastPnl.className='val '+pnlClass(lpMoney);
-  const lastPnlPctEl=document.getElementById('lastPnlPct'); lastPnlPctEl.textContent = lpPct==null ? '' : fmtPct(lpPct); lastPnlPctEl.className='pct '+pnlClass(lpPct);
+  const flash = state.signalCloseFlash;
+  const headPnlWrap=document.getElementById('headPnlWrap');
+  if(headPnlWrap) headPnlWrap.className='head-pnl'+(sigAlert?' '+sigAlert:'')+(flash&&flash.phase==='blink'?' signal-blink-finres':'')+(flash&&flash.phase==='text'?' signal-close-text signal-close-'+flash.kind:'');
+  const lastPnl=document.getElementById('lastPnl'); const lastPnlPctEl=document.getElementById('lastPnlPct');
+  if(flash && flash.phase==='text'){
+    lastPnl.textContent=flash.text; lastPnl.className='val'; lastPnlPctEl.textContent=''; lastPnlPctEl.className='pct';
+  } else {
+    lastPnl.textContent=fmtMoney(lpMoney); lastPnl.className='val '+pnlClass(lpMoney);
+    lastPnlPctEl.textContent = lpPct==null ? '' : fmtPct(lpPct); lastPnlPctEl.className='pct '+pnlClass(lpPct);
+  }
 
   const totEl=document.getElementById('totalPnl'); totEl.textContent=fmtMoney(totalMoney); totEl.className='val '+pnlClass(totalMoney);
   const totPctEl=document.getElementById('totalPnlPct'); totPctEl.textContent = totalPct==null ? '' : fmtPct(totalPct); totPctEl.className='pct '+pnlClass(totalPct);
@@ -498,6 +568,11 @@ function render(){
   const pEl=document.getElementById('pending');
   if(state.pending){ pEl.style.display='block'; pEl.textContent='Отложенное исполнение: '+(state.pending.action==='close'?'закрытие':'открытие')+' '+(state.pending.side==='long'?'лонг':'шорт')+'...'; }
   else { pEl.style.display='none'; pEl.textContent=''; }
+  const tpBtn=document.getElementById('signalTpBtn'); const slBtn=document.getElementById('signalSlBtn');
+  if(tpBtn){ tpBtn.classList.toggle('active', !!state.signalTpAuto); const c=tpBtn.querySelector('.signal-toggle-check'); if(c) c.textContent=state.signalTpAuto?'☑':'☐'; tpBtn.title=state.signalTpAuto?'Авто тейк-профит: включён (лимит по цене срабатывания)':'Авто тейк-профит: выключен (только сигнал)'; }
+  if(slBtn){ slBtn.classList.toggle('active', !!state.signalSlAuto); const c=slBtn.querySelector('.signal-toggle-check'); if(c) c.textContent=state.signalSlAuto?'☑':'☐'; slBtn.title=state.signalSlAuto?'Авто стоп-лосс: включён (лимит по цене срабатывания)':'Авто стоп-лосс: выключен (только сигнал)'; }
+  const tpInp=document.getElementById('signalTpPctInp'); if(tpInp && document.activeElement!==tpInp) tpInp.value=String(state.signalTpPct);
+  const slInp=document.getElementById('signalSlPctInp'); if(slInp && document.activeElement!==slInp) slInp.value=String(state.signalSlPct);
   drawChart();
 }
 

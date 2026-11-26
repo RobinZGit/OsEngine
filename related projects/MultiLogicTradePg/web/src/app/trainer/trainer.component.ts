@@ -127,6 +127,7 @@ interface TrainerBlock {
   executionDelaySumSec: number;
   executionDelayCount: number;
   playbackStartDt: string | null;
+  signalCloseFlash: { kind: 'tp' | 'sl'; text: string; phase: 'blink' | 'text'; until: number } | null;
   indicators: LocalIndicator[];
   indicatorSeries: ChartIndicatorSeries[];
   addIndicatorType: IndicatorCode;
@@ -172,6 +173,7 @@ function createBlock(securityId: number | null, securityName: string): TrainerBl
     executionDelaySumSec: 0,
     executionDelayCount: 0,
     playbackStartDt: null,
+    signalCloseFlash: null,
     indicators: [
       { uid: 'sma-short-default', type: 'SMA', period: 9, color: '#2563eb' },
       { uid: 'sma-long-default', type: 'SMA', period: 21, color: '#f59e0b' },
@@ -239,6 +241,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
   executionDelaySec = 30;
   signalTpPct = 0.4;
   signalSlPct = 0.2;
+  signalTpAuto = false;
+  signalSlAuto = false;
 
   loading = false;
   loadingError: string | null = null;
@@ -768,6 +772,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
       this.rebuildIndicators(b);
     }
     this.tryExecutePendingOrder(b);
+    this.maybeAutoCloseBySignal(b);
     if (b.playIndex >= b.allCandles.length) {
       b.finished = true;
       this.stopPlayback(b);
@@ -953,6 +958,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
           if (Number.isFinite(livePrice) && livePrice > 0) { this.applyLivePrice(b, livePrice); changed = true; }
         } catch { /* ignore */ }
         if (changed) { this.rebuildIndicators(b); }
+        this.maybeAutoCloseBySignal(b);
       }
       this.cdr.markForCheck();
     } finally {
@@ -1775,6 +1781,52 @@ export class TrainerComponent implements OnInit, OnDestroy {
     if (sl != null && sl > 0 && pct <= -sl) return 'signal-sl';
     return '';
   }
+
+  private signalLimitPrice(b: TrainerBlock, targetPct: number): number | null {
+    if (b.position === 'flat' || b.entryPrice == null) return null;
+    const entry = b.entryPrice;
+    const dir = b.position === 'long' ? 1 : -1;
+    const qty = Math.max(1, Number(b.positionQty) || 1);
+    const cRate = Math.max(0, Number(this.commissionPct) || 0) / 100;
+    if (this.battleMode) {
+      const halfC = cRate / 2;
+      const denom = dir - halfC;
+      if (Math.abs(denom) < 1e-12) return null;
+      const ec = Math.max(0, Number(b.entryCommission) || 0) / qty;
+      return (entry * (targetPct / 100 + dir + halfC) + ec) / denom;
+    }
+    const denom = dir - cRate;
+    if (Math.abs(denom) < 1e-12) return null;
+    return entry * (targetPct / 100 + dir + cRate) / denom;
+  }
+
+  private maybeAutoCloseBySignal(b: TrainerBlock): void {
+    if (b.position === 'flat' || b.pendingOrder) return;
+    const pct = this.toNumber(this.unrealizedPnlPct(b));
+    if (pct == null) return;
+    const dt = this.currentDt(b);
+    if (dt == null) return;
+    const tp = this.toNumber(this.signalTpPct);
+    const sl = this.toNumber(this.signalSlPct);
+    const tpHit = this.signalTpAuto && tp != null && tp > 0 && pct >= tp;
+    const slHit = this.signalSlAuto && sl != null && sl > 0 && pct <= -sl;
+    if (!tpHit && !slHit) return;
+    const kind: 'tp' | 'sl' = tpHit ? 'tp' : 'sl';
+    const targetPct = tpHit ? tp! : -sl!;
+    const limitPrice = this.signalLimitPrice(b, targetPct);
+    if (limitPrice == null || !Number.isFinite(limitPrice) || limitPrice <= 0) return;
+    const flashText = kind === 'tp' ? 'Сработал тейк-профит' : 'Сработал стоп-лосс';
+    const flash = { kind, text: flashText, phase: 'blink' as const, until: Date.now() + 1800 };
+    b.signalCloseFlash = flash;
+    setTimeout(() => { if (b.signalCloseFlash === flash) { b.signalCloseFlash = { ...flash, phase: 'text' }; this.cdr.markForCheck(); } }, 650);
+    setTimeout(() => { if (b.signalCloseFlash && b.signalCloseFlash.text === flashText && b.signalCloseFlash.phase === 'text') { b.signalCloseFlash = null; this.cdr.markForCheck(); } }, 1850);
+    if (this.battleMode) {
+      if (this.battlePlacing) { b.signalCloseFlash = null; return; }
+      void this.placeBattleTrade(b, b.position === 'long' ? 'sell' : 'buy');
+      return;
+    }
+    this.closePosition(b, limitPrice, dt);
+  }
   toNumber(v: number | string | null | undefined): number | null {
     if (v == null || v === '') return null;
     const n = typeof v === 'number' ? v : Number(v);
@@ -2165,7 +2217,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
         securities,
         defaultSecurityId: securities[0].id,
         defaultIndicators,
-        defaults: { commissionPct: this.commissionPct, executionDelaySec: this.executionDelaySec, speedMs: this.speedMs, signalTpPct: this.signalTpPct, signalSlPct: this.signalSlPct },
+        defaults: { commissionPct: this.commissionPct, executionDelaySec: this.executionDelaySec, speedMs: this.speedMs, signalTpPct: this.signalTpPct, signalSlPct: this.signalSlPct, signalTpAuto: this.signalTpAuto, signalSlAuto: this.signalSlAuto },
       };
 
       const html = buildTrainerExportHtml(data);

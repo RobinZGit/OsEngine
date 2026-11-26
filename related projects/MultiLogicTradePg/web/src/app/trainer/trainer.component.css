@@ -270,6 +270,22 @@
 .tca-annual { min-width: 130px; }
 .tca-annual .tca-val { font-size: 20px; }
 
+.signal-toggles { display: flex; flex-direction: row; gap: 3px; align-items: stretch; min-height: 58px; flex: 0 0 auto; }
+.signal-toggle-item { display: flex; flex-direction: column; align-items: stretch; gap: 0; flex: 0 0 56px; width: 56px; min-width: 56px; }
+.signal-toggle-btn { display: inline-flex; align-items: center; justify-content: center; gap: 2px; flex: 1 1 auto; min-height: 34px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 8px 8px 0 0; background: #f8fafc; color: #475569; font-family: inherit; font-size: 11px; font-weight: 800; line-height: 1; cursor: pointer; white-space: nowrap; }
+.signal-toggle-btn:hover { filter: brightness(0.98); }
+.signal-toggle-btn .signal-toggle-check { font-size: 13px; line-height: 1; }
+.signal-toggle-btn.signal-toggle-tp.active { background: rgba(22,163,74,.22); border-color: #16a34a; color: #15803d; box-shadow: inset 0 0 0 1px rgba(22,163,74,.18); }
+.signal-toggle-btn.signal-toggle-sl.active { background: rgba(220,38,38,.18); border-color: #dc2626; color: #b91c1c; box-shadow: inset 0 0 0 1px rgba(220,38,38,.14); }
+.signal-toggle-pct { width: 100%; min-width: 0; height: 22px; padding: 0 2px; border: 1px solid #cbd5e1; border-top: none; border-radius: 0 0 8px 8px; font-size: 12px; font-weight: 800; color: #1e293b; text-align: center; background: #fff; font-family: inherit; line-height: 1; }
+.signal-toggle-pct:focus { outline: none; border-color: #94a3b8; }
+
+.block-current-pnl.signal-blink-finres { animation: signal-blink .22s steps(2, start) 3; }
+.block-current-pnl.signal-close-text { font-size: 14px; font-weight: 900; padding: 4px 10px; }
+.block-current-pnl.signal-close-text.signal-close-tp { color: #166534; background: rgba(22,163,74,.14); border-color: rgba(22,163,74,.35); }
+.block-current-pnl.signal-close-text.signal-close-sl { color: #991b1b; background: rgba(220,38,38,.12); border-color: rgba(220,38,38,.32); }
+.signal-close-msg { white-space: nowrap; }
+
 .btn-fs { background: #111827 !important; color: #f8fafc !important; border: 1px solid #111827 !important; font-weight: 800; }
 .btn-fs:hover:not(:disabled) { background: #1f2937 !important; }
 .btn-fs:disabled { opacity: .45; }
