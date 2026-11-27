@@ -2918,7 +2918,152 @@ BEGIN
 END;
 $$;
 
+-- KELTNER array: EMA(period) ± multiplier * WilderATR(atr_period)
+CREATE OR REPLACE FUNCTION calc_ind_keltner_array(
+    p_period INTEGER,
+    p_multiplier NUMERIC,
+    p_atr_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_point_count INTEGER DEFAULT 100,
+    p_end_dt TIMESTAMP DEFAULT NULL
+)
+RETURNS TABLE (dt TIMESTAMP, value NUMERIC)
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_end TIMESTAMP;
+    v_bars INTEGER;
+    v_dts TIMESTAMP[];
+    v_highs NUMERIC[];
+    v_lows NUMERIC[];
+    v_closes NUMERIC[];
+    v_n INTEGER;
+    i INTEGER;
+    j INTEGER;
+    v_start INTEGER;
+    v_ema NUMERIC;
+    v_ema_k NUMERIC;
+    v_atr NUMERIC;
+    v_tr NUMERIC;
+    v_sum NUMERIC;
+    v_period INTEGER := GREATEST(COALESCE(p_period, 20), 1);
+    v_atr_period INTEGER := GREATEST(COALESCE(p_atr_period, 10), 1);
+    v_mult NUMERIC := COALESCE(p_multiplier, 2.0);
+    v_ema_arr NUMERIC[];
+    v_slope NUMERIC;
+    v_lookback INTEGER;
+BEGIN
+    IF upper(btrim(COALESCE(p_series, ''))) NOT IN ('UPPER', 'MIDDLE', 'LOWER', 'SLOPE') THEN
+        RETURN;
+    END IF;
+
+    v_end := ind_resolve_end_dt(p_security_id, p_timeframe_id, p_end_dt);
+    IF v_end IS NULL THEN RETURN; END IF;
+    v_bars := ind_warmup_bars(GREATEST(v_period, v_atr_period) + 5, p_point_count);
+
+    SELECT array_agg(x.dt ORDER BY x.dt),
+           array_agg(x.high_price ORDER BY x.dt),
+           array_agg(x.low_price ORDER BY x.dt),
+           array_agg(x.close_price ORDER BY x.dt),
+           COUNT(*)::INTEGER
+    INTO v_dts, v_highs, v_lows, v_closes, v_n
+    FROM (
+        SELECT p.dt, p.high_price, p.low_price, p.close_price FROM prices p
+        WHERE p.security_id = p_security_id AND p.timeframe_id = p_timeframe_id AND p.dt <= v_end
+        ORDER BY p.dt DESC LIMIT v_bars
+    ) x;
+
+    IF v_n IS NULL OR v_n < GREATEST(v_period, v_atr_period + 1) THEN RETURN; END IF;
+
+    v_ema_arr := array_fill(NULL::numeric, ARRAY[v_n]);
+
+    -- EMA seed: SMA первых v_period закрытий
+    v_sum := 0;
+    FOR i IN 1 .. LEAST(v_period, v_n) LOOP
+        v_sum := v_sum + v_closes[i];
+    END LOOP;
+    v_ema := v_sum / v_period;
+    v_ema_k := 2.0 / (v_period + 1);
+    v_ema_arr[v_period] := v_ema;
+
+    -- ATR seed: SMA первых v_atr_period TR (TR считается с i=2)
+    v_atr := 0;
+    FOR i IN 2 .. LEAST(v_atr_period, v_n) LOOP
+        v_tr := GREATEST(
+            v_highs[i] - v_lows[i],
+            ABS(v_highs[i] - v_closes[i - 1]),
+            ABS(v_lows[i] - v_closes[i - 1])
+        );
+        v_atr := v_atr + v_tr;
+    END LOOP;
+    IF v_atr_period >= 2 THEN
+        v_atr := v_atr / v_atr_period;
+    END IF;
+
+    v_start := GREATEST(v_period, v_atr_period, v_n - p_point_count + 1);
+    FOR i IN 2 .. v_n LOOP
+        IF i > v_period THEN
+            v_ema := (v_closes[i] - v_ema) * v_ema_k + v_ema;
+            v_ema_arr[i] := v_ema;
+        END IF;
+
+        IF i > v_atr_period THEN
+            v_tr := GREATEST(
+                v_highs[i] - v_lows[i],
+                ABS(v_highs[i] - v_closes[i - 1]),
+                ABS(v_lows[i] - v_closes[i - 1])
+            );
+            v_atr := (v_atr * (v_atr_period - 1) + v_tr) / v_atr_period;
+        END IF;
+
+        IF i >= v_start AND i >= v_period AND i >= v_atr_period THEN
+            dt := v_dts[i];
+            IF upper(btrim(p_series)) = 'SLOPE' THEN
+                v_lookback := v_period;
+                j := i - v_lookback;
+                IF j >= 1 AND v_ema_arr[j] IS NOT NULL AND v_atr IS NOT NULL AND v_atr <> 0 THEN
+                    v_slope := degrees(atan2(v_ema - v_ema_arr[j], v_lookback * v_atr));
+                ELSE
+                    v_slope := NULL;
+                END IF;
+                value := v_slope;
+            ELSE
+                value := CASE upper(btrim(p_series))
+                    WHEN 'MIDDLE' THEN v_ema
+                    WHEN 'UPPER' THEN v_ema + v_mult * v_atr
+                    WHEN 'LOWER' THEN v_ema - v_mult * v_atr
+                    ELSE NULL
+                END;
+            END IF;
+            RETURN NEXT;
+        END IF;
+    END LOOP;
+END;
+$$;
+
 -- ATR array
+
+CREATE OR REPLACE FUNCTION calc_ind_keltner(
+    p_period INTEGER,
+    p_multiplier NUMERIC,
+    p_atr_period INTEGER,
+    p_series VARCHAR,
+    p_security_id INTEGER,
+    p_timeframe_id INTEGER,
+    p_dt TIMESTAMP,
+    p_indicator_id INTEGER DEFAULT NULL
+)
+RETURNS NUMERIC
+LANGUAGE sql
+STABLE
+AS $fn$
+    SELECT a.value
+    FROM calc_ind_keltner_array(p_period, p_multiplier, p_atr_period, p_series, p_security_id, p_timeframe_id, 1, p_dt) a
+    ORDER BY a.dt DESC
+    LIMIT 1
+$fn$;
+
 CREATE OR REPLACE FUNCTION calc_ind_atr_array(
     p_period INTEGER,
     p_series VARCHAR,
@@ -5461,6 +5606,7 @@ BEGIN
         );
         v_k := COALESCE(
             parse_signal_param_num(v_parsed.params, 'k_period'),
+            parse_signal_param_num(v_parsed.params, 'atr_period'),
             parse_signal_param_num(v_parsed.params, 'k')
         );
         v_d := COALESCE(
@@ -5718,6 +5864,10 @@ BEGIN
         WHEN 'DONCHIAN' THEN
             RETURN QUERY SELECT * FROM calc_ind_donchian_array(
                 COALESCE(p_period, 20), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
+        WHEN 'KELTNER' THEN
+            RETURN QUERY SELECT * FROM calc_ind_keltner_array(
+                COALESCE(p_period, 20), COALESCE(p_std_dev, 2.0), COALESCE(p_k_period, 10),
+                p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
         WHEN 'ATR' THEN
             RETURN QUERY SELECT * FROM calc_ind_atr_array(
                 COALESCE(p_period, 14), p_series, p_security_id, p_timeframe_id, p_point_count, p_end_dt);
@@ -5770,7 +5920,7 @@ LANGUAGE plpgsql STABLE AS $$
 BEGIN
     param_period := CASE upper(p_indicator_code)
         WHEN 'RSI' THEN 14 WHEN 'SMA' THEN 20 WHEN 'EMA' THEN 20 WHEN 'BB' THEN 20
-        WHEN 'DONCHIAN' THEN 20
+        WHEN 'DONCHIAN' THEN 20 WHEN 'KELTNER' THEN 20
         WHEN 'ATR' THEN 14 WHEN 'STOCH' THEN 14 WHEN 'SMAT3' THEN 20
         WHEN 'CCI' THEN 20 WHEN 'ADX' THEN 14 WHEN 'LINREG' THEN 20 WHEN 'SQUARE' THEN 20
         WHEN 'ROC' THEN 10 WHEN 'SOLDIERS' THEN 3
@@ -5788,7 +5938,7 @@ BEGIN
     param_slow_period := 26;
     param_signal_period := 9;
     param_std_dev := 2.0;
-    param_k_period := COALESCE(param_period, 14);
+    param_k_period := CASE upper(p_indicator_code) WHEN 'KELTNER' THEN 10 ELSE COALESCE(param_period, 14) END;
     param_d_period := 3;
     param_smooth := 3;
 END;
@@ -12114,6 +12264,28 @@ BEGIN
         );
     END IF;
 
+    -- KELTNER: sql_script без scalar script template; on-the-fly через array fn.
+    IF v_code = 'KELTNER' THEN
+        SELECT a.value INTO v_ind_val
+        FROM calc_ind_keltner_array(
+            v_period,
+            v_std,
+            COALESCE(
+                parse_signal_param_num(p_params, 'k_period'),
+                parse_signal_param_num(p_params, 'atr_period'),
+                parse_signal_param_num(p_params, 'k')
+            )::INTEGER,
+            v_series,
+            p_security_id,
+            p_tf_id,
+            1,
+            p_bar_dt
+        ) a
+        ORDER BY a.dt DESC
+        LIMIT 1;
+        RETURN v_ind_val;
+    END IF;
+
     IF v_script IS NULL OR btrim(v_script) = '' THEN
         -- JS/custom indicators: no SQL on-the-fly eval; fallback to precomputed indicator_values.
         IF lower(COALESCE(v_calc_kind, '')) = 'js' OR EXISTS (
@@ -12168,6 +12340,7 @@ BEGIN
         v_std,
         COALESCE(
             parse_signal_param_num(p_params, 'k_period'),
+            parse_signal_param_num(p_params, 'atr_period'),
             parse_signal_param_num(p_params, 'k')
         )::INTEGER,
         COALESCE(
@@ -15042,7 +15215,7 @@ LANGUAGE sql IMMUTABLE AS $$
         WHEN 'STOCH' THEN 'k=14,d=3,smooth=3,series=' || p_series
         WHEN 'ROC' THEN 'period=10,series=' || p_series
         WHEN 'BB' THEN 'period=20,std_dev=2,series=' || p_series
-        WHEN 'KELTNER' THEN 'period=20,multiplier=2,atr_period=10,series=' || p_series
+        WHEN 'KELTNER' THEN 'period=20,multiplier=2,atr_period=20,series=' || p_series
         WHEN 'DONCHIAN' THEN 'period=20,series=' || p_series
         -- 3 последовательные свечи — рабочий период SOLDIERS (period=20 не даёт сигналов вообще).
         WHEN 'SOLDIERS' THEN 'period=3,series=' || p_series
@@ -16800,7 +16973,7 @@ BEGIN
     v_fast := COALESCE(parse_signal_param_num(p_params, 'fast_period'), parse_signal_param_num(p_params, 'fast'))::INTEGER;
     v_slow := COALESCE(parse_signal_param_num(p_params, 'slow_period'), parse_signal_param_num(p_params, 'slow'))::INTEGER;
     v_signal := COALESCE(parse_signal_param_num(p_params, 'signal_period'), parse_signal_param_num(p_params, 'signal'))::INTEGER;
-    v_k := COALESCE(parse_signal_param_num(p_params, 'k_period'), parse_signal_param_num(p_params, 'k'))::INTEGER;
+    v_k := COALESCE(parse_signal_param_num(p_params, 'k_period'), parse_signal_param_num(p_params, 'atr_period'), parse_signal_param_num(p_params, 'k'))::INTEGER;
     v_d := COALESCE(parse_signal_param_num(p_params, 'd_period'), parse_signal_param_num(p_params, 'd'))::INTEGER;
     v_smooth := parse_signal_param_num(p_params, 'smooth')::INTEGER;
 

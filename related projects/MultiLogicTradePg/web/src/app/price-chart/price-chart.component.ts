@@ -74,6 +74,8 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
    * Терминал: после первой загрузки и после полной перезагрузки графика
    * показывать последнюю свечу (двигаться к концу истории), а не от самого начала.
    */
+  /** ???????? ??????? ????? ????? ? ???????. */
+  @Input() showToolbarCandleTime = false;
   @Input() followLast = false;
 
   /** Режим отображения цены: свечи или линия по Close (#835). */
@@ -87,6 +89,66 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     if (this.chartReversed === !this.chartReversed) return;
     this.chartReversed = !this.chartReversed;
     this.scheduleRedraw();
+  }
+
+  get toolbarCandleDt(): string | null {
+    if (!this.showToolbarCandleTime || !this.candles?.length) return null;
+    return this.candles[this.candles.length - 1]?.dt ?? null;
+  }
+
+  get toolbarCandleTimeLabel(): string {
+    const dt = this.toolbarCandleDt;
+    if (!dt) return '';
+    const d = new Date(dt);
+    if (Number.isNaN(d.getTime())) return String(dt);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    return `${dd}.${mo} ${hh}:${mm}`;
+  }
+
+  get toolbarCandleTimeStyle(): { [k: string]: string } {
+    const dt = this.toolbarCandleDt;
+    if (!dt) return {};
+    const d = new Date(dt);
+    if (Number.isNaN(d.getTime())) return {};
+    const h = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+    return this.candleTimeOfDayStyle(h);
+  }
+
+  private candleTimeOfDayStyle(hour: number): { [k: string]: string } {
+    // 0..24, smooth keyframes: night dark blue -> dawn -> bright noon -> dusk -> night
+    const keys: Array<[number, number, number, number]> = [
+      [0, 15, 35, 71],      // 00:00 deep night
+      [4, 22, 51, 95],      // 04:00 late night
+      [5.5, 70, 110, 170],  // 05:30 dawn
+      [7, 255, 214, 102],   // 07:00 morning yellow
+      [12, 255, 247, 178],  // 12:00 brightest yellow-white
+      [17, 255, 214, 102],  // 17:00 afternoon
+      [19, 70, 110, 170],   // 19:00 dusk
+      [21, 22, 51, 95],     // 21:00 evening
+      [24, 15, 35, 71],     // 24:00 deep night
+    ];
+    const h = ((hour % 24) + 24) % 24;
+    let a = keys[0], b = keys[keys.length - 1];
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (h >= keys[i][0] && h <= keys[i + 1][0]) { a = keys[i]; b = keys[i + 1]; break; }
+    }
+    const span = b[0] - a[0] || 1;
+    const t = Math.max(0, Math.min(1, (h - a[0]) / span));
+    const s = t * t * (3 - 2 * t); // smoothstep
+    const r = Math.round(a[1] + (b[1] - a[1]) * s);
+    const g = Math.round(a[2] + (b[2] - a[2]) * s);
+    const bl = Math.round(a[3] + (b[3] - a[3]) * s);
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * bl) / 255;
+    const text = lum > 0.62 ? '#1e293b' : '#f8fafc';
+    const border = lum > 0.62 ? 'rgba(15,23,42,.18)' : 'rgba(255,255,255,.22)';
+    return {
+      backgroundColor: `rgb(${r},${g},${bl})`,
+      color: text,
+      borderBottomColor: border,
+    };
   }
 
   private xIndex(i: number, count: number): number {

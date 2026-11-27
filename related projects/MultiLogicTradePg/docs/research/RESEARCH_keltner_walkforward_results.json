@@ -1,0 +1,925 @@
+{
+  "meta": {
+    "generatedAt": "2026-11-26T14:35:14.985Z",
+    "period": [
+      "2026-10-01",
+      "2026-11-05"
+    ],
+    "folds": [
+      {
+        "id": 1,
+        "is": [
+          "2026-10-01",
+          "2026-10-14"
+        ],
+        "oos": [
+          "2026-10-15",
+          "2026-10-21"
+        ]
+      },
+      {
+        "id": 2,
+        "is": [
+          "2026-10-08",
+          "2026-10-21"
+        ],
+        "oos": [
+          "2026-10-22",
+          "2026-10-28"
+        ]
+      },
+      {
+        "id": 3,
+        "is": [
+          "2026-10-15",
+          "2026-10-28"
+        ],
+        "oos": [
+          "2026-10-29",
+          "2026-11-05"
+        ]
+      }
+    ],
+    "commission": 0.0003,
+    "params": {
+      "N": 20,
+      "K": 2,
+      "ATR_N": 20,
+      "STOCH_N": 14,
+      "STOCH_D": 3,
+      "ADX_N": 14,
+      "VOL_N": 20,
+      "START_EQUITY": 1000000,
+      "SIZE_PCT": 0.1,
+      "MAX_POS": 10
+    },
+    "note": "Rolling walk-forward: the config with the best in-sample FinRes (min 3 IS trades) is applied to the following out-of-sample window. Fixed N=20, K=2; strategy/filter/stop grid optimized per fold. H4 is synthetic, resampled from native H1 bars."
+  },
+  "strategies": {
+    "kt_break": {
+      "family": "trend"
+    },
+    "kc_revert": {
+      "family": "counter"
+    },
+    "kt_mid": {
+      "family": "trend"
+    },
+    "kc_mid": {
+      "family": "counter"
+    },
+    "kt_break_slope": {
+      "family": "trend"
+    },
+    "kc_revert_turn": {
+      "family": "counter"
+    },
+    "kt_expand": {
+      "family": "trend"
+    },
+    "kc_squeeze": {
+      "family": "counter"
+    }
+  },
+  "filters": [
+    "none",
+    "stoch_level",
+    "stoch_turn",
+    "ma_state",
+    "price_ma",
+    "vol_confirm",
+    "vol_spike",
+    "vol_dry",
+    "adx_regime"
+  ],
+  "risks": [
+    {
+      "id": "none",
+      "short": "none",
+      "stopAtr": null,
+      "takeAtr": null,
+      "stopPct": null,
+      "takePct": null
+    },
+    {
+      "id": "atr1_2",
+      "short": "1ATR/2ATR",
+      "stopAtr": 1,
+      "takeAtr": 2,
+      "stopPct": null,
+      "takePct": null
+    },
+    {
+      "id": "atr2_4",
+      "short": "2ATR/4ATR",
+      "stopAtr": 2,
+      "takeAtr": 4,
+      "stopPct": null,
+      "takePct": null
+    },
+    {
+      "id": "pct1_2",
+      "short": "1%/2%",
+      "stopAtr": null,
+      "takeAtr": null,
+      "stopPct": 1,
+      "takePct": 2
+    },
+    {
+      "id": "pct2_4",
+      "short": "2%/4%",
+      "stopAtr": null,
+      "takeAtr": null,
+      "stopPct": 2,
+      "takePct": 4
+    },
+    {
+      "id": "stop2atr",
+      "short": "stop 2ATR",
+      "stopAtr": 2,
+      "takeAtr": null,
+      "stopPct": null,
+      "takePct": null
+    }
+  ],
+  "perTf": {
+    "M1": {
+      "bars": 192491,
+      "folds": [
+        {
+          "id": 1,
+          "isWindow": [
+            "2026-10-01",
+            "2026-10-14"
+          ],
+          "oosWindow": [
+            "2026-10-15",
+            "2026-10-21"
+          ],
+          "selected": {
+            "strategy": "kc_squeeze",
+            "filter": "price_ma",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": 3349.7,
+            "trades": 349,
+            "winPct": 59.3,
+            "maxDDpct": 0.91
+          },
+          "oos": {
+            "finRes": -10123.23,
+            "trades": 77,
+            "winPct": 55.8,
+            "maxDDpct": 1.25
+          }
+        },
+        {
+          "id": 2,
+          "isWindow": [
+            "2026-10-08",
+            "2026-10-21"
+          ],
+          "oosWindow": [
+            "2026-10-22",
+            "2026-10-28"
+          ],
+          "selected": {
+            "strategy": "kc_squeeze",
+            "filter": "price_ma",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": -6453.92,
+            "trades": 192,
+            "winPct": 56.3,
+            "maxDDpct": 1.29
+          },
+          "oos": {
+            "finRes": -11907.3,
+            "trades": 103,
+            "winPct": 53.4,
+            "maxDDpct": 1.41
+          }
+        },
+        {
+          "id": 3,
+          "isWindow": [
+            "2026-10-15",
+            "2026-10-28"
+          ],
+          "oosWindow": [
+            "2026-10-29",
+            "2026-11-05"
+          ],
+          "selected": {
+            "strategy": "kc_revert",
+            "filter": "stoch_turn",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": -21301.67,
+            "trades": 244,
+            "winPct": 52.5,
+            "maxDDpct": 2.13
+          },
+          "oos": {
+            "finRes": -6070.49,
+            "trades": 9,
+            "winPct": 33.3,
+            "maxDDpct": 0.62
+          }
+        }
+      ],
+      "oosTotal": -28101.02,
+      "positiveFolds": 0,
+      "totalFolds": 3,
+      "mostSelected": {
+        "key": "kc_squeeze|price_ma|none",
+        "strategy": "kc_squeeze",
+        "filter": "price_ma",
+        "risk": "none",
+        "count": 2
+      },
+      "mostSelectedOos": [
+        {
+          "fold": 1,
+          "finRes": -10123.23
+        },
+        {
+          "fold": 2,
+          "finRes": -11907.3
+        },
+        {
+          "fold": 3,
+          "finRes": -3383.58
+        }
+      ],
+      "mostSelectedOosTotal": -25414.11,
+      "baselineOos": {
+        "kc_revert": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": -50944.57
+            },
+            {
+              "fold": 2,
+              "finRes": -44816.59
+            },
+            {
+              "fold": 3,
+              "finRes": -11137.44
+            }
+          ],
+          "total": -106898.6
+        },
+        "kc_squeeze": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": -37718.56
+            },
+            {
+              "fold": 2,
+              "finRes": -28552.87
+            },
+            {
+              "fold": 3,
+              "finRes": -7943.97
+            }
+          ],
+          "total": -74215.4
+        }
+      }
+    },
+    "M5": {
+      "bars": 92174,
+      "folds": [
+        {
+          "id": 1,
+          "isWindow": [
+            "2026-10-01",
+            "2026-10-14"
+          ],
+          "oosWindow": [
+            "2026-10-15",
+            "2026-10-21"
+          ],
+          "selected": {
+            "strategy": "kc_squeeze",
+            "filter": "stoch_level",
+            "risk": "pct1_2",
+            "riskLabel": "1%/2%"
+          },
+          "is": {
+            "finRes": 16965.7,
+            "trades": 56,
+            "winPct": 69.6,
+            "maxDDpct": 0.28
+          },
+          "oos": {
+            "finRes": 1857.18,
+            "trades": 46,
+            "winPct": 67.4,
+            "maxDDpct": 0.41
+          }
+        },
+        {
+          "id": 2,
+          "isWindow": [
+            "2026-10-08",
+            "2026-10-21"
+          ],
+          "oosWindow": [
+            "2026-10-22",
+            "2026-10-28"
+          ],
+          "selected": {
+            "strategy": "kc_squeeze",
+            "filter": "price_ma",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": 5824.55,
+            "trades": 23,
+            "winPct": 73.9,
+            "maxDDpct": 0.21
+          },
+          "oos": {
+            "finRes": 13661.39,
+            "trades": 49,
+            "winPct": 71.4,
+            "maxDDpct": 0.8
+          }
+        },
+        {
+          "id": 3,
+          "isWindow": [
+            "2026-10-15",
+            "2026-10-28"
+          ],
+          "oosWindow": [
+            "2026-10-29",
+            "2026-11-05"
+          ],
+          "selected": {
+            "strategy": "kc_squeeze",
+            "filter": "price_ma",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": 19565.51,
+            "trades": 72,
+            "winPct": 72.2,
+            "maxDDpct": 0.8
+          },
+          "oos": {
+            "finRes": -15729.3,
+            "trades": 129,
+            "winPct": 54.3,
+            "maxDDpct": 3.57
+          }
+        }
+      ],
+      "oosTotal": -210.73,
+      "positiveFolds": 2,
+      "totalFolds": 3,
+      "mostSelected": {
+        "key": "kc_squeeze|price_ma|none",
+        "strategy": "kc_squeeze",
+        "filter": "price_ma",
+        "risk": "none",
+        "count": 2
+      },
+      "mostSelectedOos": [
+        {
+          "fold": 1,
+          "finRes": 5824.55
+        },
+        {
+          "fold": 2,
+          "finRes": 13661.39
+        },
+        {
+          "fold": 3,
+          "finRes": -15729.3
+        }
+      ],
+      "mostSelectedOosTotal": 3756.64,
+      "baselineOos": {
+        "kc_revert": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": -23996.62
+            },
+            {
+              "fold": 2,
+              "finRes": -21394.5
+            },
+            {
+              "fold": 3,
+              "finRes": -57835.78
+            }
+          ],
+          "total": -103226.9
+        },
+        "kc_squeeze": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": -16716.02
+            },
+            {
+              "fold": 2,
+              "finRes": 4487.12
+            },
+            {
+              "fold": 3,
+              "finRes": -40257.21
+            }
+          ],
+          "total": -52486.11
+        }
+      }
+    },
+    "M10": {
+      "bars": 23650,
+      "folds": [
+        {
+          "id": 1,
+          "isWindow": [
+            "2026-10-01",
+            "2026-10-14"
+          ],
+          "oosWindow": [
+            "2026-10-15",
+            "2026-10-21"
+          ],
+          "selected": {
+            "strategy": "kc_squeeze",
+            "filter": "vol_dry",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": 17929.92,
+            "trades": 224,
+            "winPct": 42,
+            "maxDDpct": 1.58
+          },
+          "oos": {
+            "finRes": -4218.92,
+            "trades": 55,
+            "winPct": 29.1,
+            "maxDDpct": 0.42
+          }
+        },
+        {
+          "id": 2,
+          "isWindow": [
+            "2026-10-08",
+            "2026-10-21"
+          ],
+          "oosWindow": [
+            "2026-10-22",
+            "2026-10-28"
+          ],
+          "selected": {
+            "strategy": "kc_squeeze",
+            "filter": "stoch_level",
+            "risk": "pct1_2",
+            "riskLabel": "1%/2%"
+          },
+          "is": {
+            "finRes": 2843.88,
+            "trades": 29,
+            "winPct": 51.7,
+            "maxDDpct": 0.54
+          },
+          "oos": {
+            "finRes": 0,
+            "trades": 0,
+            "winPct": 0,
+            "maxDDpct": 0
+          }
+        },
+        {
+          "id": 3,
+          "isWindow": [
+            "2026-10-15",
+            "2026-10-28"
+          ],
+          "oosWindow": [
+            "2026-10-29",
+            "2026-11-05"
+          ],
+          "selected": {
+            "strategy": "kc_mid",
+            "filter": "stoch_level",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": 622.53,
+            "trades": 6,
+            "winPct": 66.7,
+            "maxDDpct": 0.02
+          },
+          "oos": {
+            "finRes": -4684.57,
+            "trades": 22,
+            "winPct": 54.5,
+            "maxDDpct": 0.6
+          }
+        }
+      ],
+      "oosTotal": -8903.49,
+      "positiveFolds": 0,
+      "totalFolds": 3,
+      "mostSelected": {
+        "key": "kc_squeeze|vol_dry|none",
+        "strategy": "kc_squeeze",
+        "filter": "vol_dry",
+        "risk": "none",
+        "count": 1
+      },
+      "mostSelectedOos": [
+        {
+          "fold": 1,
+          "finRes": -4218.92
+        },
+        {
+          "fold": 2,
+          "finRes": 789.62
+        },
+        {
+          "fold": 3,
+          "finRes": -2728.5
+        }
+      ],
+      "mostSelectedOosTotal": -6157.8,
+      "baselineOos": {
+        "kc_revert": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": -3082.14
+            },
+            {
+              "fold": 2,
+              "finRes": -259.05
+            },
+            {
+              "fold": 3,
+              "finRes": -6025.82
+            }
+          ],
+          "total": -9367.01
+        },
+        "kc_squeeze": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": -4598.09
+            },
+            {
+              "fold": 2,
+              "finRes": 789.62
+            },
+            {
+              "fold": 3,
+              "finRes": -2816.71
+            }
+          ],
+          "total": -6625.18
+        }
+      }
+    },
+    "M15": {
+      "bars": 81561,
+      "folds": [
+        {
+          "id": 1,
+          "isWindow": [
+            "2026-10-01",
+            "2026-10-14"
+          ],
+          "oosWindow": [
+            "2026-10-15",
+            "2026-10-21"
+          ],
+          "selected": {
+            "strategy": "kc_revert",
+            "filter": "stoch_level",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": 27562.28,
+            "trades": 122,
+            "winPct": 63.9,
+            "maxDDpct": 1.27
+          },
+          "oos": {
+            "finRes": 11267.57,
+            "trades": 64,
+            "winPct": 62.5,
+            "maxDDpct": 0.92
+          }
+        },
+        {
+          "id": 2,
+          "isWindow": [
+            "2026-10-08",
+            "2026-10-21"
+          ],
+          "oosWindow": [
+            "2026-10-22",
+            "2026-10-28"
+          ],
+          "selected": {
+            "strategy": "kc_revert",
+            "filter": "stoch_level",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": 25496.99,
+            "trades": 137,
+            "winPct": 59.1,
+            "maxDDpct": 1.47
+          },
+          "oos": {
+            "finRes": 29247.9,
+            "trades": 86,
+            "winPct": 62.8,
+            "maxDDpct": 0.59
+          }
+        },
+        {
+          "id": 3,
+          "isWindow": [
+            "2026-10-15",
+            "2026-10-28"
+          ],
+          "oosWindow": [
+            "2026-10-29",
+            "2026-11-05"
+          ],
+          "selected": {
+            "strategy": "kc_revert",
+            "filter": "stoch_level",
+            "risk": "none",
+            "riskLabel": "none"
+          },
+          "is": {
+            "finRes": 40845.02,
+            "trades": 150,
+            "winPct": 62.7,
+            "maxDDpct": 1.51
+          },
+          "oos": {
+            "finRes": -7535.56,
+            "trades": 103,
+            "winPct": 57.3,
+            "maxDDpct": 3.75
+          }
+        }
+      ],
+      "oosTotal": 32979.91,
+      "positiveFolds": 2,
+      "totalFolds": 3,
+      "mostSelected": {
+        "key": "kc_revert|stoch_level|none",
+        "strategy": "kc_revert",
+        "filter": "stoch_level",
+        "risk": "none",
+        "count": 3
+      },
+      "mostSelectedOos": [
+        {
+          "fold": 1,
+          "finRes": 11267.57
+        },
+        {
+          "fold": 2,
+          "finRes": 29247.9
+        },
+        {
+          "fold": 3,
+          "finRes": -7535.56
+        }
+      ],
+      "mostSelectedOosTotal": 32979.91,
+      "baselineOos": {
+        "kc_revert": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": -1104.61
+            },
+            {
+              "fold": 2,
+              "finRes": 3003.82
+            },
+            {
+              "fold": 3,
+              "finRes": -50144.02
+            }
+          ],
+          "total": -48244.81
+        },
+        "kc_squeeze": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": 15617.34
+            },
+            {
+              "fold": 2,
+              "finRes": 4573.64
+            },
+            {
+              "fold": 3,
+              "finRes": -19799.81
+            }
+          ],
+          "total": 391.17
+        }
+      }
+    },
+    "H1": {
+      "bars": 3151,
+      "folds": [
+        {
+          "id": 1,
+          "isWindow": [
+            "2026-10-01",
+            "2026-10-14"
+          ],
+          "oosWindow": [
+            "2026-10-15",
+            "2026-10-21"
+          ],
+          "selected": null
+        },
+        {
+          "id": 2,
+          "isWindow": [
+            "2026-10-08",
+            "2026-10-21"
+          ],
+          "oosWindow": [
+            "2026-10-22",
+            "2026-10-28"
+          ],
+          "selected": null
+        },
+        {
+          "id": 3,
+          "isWindow": [
+            "2026-10-15",
+            "2026-10-28"
+          ],
+          "oosWindow": [
+            "2026-10-29",
+            "2026-11-05"
+          ],
+          "selected": null
+        }
+      ],
+      "oosTotal": 0,
+      "positiveFolds": 0,
+      "totalFolds": 0,
+      "mostSelected": null,
+      "mostSelectedOos": [],
+      "mostSelectedOosTotal": 0,
+      "baselineOos": {
+        "kc_revert": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": 0
+            },
+            {
+              "fold": 2,
+              "finRes": 0
+            },
+            {
+              "fold": 3,
+              "finRes": -13965.6
+            }
+          ],
+          "total": -13965.6
+        },
+        "kc_squeeze": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": 0
+            },
+            {
+              "fold": 2,
+              "finRes": 0
+            },
+            {
+              "fold": 3,
+              "finRes": 14826.17
+            }
+          ],
+          "total": 14826.17
+        }
+      }
+    },
+    "H4": {
+      "bars": 876,
+      "folds": [
+        {
+          "id": 1,
+          "isWindow": [
+            "2026-10-01",
+            "2026-10-14"
+          ],
+          "oosWindow": [
+            "2026-10-15",
+            "2026-10-21"
+          ],
+          "selected": null
+        },
+        {
+          "id": 2,
+          "isWindow": [
+            "2026-10-08",
+            "2026-10-21"
+          ],
+          "oosWindow": [
+            "2026-10-22",
+            "2026-10-28"
+          ],
+          "selected": null
+        },
+        {
+          "id": 3,
+          "isWindow": [
+            "2026-10-15",
+            "2026-10-28"
+          ],
+          "oosWindow": [
+            "2026-10-29",
+            "2026-11-05"
+          ],
+          "selected": null
+        }
+      ],
+      "oosTotal": 0,
+      "positiveFolds": 0,
+      "totalFolds": 0,
+      "mostSelected": null,
+      "mostSelectedOos": [],
+      "mostSelectedOosTotal": 0,
+      "baselineOos": {
+        "kc_revert": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": 0
+            },
+            {
+              "fold": 2,
+              "finRes": 0
+            },
+            {
+              "fold": 3,
+              "finRes": 11210.17
+            }
+          ],
+          "total": 11210.17
+        },
+        "kc_squeeze": {
+          "folds": [
+            {
+              "fold": 1,
+              "finRes": 0
+            },
+            {
+              "fold": 2,
+              "finRes": 0
+            },
+            {
+              "fold": 3,
+              "finRes": 15.93
+            }
+          ],
+          "total": 15.93
+        }
+      }
+    }
+  }
+}

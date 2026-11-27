@@ -462,7 +462,7 @@ BEGIN
     v_fast := COALESCE(parse_signal_param_num(p_params, 'fast_period'), parse_signal_param_num(p_params, 'fast'))::INTEGER;
     v_slow := COALESCE(parse_signal_param_num(p_params, 'slow_period'), parse_signal_param_num(p_params, 'slow'))::INTEGER;
     v_signal := COALESCE(parse_signal_param_num(p_params, 'signal_period'), parse_signal_param_num(p_params, 'signal'))::INTEGER;
-    v_k := COALESCE(parse_signal_param_num(p_params, 'k_period'), parse_signal_param_num(p_params, 'k'))::INTEGER;
+    v_k := COALESCE(parse_signal_param_num(p_params, 'k_period'), parse_signal_param_num(p_params, 'atr_period'), parse_signal_param_num(p_params, 'k'))::INTEGER;
     v_d := COALESCE(parse_signal_param_num(p_params, 'd_period'), parse_signal_param_num(p_params, 'd'))::INTEGER;
     v_smooth := parse_signal_param_num(p_params, 'smooth')::INTEGER;
 

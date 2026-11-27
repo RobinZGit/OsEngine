@@ -1,0 +1,31 @@
+security_id,ticker,name,sector,best_key,indicator,family,filter,risk,execution,style,fin_res,annualized,trades,win_pct,wf_oos_total,wf_positive_folds
+1,SIST,"АФК Система","Телеком / холдинги",rsi_counter|none|none|close|longshort,RSI,counter,none,none,close,longshort,13328.69,+14.4%,43,69.8,1471.59,1
+2,PHOR,"ФосАгро","Химия / удобрения",rsi_counter|vol_dry|none|next|longshort,RSI,counter,vol_dry,none,next,longshort,7174.56,+7.5%,32,75,-1711.25,1
+3,FLOT,"Совкомфлот","Транспорт",rsi_counter|vol_confirm|none|next|longshort,RSI,counter,vol_confirm,none,next,longshort,11643.68,+12.5%,39,76.9,2229.36,2
+4,AFLT,"Аэрофлот","Транспорт",kc_revert|vol_dry|none|close|longshort,Keltner,counter,vol_dry,none,close,longshort,8399.51,+8.9%,79,81,-2414.82,0
+5,YDEX,"Яндекс","IT",kc_revert|none|pct1_2|close|longshort,Keltner,counter,none,pct1_2,close,longshort,4890.64,+5.1%,109,61.5,112.46,1
+6,RTKM,"Ростелеком","Телеком / холдинги",kc_revert|none|none|close|longshort,Keltner,counter,none,none,close,longshort,5966.39,+6.2%,93,67.7,-1960.2,1
+7,MOEX,"Московская биржа","Банки и финансы",rsi_counter|adx_regime|none|close|longshort,RSI,counter,adx_regime,none,close,longshort,2746.39,+2.8%,18,66.7,68.17,1
+8,UPRO,"Юнипро","Энергетика и ЖКХ",bb_mid_counter|none|none|close|longshort,Bollinger,counter,none,none,close,longshort,13370.36,+14.4%,686,83.2,1592.25,2
+9,RSTE,"ФСК-Россети","Энергетика и ЖКХ",kt_break|ma_state|pct1_2|next|longshort,Keltner,trend,ma_state,pct1_2,next,longshort,6601.57,+6.9%,62,46.8,-5258.12,1
+10,IRAO,"Интер РАО","Энергетика и ЖКХ",kt_break|ma_state|none|next|longshort,Keltner,trend,ma_state,none,next,longshort,4197.58,+4.3%,64,37.5,-1258.71,0
+11,HYDR,"РусГидро","Энергетика и ЖКХ",ma_revert|adx_regime|pct1_2|close|longshort,MA,counter,adx_regime,pct1_2,close,longshort,11145.04,+11.9%,120,57.5,-4523.52,0
+12,RUAL,"РУСАЛ","Металлы и добыча",bb_revert|none|none|close|longshort,Bollinger,counter,none,none,close,longshort,9379.46,+9.9%,130,69.2,2390.29,2
+13,VTBR,"ВТБ","Банки и финансы",macd_counter|stoch_level|atr2_4|close|long,MACD,counter,stoch_level,atr2_4,close,long,2416.44,+2.5%,29,55.2,-273.18,1
+14,MTSS,"МТС","Телеком / холдинги",rsi_counter|none|pct1_2|close|longshort,RSI,counter,none,pct1_2,close,longshort,7926.36,+8.3%,46,76.1,3095.68,2
+15,MGNT,"Магнит","Ритейл",rsi_counter|vol_dry|none|close|longshort,RSI,counter,vol_dry,none,close,longshort,6979.11,+7.3%,34,67.6,-248.74,0
+16,MTLR,"Мечел (обыкновенные)","Металлы и добыча",kc_revert|vol_confirm|none|close|longshort,Keltner,counter,vol_confirm,none,close,longshort,8958.33,+9.5%,102,72.5,5014.39,2
+17,MAGN,"ММК","Металлы и добыча",rsi_counter|vol_confirm|pct1_2|close|longshort,RSI,counter,vol_confirm,pct1_2,close,longshort,7311.63,+7.7%,55,70.9,-491.64,1
+18,NLMK,"НЛМК","Металлы и добыча",rsi_counter|vol_confirm|none|close|longshort,RSI,counter,vol_confirm,none,close,longshort,7325.71,+7.7%,38,73.7,-2362.69,1
+19,CHMF,"Северсталь","Металлы и добыча",kc_revert|none|none|close|longshort,Keltner,counter,none,none,close,longshort,15077,+16.4%,112,76.8,5336.06,2
+20,ALRS,"Алроса","Металлы и добыча",kc_revert|none|none|close|longshort,Keltner,counter,none,none,close,longshort,22108.61,+24.8%,170,75.9,1934.44,1
+21,PLZL,"Полюс","Металлы и добыча",bb_revert|vol_dry|none|close|longshort,Bollinger,counter,vol_dry,none,close,longshort,4296.43,+4.4%,100,71,142.78,1
+22,SNGS,"Сургутнефтегаз (обыкновенные)","Нефть и газ",rsi_counter|vol_confirm|none|close|longshort,RSI,counter,vol_confirm,none,close,longshort,11916.29,+12.8%,34,76.5,3744.07,2
+23,TATN,"Татнефть (обыкновенные)","Нефть и газ",rsi_counter|none|pct1_2|close|longshort,RSI,counter,none,pct1_2,close,longshort,6951.82,+7.3%,51,70.6,1054.47,1
+24,GMKN,"Норникель","Металлы и добыча",pc_revert|ma_state|none|close|longshort,PriceChannel,counter,ma_state,none,close,longshort,3589.8,+3.7%,107,70.1,-1118.4,1
+25,NVTK,"НОВАТЭК","Нефть и газ",kc_revert|vol_confirm|pct1_2|close|longshort,Keltner,counter,vol_confirm,pct1_2,close,longshort,8426.32,+8.9%,122,69.7,-1971.82,0
+26,ROSN,"Роснефть","Нефть и газ",rsi_counter|none|none|close|longshort,RSI,counter,none,none,close,longshort,8767.65,+9.3%,50,60,1582.19,2
+27,LKOH,"ЛУКОЙЛ","Нефть и газ",rsi_counter|adx_regime|pct1_2|next|longshort,RSI,counter,adx_regime,pct1_2,next,longshort,3645.95,+3.8%,20,85,80.56,1
+28,GAZP,"Газпром","Нефть и газ",rsi_counter|none|none|next|longshort,RSI,counter,none,none,next,longshort,8537.4,+9.0%,46,76.1,3155.99,2
+29,SBER,"Сбербанк (обыкновенные)","Банки и финансы",st_counter|adx_regime|none|close|long,Stochastic,counter,adx_regime,none,close,long,-267.67,-0.3%,22,72.7,-1566.55,0
+30,TRNFP,"Транснефть (привилегированные)","Нефть и газ",rsi_counter|vol_dry|pct1_2|close|longshort,RSI,counter,vol_dry,pct1_2,close,longshort,3333.61,+3.4%,39,64.1,-1178.49,0

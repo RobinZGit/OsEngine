@@ -27,7 +27,8 @@ import {
 } from '../models/market.model';
 import { AccountRow, ExchangeRow } from '../models/lookup.model';
 import { TerminalStateService } from '../services/terminal-state.service';
-import { LogicRow } from '../models/logic.model';
+import { LogicIndicatorSignalRow, LogicRow, LogicStopRow } from '../models/logic.model';
+import { LogicsService } from '../services/logics.service';
 import { LogicTradeRow } from '../shared/logic-trade';
 import {
   BacktestReportRunInfo,
@@ -56,7 +57,8 @@ interface TrainerTrade {
 type IndicatorCode =
   | 'SMA' | 'EMA' | 'WMA' | 'HMA'
   | 'BB' | 'DONCHIAN'
-  | 'RSI' | 'MACD' | 'STOCH' | 'ATR' | 'CCI' | 'ADX' | 'ROC' | 'OBV' | 'MFI' | 'VWAP';
+  | 'RSI' | 'MACD' | 'STOCH' | 'ATR' | 'CCI' | 'ADX' | 'ROC' | 'OBV' | 'MFI' | 'VWAP'
+  | 'KELTNER';
 
 interface IndicatorDef {
   code: IndicatorCode;
@@ -74,6 +76,7 @@ const INDICATOR_DEFS: IndicatorDef[] = [
   { code: 'HMA', name: 'HMA — Среднее Халла', period: 20, onPrice: true, hasPeriod: true, desc: 'Быстрая и сглаженная средняя Халла. Хорошо показывает направление тренда с меньшим запаздыванием, но не даёт зон перекупленности.' },
   { code: 'BB', name: 'BB — Полосы Боллинджера', period: 20, onPrice: true, hasPeriod: true, desc: 'Полосы волатильности вокруг SMA. У верхней полосы — возможна перекупленность, у нижней — перепроданность; сужение полос означает низкую волатильность.' },
   { code: 'DONCHIAN', name: 'Donchian — Канал Дончиана', period: 20, onPrice: true, hasPeriod: true, desc: 'Канал максимумов и минимумов за период. Пробой верхней границы указывает на силу роста, нижней — на силу падения; внутри канала — диапазон.' },
+  { code: 'KELTNER', name: 'Keltner - каналы Келтнера', period: 20, onPrice: true, hasPeriod: true, desc: 'Каналы волатильности: EMA + 2*ATR. Средняя линия - EMA, границы расширяются от ATR. Серия SLOPE показывает наклон средней линии в градусах (-90..90) и выводится отдельным подграфиком.' },
   { code: 'VWAP', name: 'VWAP — Средневзвешенная по объёму', period: 1, onPrice: true, hasPeriod: false, desc: 'Средняя цена с учётом объёма. Выше VWAP — перевес покупателей, ниже — продавцов; часто используется как ориентир справедливой цены.' },
   { code: 'RSI', name: 'RSI — Индекс относительной силы', period: 14, onPrice: false, hasPeriod: true, desc: 'Импульс в диапазоне 0–100. Обычно выше 70 — перекупленность, ниже 30 — перепроданность; середина диапазона — нейтральная зона.' },
   { code: 'MACD', name: 'MACD — Схождение/расхождение средних', period: 12, onPrice: false, hasPeriod: true, desc: 'Разница быстрых и медленных EMA. Пересечение линии MACD с сигнальной или нулём показывает смену импульса; гистограмма отражает его силу.' },
@@ -128,6 +131,8 @@ interface TrainerBlock {
   executionDelayCount: number;
   playbackStartDt: string | null;
   signalCloseFlash: { kind: 'tp' | 'sl'; text: string; phase: 'blink' | 'text'; until: number } | null;
+  buyBtnFlash: { text: string | null } | null;
+  sellBtnFlash: { text: string | null } | null;
   indicators: LocalIndicator[];
   indicatorSeries: ChartIndicatorSeries[];
   addIndicatorType: IndicatorCode;
@@ -174,6 +179,8 @@ function createBlock(securityId: number | null, securityName: string): TrainerBl
     executionDelayCount: 0,
     playbackStartDt: null,
     signalCloseFlash: null,
+    buyBtnFlash: null,
+    sellBtnFlash: null,
     indicators: [
       { uid: 'sma-short-default', type: 'SMA', period: 9, color: '#2563eb' },
       { uid: 'sma-long-default', type: 'SMA', period: 21, color: '#f59e0b' },
@@ -204,6 +211,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
   private readonly trainerApi = inject(TrainerService);
   private readonly monitorApi = inject(MonitoringService);
   private readonly terminalApi = inject(TerminalStateService);
+  private readonly logicsApi = inject(LogicsService);
   readonly cdr = inject(ChangeDetectorRef);
   private readonly el = inject(ElementRef<HTMLElement>);
 
@@ -244,6 +252,15 @@ export class TrainerComponent implements OnInit, OnDestroy {
   signalTpAuto = false;
   signalSlAuto = false;
 
+  // Сигналы логики: берём только сигналы и SL/TP, без таймфрейма и сумм.
+  logicSignalEnabled = false;
+  selectedLogicId: number | null = null;
+  logicOptions: Array<{ id: number; name: string; label: string; hint: string }> = [];
+  logicSignals: LogicIndicatorSignalRow[] = [];
+  logicStops: LogicStopRow[] = [];
+  logicSignalsLoading = false;
+  private logicSignalCacheKey: string | null = null;
+
   loading = false;
   loadingError: string | null = null;
   dataLoading = false;
@@ -257,6 +274,10 @@ export class TrainerComponent implements OnInit, OnDestroy {
   exportProgress = 0;
   exportPickerOpen = false;
   exportSelectedIds = new Set<number>();
+  exportAllSecurities: SecurityRow[] | null = null;
+  exportSecuritiesLoading = false;
+  exportCancelled = false;
+  private exportCancelRejectors: Array<(err: Error) => void> = [];
   totalDetailsOpen = false;
   private dataLoadSlowTimer: ReturnType<typeof setTimeout> | null = null;
   private dataLoadStartedAt = 0;
@@ -313,6 +334,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadLookups();
     this.loadSecurityUsage();
+    this.loadLogicOptions();
   }
 
   @HostListener('document:click', ['$event'])
@@ -453,6 +475,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
   onExchangeChange(): void {
     this.addSecurityId = null;
     this.securities = [];
+    this.exportAllSecurities = null;
+    this.exportSecuritiesLoading = false;
     if (this.exchangeId != null) this.loadSecurities(this.exchangeId);
   }
 
@@ -649,7 +673,14 @@ export class TrainerComponent implements OnInit, OnDestroy {
 
   private async autoLoadPrices(securityId: number, timeframeId: number, b: TrainerBlock, desiredMin = 1, seq?: number): Promise<PriceCandle[]> {
     const tfSec = this.timeframes.find(t => t.id === timeframeId)?.sec ?? 300;
-    const daysBack = Math.max(365, Math.ceil((desiredMin * tfSec) / 86400) + 30);
+    // Для 1m/M5/... годовой диапазон даёт сотни тысяч свечей и зависание загрузки.
+    // Считаем календарный диапазон от нужного числа свечей с запасом на выходные/праздники.
+    const tradingSecPerDay = tfSec < 86400 ? 8 * 3600 : 86400;
+    const candlesPerTradingDay = Math.max(1, tradingSecPerDay / Math.max(1, tfSec));
+    const calDays = tfSec < 86400
+      ? Math.ceil((desiredMin / candlesPerTradingDay) * 1.8) + 10
+      : Math.ceil(desiredMin * 1.6) + 14;
+    const daysBack = Math.max(30, Math.min(365, calDays));
     const to = new Date();
     const from = new Date(to.getTime() - daysBack * 24 * 3600 * 1000);
     const dateFrom = this.toDateStr(from);
@@ -747,6 +778,12 @@ export class TrainerComponent implements OnInit, OnDestroy {
     return b.hasPlayed ? 'Продолжить' : 'Начать';
   }
 
+  startPauseSubLabel(b: TrainerBlock): string {
+    if (!b.started || b.finished) return b.finished ? 'сначала' : 'старт';
+    const elapsed = this.simulatedElapsed(b);
+    return elapsed !== '—' ? elapsed : (b.playing ? 'идёт' : 'пауза');
+  }
+
   onSpeedChange(): void {
     if (this.battleMode) return;
     for (const b of this.blocks) {
@@ -773,6 +810,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
     }
     this.tryExecutePendingOrder(b);
     this.maybeAutoCloseBySignal(b);
+    this.maybeAutoTradeByLogicSignals(b);
     if (b.playIndex >= b.allCandles.length) {
       b.finished = true;
       this.stopPlayback(b);
@@ -959,6 +997,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
         } catch { /* ignore */ }
         if (changed) { this.rebuildIndicators(b); }
         this.maybeAutoCloseBySignal(b);
+    this.maybeAutoTradeByLogicSignals(b);
       }
       this.cdr.markForCheck();
     } finally {
@@ -1248,15 +1287,28 @@ export class TrainerComponent implements OnInit, OnDestroy {
       this.openPosition(b, side, price, dt);
     }
   }
+
+  private flashButton(b: TrainerBlock, which: 'buy' | 'sell', text: string | null = null): void {
+    const flash = { text };
+    if (which === 'buy') b.buyBtnFlash = flash; else b.sellBtnFlash = flash;
+    this.cdr.markForCheck();
+    setTimeout(() => {
+      if (which === 'buy') { if (b.buyBtnFlash === flash) b.buyBtnFlash = null; }
+      else { if (b.sellBtnFlash === flash) b.sellBtnFlash = null; }
+      this.cdr.markForCheck();
+    }, 1400);
+  }
   private openPosition(b: TrainerBlock, side: 'long' | 'short', price: number, dt: string, qty = 1, entryCommission = 0): void {
     b.position = side; b.entryPrice = price; b.entryDt = dt; b.entryVisibleIndex = b.visibleCandles.length - 1; b.entryWallMs = Date.now();
     b.positionQty = Math.max(1, Math.floor(Number(qty) || 1));
     b.entryCommission = Math.max(0, Number(entryCommission) || 0);
     b.tradeMarkers = [...b.tradeMarkers, { dt, price, kind: 'open', side, label: side === 'long' ? 'BUY' : 'SELL' }];
+    this.flashButton(b, side === 'long' ? 'buy' : 'sell');
     this.cdr.markForCheck();
   }
   private closePosition(b: TrainerBlock, price: number, dt: string, closeCommission?: number): void {
     if (b.position === 'flat' || b.entryPrice == null || b.entryDt == null) return;
+    const closingSide = b.position;
     const dir = b.position === 'long' ? 1 : -1;
     const qty = Math.max(1, Number(b.positionQty) || 1);
     const grossPnl = (price - b.entryPrice) * dir * qty;
@@ -1277,6 +1329,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
     b.totalPnl += pnl; b.lastPnl = pnl; b.lastPnlPct = pnlPct; b.lastAnnualPct = annualPct;
     b.tradeMarkers = [...b.tradeMarkers, { dt, price, kind: 'close', side: b.position, label: `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}` }];
     b.position = 'flat'; b.entryPrice = null; b.entryDt = null; b.entryVisibleIndex = null; b.entryWallMs = null; b.positionQty = 1; b.entryCommission = 0;
+    this.flashButton(b, closingSide === 'long' ? 'buy' : 'sell');
     this.cdr.markForCheck();
   }
 
@@ -1356,6 +1409,14 @@ export class TrainerComponent implements OnInit, OnDestroy {
           out.push(mk('LOWER', `${label} Lower`, shiftColor(ind.color, -40), d.lower));
           break;
         }
+        case 'KELTNER': {
+          const k = calcKeltner(candles, period, 2, period);
+          out.push(mk('MIDDLE', `${label} Mid`, ind.color, k.middle));
+          out.push(mk('UPPER', `${label} Upper`, shiftColor(ind.color, 40), k.upper));
+          out.push(mk('LOWER', `${label} Lower`, shiftColor(ind.color, -40), k.lower));
+          out.push(mk('SLOPE', `${label} Slope`, '#7c3aed', k.slope, false));
+          break;
+        }
         case 'RSI': out.push(mk('VALUE', label, ind.color, calcRsi(candles, period), false)); break;
         case 'MACD': {
           const m = calcMacd(candles, period, 26, 9);
@@ -1388,18 +1449,9 @@ export class TrainerComponent implements OnInit, OnDestroy {
     b.signalMarkers = this.buildSignalMarkers(b, candles);
   }
 
-  private buildSignalMarkers(b: TrainerBlock, candles: PriceCandle[]): ChartTradeMarker[] {
-    if (candles.length < 5) return [];
-    const out: ChartTradeMarker[] = [];
-    for (const ind of b.indicators) {
-      const period = Math.max(2, Math.floor(Number(ind.period) || 20));
-      const sigs = this.signalsForIndicator(ind.type, period, candles);
-      for (const s of sigs) {
-        out.push({ dt: s.dt, price: s.price, kind: 'signal', side: s.side, color: s.color ?? ind.color, topLabel: s.text });
-      }
-    }
-    const max = 120;
-    return out.length > max ? out.slice(out.length - max) : out;
+  private buildSignalMarkers(_b: TrainerBlock, _candles: PriceCandle[]): ChartTradeMarker[] {
+    // Сообщения сигналов индикаторов на графике отключены — мешают чтению.
+    return [];
   }
 
   private signalsForIndicator(type: IndicatorCode, period: number, candles: PriceCandle[]): Array<{ dt: string; price: number; side: 'long' | 'short'; text: string; color?: string }> {
@@ -1460,6 +1512,18 @@ export class TrainerComponent implements OnInit, OnDestroy {
         const u0 = u.get(dt(i - 1)), u1 = u.get(dt(i)); const l0 = l.get(dt(i - 1)), l1 = l.get(dt(i));
         if (u0 != null && u1 != null && crossUp(close(i - 1), u0, close(i), u1)) push(i, 'long', 'пробой вверх', '#16a34a');
         if (l0 != null && l1 != null && crossDown(close(i - 1), l0, close(i), l1)) push(i, 'short', 'пробой вниз', '#dc2626');
+      }
+      return res;
+    }
+
+    if (type === 'KELTNER') {
+      const k = calcKeltner(c, period, 2, period);
+      const u = new Map(k.upper.map(p => [p.dt, p.value]));
+      const l = new Map(k.lower.map(p => [p.dt, p.value]));
+      for (let i = 1; i < c.length; i++) {
+        const u0 = u.get(dt(i - 1)), u1 = u.get(dt(i)); const l0 = l.get(dt(i - 1)), l1 = l.get(dt(i));
+        if (l0 != null && l1 != null && crossDown(close(i - 1), l0, close(i), l1)) push(i, 'long', 'Возврат снизу', '#22c55e');
+        if (u0 != null && u1 != null && crossUp(close(i - 1), u0, close(i), u1)) push(i, 'short', 'Возврат сверху', '#f97316');
       }
       return res;
     }
@@ -1822,16 +1886,250 @@ export class TrainerComponent implements OnInit, OnDestroy {
     return entry * (targetPct / 100 + dir + cRate) / denom;
   }
 
+
+  loadLogicOptions(): void {
+    this.logicsApi.getLogics().subscribe({
+      next: (rows) => {
+        this.logicOptions = (rows || [])
+          .map(r => {
+            const name = r.name || ('?????? #' + r.id);
+            const label = `#${r.id} ${name}`;
+            const hintParts: string[] = [];
+            const desc = (r as any).description;
+            if (desc && String(desc).trim()) hintParts.push(String(desc).trim());
+            const initial = Number((r as any).initial_balance);
+            const current = Number((r as any).current_balance);
+            if (Number.isFinite(initial) && initial !== 0 && Number.isFinite(current)) {
+              const pnl = current - initial;
+              const pct = (pnl / initial) * 100;
+              const sign = pct >= 0 ? '+' : '';
+              hintParts.push(`?????????: ${sign}${pct.toFixed(2)}% (${current.toFixed(2)} / ${initial.toFixed(2)})`);
+            } else if (Number.isFinite(current)) {
+              hintParts.push(`??????: ${current.toFixed(2)}`);
+            }
+            return { id: r.id, name, label, hint: hintParts.join('\n') };
+          })
+          .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+        this.cdr.markForCheck();
+      },
+      error: () => { this.logicOptions = []; this.cdr.markForCheck(); },
+    });
+  }
+
+  onLogicSignalEnabledChange(): void {
+    if (this.logicSignalEnabled && this.selectedLogicId) this.loadLogicSignals();
+    this.cdr.markForCheck();
+  }
+
+  onLogicSignalSelectedChange(): void {
+    this.logicSignals = [];
+    this.logicStops = [];
+    this.logicSignalCacheKey = null;
+    if (this.selectedLogicId) this.loadLogicSignals();
+    this.cdr.markForCheck();
+  }
+
+  private loadLogicSignals(): void {
+    const id = this.selectedLogicId;
+    if (!id) return;
+    this.logicSignalsLoading = true;
+    this.cdr.markForCheck();
+    this.logicsApi.getLogicIndicatorSignals(id).subscribe({
+      next: (sigs) => {
+        this.logicSignals = (sigs || []).filter(s => s.is_active);
+        this.logicsApi.getLogicStops(id).subscribe({
+          next: (stops) => {
+            this.logicStops = (stops || []).filter(s => s.is_active);
+            this.logicSignalsLoading = false;
+            this.logicSignalCacheKey = null;
+            this.cdr.markForCheck();
+          },
+          error: () => { this.logicStops = []; this.logicSignalsLoading = false; this.cdr.markForCheck(); },
+        });
+      },
+      error: () => { this.logicSignals = []; this.logicStops = []; this.logicSignalsLoading = false; this.cdr.markForCheck(); },
+    });
+  }
+
+  private logicStopPct(kind: 'stop_loss' | 'take_profit'): number | null {
+    const row = this.logicStops.find(s => s.rule_kind === kind && s.is_active && s.value_unit === 'percent' && (s.scope_type === 'security' || s.scope_type === 'security_resume' || s.scope_type === 'portfolio'));
+    const v = row ? Number(row.value) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
+
+  private activeTpPct(): number | null {
+    if (this.logicSignalEnabled && this.selectedLogicId) {
+      const v = this.logicStopPct('take_profit');
+      if (v != null) return v;
+    }
+    const v = this.toNumber(this.signalTpPct);
+    return v != null && v > 0 ? v : null;
+  }
+
+  private activeSlPct(): number | null {
+    if (this.logicSignalEnabled && this.selectedLogicId) {
+      const v = this.logicStopPct('stop_loss');
+      if (v != null) return v;
+    }
+    const v = this.toNumber(this.signalSlPct);
+    return v != null && v > 0 ? v : null;
+  }
+
+  private parseSignalFormula(formula: string): { code: string; params: Record<string, string>; series: string; left: string; op: string; right: string } | null {
+    if (!formula) return null;
+    const m = formula.match(/^@([A-Za-z0-9_]+)\(([^)]*)\)\s*(.+)$/);
+    if (!m) return null;
+    const code = m[1].toUpperCase();
+    const params: Record<string, string> = {};
+    for (const part of m[2].split(',')) {
+      const kv = part.split('=');
+      if (kv.length >= 2) params[kv[0].trim().toLowerCase()] = kv.slice(1).join('=').trim();
+    }
+    const rest = m[3].trim();
+    const cm = rest.match(/^(pp|VALUE|value)\s*(<=|>=|<|>|==|!=)\s*(pp|VALUE|value|[-+]?\d+(?:\.\d+)?)$/i)
+      || rest.match(/^([-+]?\d+(?:\.\d+)?)\s*(<=|>=|<|>|==|!=)\s*(pp|VALUE|value)$/i);
+    if (!cm) return null;
+    let left = cm[1]; let op = cm[2]; let right = cm[3];
+    // normalize number-left form to VALUE-op-number when possible? keep as-is
+    const series = (params['series'] || 'VALUE').toUpperCase();
+    return { code, params, series, left, op, right };
+  }
+
+  private evalIndicatorValue(code: string, params: Record<string, string>, series: string, candles: PriceCandle[], idx: number): number | null {
+    const pnum = (k: string, d: number) => { const v = Number(params[k]); return Number.isFinite(v) && v > 0 ? v : d; };
+    const period = pnum('period', pnum('len', pnum('length', 14)));
+    const at = (pts: Pt[] | undefined) => { if (!pts) return null; const dt = candles[idx]?.dt; const f = pts.find(x => x.dt === dt); return f ? f.value : null; };
+    const atArr = (arr: (number | null)[] | undefined) => { if (!arr || idx < 0 || idx >= arr.length) return null; const v = arr[idx]; return v == null || !Number.isFinite(v) ? null : v; };
+    try {
+      switch (code) {
+        case 'SMA': return at(calcSma(candles, period));
+        case 'EMA': return at(calcEma(candles, period));
+        case 'WMA': return at(calcWma(candles, period));
+        case 'HMA': return at(calcHma(candles, period));
+        case 'RSI': return at(calcRsi(candles, period));
+        case 'ATR': return at(calcAtr(candles, period));
+        case 'CCI': return at(calcCci(candles, period));
+        case 'ROC': return at(calcRoc(candles, period));
+        case 'OBV': return at(calcObv(candles));
+        case 'MFI': return at(calcMfi(candles, period));
+        case 'VWAP': return at(calcVwap(candles));
+        case 'BB': { const bb = calcBb(candles, period, pnum('std', pnum('mult', 2))); const s = series.toUpperCase(); return at(s==='UPPER'?bb.upper:s==='LOWER'?bb.lower:s==='MIDDLE'?bb.middle:bb.middle); }
+        case 'DONCHIAN': { const d = calcDonchian(candles, period); const s = series.toUpperCase(); return at(s==='UPPER'?d.upper:s==='LOWER'?d.lower:d.middle); }
+        case 'KELTNER': { const k = calcKeltner(candles, period, pnum('multiplier', pnum('mult', 2)), pnum('atr_period', period)); const s = series.toUpperCase(); return at(s==='UPPER'?k.upper:s==='LOWER'?k.lower:s==='SLOPE'?k.slope:k.middle); }
+        case 'STOCH': { const st = calcStoch(candles, period, pnum('d', 3), pnum('smooth', pnum('k_smooth', 3))); const s = series.toUpperCase(); return at(s==='D'?st.d:st.k); }
+        case 'MACD': { const m = calcMacd(candles, pnum('fast', 12), pnum('slow', 26), pnum('signal', 9)); const s = series.toUpperCase(); return at(s==='SIGNAL'?m.signal:s==='HIST'?m.hist:m.macd); }
+        case 'ADX': { const a = calcAdx(candles, period); const s = series.toUpperCase(); return at(s==='PDI'?a.pdi:s==='MDI'?a.mdi:a.adx); }
+        default: return null;
+      }
+    } catch { return null; }
+  }
+
+  private cmpOp(l: number, op: string, r: number): boolean {
+    switch (op) {
+      case '<': return l < r;
+      case '<=': return l <= r;
+      case '>': return l > r;
+      case '>=': return l >= r;
+      case '==': return l === r;
+      case '!=': return l !== r;
+      default: return false;
+    }
+  }
+
+  private evalLogicSignalAt(sig: LogicIndicatorSignalRow, candles: PriceCandle[], idx: number): boolean {
+    const parsed = this.parseSignalFormula(sig.formula || '');
+    if (!parsed) return false;
+    const close = candles[idx]?.close_price;
+    if (close == null || !Number.isFinite(close)) return false;
+    const indVal = this.evalIndicatorValue(parsed.code, parsed.params, parsed.series, candles, idx);
+    if (indVal == null) return false;
+    const resolve = (tok: string): number | null => {
+      const t = tok.toLowerCase();
+      if (t === 'pp') return close;
+      if (t === 'value') return indVal;
+      const n = Number(tok);
+      return Number.isFinite(n) ? n : null;
+    };
+    const l = resolve(parsed.left);
+    const r = resolve(parsed.right);
+    if (l == null || r == null) return false;
+    return this.cmpOp(l, parsed.op, r);
+  }
+
+  private maybeAutoTradeByLogicSignals(b: TrainerBlock): void {
+    if (!this.selectedLogicId) return;
+    if (b.pendingOrder) return;
+    const candles = b.allCandles.length ? b.allCandles : b.visibleCandles;
+    const idx = Math.min(b.playIndex - 1, candles.length - 1);
+    if (idx < 1) return;
+    const dt = candles[idx]?.dt;
+    const price = candles[idx]?.close_price;
+    if (!dt || price == null || !Number.isFinite(price) || price <= 0) return;
+
+    const openLongSigs = this.logicSignals.filter(s => s.is_active && s.position_event === 'open' && s.position_side === 'long');
+    const closeLongSigs = this.logicSignals.filter(s => s.is_active && s.position_event === 'close' && s.position_side === 'long');
+    const hasOpen = openLongSigs.length > 0;
+    const hasClose = closeLongSigs.length > 0;
+    const logicName = (this.logicOptions.find(o => o.id === this.selectedLogicId)?.name) || ('Логика #' + this.selectedLogicId);
+
+    const flashDisabled = (which: 'buy'|'sell', text: string) => {
+      const now = Date.now();
+      const key = which + ':' + text;
+      if ((b as any)._logicDisabledFlashKey === key && (b as any)._logicDisabledFlashUntil > now) return;
+      (b as any)._logicDisabledFlashKey = key;
+      (b as any)._logicDisabledFlashUntil = now + 1800;
+      this.flashButton(b, which, text);
+    };
+
+    if (b.position === 'long' && hasClose) {
+      const allClose = closeLongSigs.every(s => this.evalLogicSignalAt(s, candles, idx));
+      if (allClose) {
+        if (!this.logicSignalEnabled) {
+          flashDisabled('buy', `Логика: ${logicName}`);
+          return;
+        }
+        const flashText = 'Закрытие по сигналу логики';
+        const flash = { kind: 'sl' as const, text: flashText, phase: 'blink' as const, until: Date.now() + 1800 };
+        b.signalCloseFlash = flash;
+        setTimeout(() => { if (b.signalCloseFlash === flash) { b.signalCloseFlash = { ...flash, phase: 'text' }; this.cdr.markForCheck(); } }, 650);
+        setTimeout(() => { if (b.signalCloseFlash && b.signalCloseFlash.text === flashText) { b.signalCloseFlash = null; this.cdr.markForCheck(); } }, 1850);
+        if (this.battleMode) { if (!this.battlePlacing) void this.placeBattleTrade(b, 'sell'); }
+        else this.closePosition(b, price, dt);
+        return;
+      }
+    }
+
+    if (b.position === 'flat' && hasOpen) {
+      const allOpen = openLongSigs.every(s => this.evalLogicSignalAt(s, candles, idx));
+      if (allOpen) {
+        if (!this.logicSignalEnabled) {
+          flashDisabled('buy', `Логика: ${logicName}`);
+          return;
+        }
+        const flashText = 'Открытие по сигналу логики';
+        const flash = { kind: 'tp' as const, text: flashText, phase: 'blink' as const, until: Date.now() + 1800 };
+        b.signalCloseFlash = flash;
+        setTimeout(() => { if (b.signalCloseFlash === flash) { b.signalCloseFlash = { ...flash, phase: 'text' }; this.cdr.markForCheck(); } }, 650);
+        setTimeout(() => { if (b.signalCloseFlash && b.signalCloseFlash.text === flashText) { b.signalCloseFlash = null; this.cdr.markForCheck(); } }, 1850);
+        if (this.battleMode) { if (!this.battlePlacing) void this.placeBattleTrade(b, 'buy'); }
+        else this.openPosition(b, 'long', price, dt);
+        return;
+      }
+    }
+  }
+
   private maybeAutoCloseBySignal(b: TrainerBlock): void {
     if (b.position === 'flat' || b.pendingOrder) return;
     const pct = this.toNumber(this.unrealizedPnlPct(b));
     if (pct == null) return;
     const dt = this.currentDt(b);
     if (dt == null) return;
-    const tp = this.toNumber(this.signalTpPct);
-    const sl = this.toNumber(this.signalSlPct);
-    const tpHit = this.signalTpAuto && tp != null && tp > 0 && pct >= tp;
-    const slHit = this.signalSlAuto && sl != null && sl > 0 && pct <= -sl;
+    const tp = this.activeTpPct();
+    const sl = this.activeSlPct();
+    const logicTp = this.logicSignalEnabled && !!this.selectedLogicId && this.logicStopPct('take_profit') != null;
+    const logicSl = this.logicSignalEnabled && !!this.selectedLogicId && this.logicStopPct('stop_loss') != null;
+    const tpHit = (this.signalTpAuto || logicTp) && tp != null && tp > 0 && pct >= tp;
+    const slHit = (this.signalSlAuto || logicSl) && sl != null && sl > 0 && pct <= -sl;
     if (!tpHit && !slHit) return;
     const kind: 'tp' | 'sl' = tpHit ? 'tp' : 'sl';
     const targetPct = tpHit ? tp! : -sl!;
@@ -1974,17 +2272,19 @@ export class TrainerComponent implements OnInit, OnDestroy {
   exportSecurityOptions(): Array<{ id: number; name: string }> {
     const seen = new Set<number>();
     const out: Array<{ id: number; name: string }> = [];
-    for (const sec of this.securities) {
+    const source = this.exportAllSecurities ?? this.securities;
+    for (const sec of source) {
       if (sec?.id == null || seen.has(sec.id)) continue;
       seen.add(sec.id);
       out.push({ id: sec.id, name: sec.name });
     }
-    // include any block securities not in current securities list
+    // include any block securities not in current source list
     for (const b of this.blocks) {
       if (b.securityId == null || seen.has(b.securityId)) continue;
       seen.add(b.securityId);
       out.push({ id: b.securityId, name: b.securityName || String(b.securityId) });
     }
+    out.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     return out;
   }
 
@@ -2000,6 +2300,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
     if (this.exporting) return;
     this.exportPickerOpen = !this.exportPickerOpen;
     if (this.exportPickerOpen) {
+      this.loadExportSecuritiesIfNeeded();
       // keep previous selection if still valid, else default
       const opts = this.exportSecurityOptions();
       const valid = new Set(opts.map(o => o.id));
@@ -2008,10 +2309,107 @@ export class TrainerComponent implements OnInit, OnDestroy {
     }
   }
 
+  private loadExportSecuritiesIfNeeded(): void {
+    if (this.exportAllSecurities != null || this.exportSecuritiesLoading) return;
+    if (this.exchangeId == null) {
+      this.exportAllSecurities = this.securities.slice();
+      return;
+    }
+    this.exportSecuritiesLoading = true;
+    const kinds: Array<'stock' | 'futures' | 'other' | 'bond'> = ['stock', 'futures', 'other', 'bond'];
+    forkJoin(kinds.map(kind => this.securitiesApi.getSecurities(this.exchangeId!, kind))).subscribe({
+      next: (lists) => {
+        const seen = new Set<number>();
+        const all: SecurityRow[] = [];
+        for (const list of lists) {
+          for (const sec of list ?? []) {
+            if (sec?.id == null || seen.has(sec.id)) continue;
+            seen.add(sec.id);
+            all.push(sec);
+          }
+        }
+        all.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
+        this.exportAllSecurities = all;
+        this.exportSecuritiesLoading = false;
+        if (this.exportPickerOpen) {
+          const opts = this.exportSecurityOptions();
+          const valid = new Set(opts.map(o => o.id));
+          const kept = Array.from(this.exportSelectedIds).filter(id => valid.has(id));
+          this.exportSelectedIds = kept.length > 0 ? new Set(kept) : this.defaultExportSecurityIds();
+        }
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        console.error('Trainer export securities load error', err);
+        this.exportAllSecurities = this.securities.slice();
+        this.exportSecuritiesLoading = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   toggleExportSecurity(id: number, checked: boolean): void {
     const next = new Set(this.exportSelectedIds);
     if (checked) next.add(id); else next.delete(id);
     this.exportSelectedIds = next;
+  }
+
+  exportAllSelected(): boolean {
+    const opts = this.exportSecurityOptions();
+    return opts.length > 0 && opts.every(o => this.exportSelectedIds.has(o.id));
+  }
+
+  toggleExportSelectAll(): void {
+    const opts = this.exportSecurityOptions();
+    if (opts.length === 0) return;
+    if (this.exportAllSelected()) {
+      this.exportSelectedIds = new Set();
+    } else {
+      this.exportSelectedIds = new Set(opts.map(o => o.id));
+    }
+  }
+
+  cancelExport(): void {
+    if (!this.exporting) return;
+    this.exportCancelled = true;
+    this.exportStatus = 'Отмена...';
+    const err = new Error('EXPORT_CANCELLED');
+    for (const fn of this.exportCancelRejectors.splice(0)) {
+      try { fn(err); } catch { /* ignore */ }
+    }
+    this.cdr.markForCheck();
+  }
+
+  private throwIfExportCancelled(): void {
+    if (this.exportCancelled) throw new Error('EXPORT_CANCELLED');
+  }
+
+  private guardExport<T>(p: Promise<T>): Promise<T> {
+    this.throwIfExportCancelled();
+    return new Promise<T>((resolve, reject) => {
+      let done = false;
+      const rej = (e: any) => {
+        if (done) return;
+        done = true;
+        this.exportCancelRejectors = this.exportCancelRejectors.filter(x => x !== rej);
+        reject(e);
+      };
+      this.exportCancelRejectors.push(rej);
+      p.then(
+        v => { if (done) return; done = true; this.exportCancelRejectors = this.exportCancelRejectors.filter(x => x !== rej); resolve(v); },
+        e => { if (done) return; done = true; this.exportCancelRejectors = this.exportCancelRejectors.filter(x => x !== rej); reject(e); },
+      );
+    });
+  }
+
+  private async cancellableSleep(ms: number): Promise<void> {
+    const step = 250;
+    let remaining = ms;
+    while (remaining > 0) {
+      this.throwIfExportCancelled();
+      await this.guardExport(new Promise<void>(r => setTimeout(r, Math.min(step, remaining))));
+      remaining -= step;
+    }
   }
 
   async exportTrainerHtml(): Promise<void> {
@@ -2026,6 +2424,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
     if (!this.timeframes.length) { this.loadingError = 'Нет таймфреймов для экспорта'; this.cdr.markForCheck(); return; }
 
     this.exporting = true;
+    this.exportCancelled = false;
+    this.exportCancelRejectors = [];
     this.exportPickerOpen = false;
     this.exportProgress = 0;
     this.exportStatus = 'Подготовка...';
@@ -2038,6 +2438,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
       const tfs = this.timeframes.slice().sort((a, b) => b.sec - a.sec);
       const securities: ExportSecurityData[] = [];
       for (let si = 0; si < targetIds.length; si++) {
+        this.throwIfExportCancelled();
         const secId = targetIds[si];
         const sec = this.securities.find(s => s.id === secId) ?? null;
         const block = this.blocks.find(b => b.securityId === secId) ?? null;
@@ -2059,7 +2460,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
           try {
             let before: string | undefined = undefined;
             while (baseCandles.length < maxBaseCap) {
-              const batch: PriceCandle[] = await firstValueFrom(this.securitiesApi.getPrices(secId, baseTf.id, PRICE_PAGE, before)) ?? [];
+              this.throwIfExportCancelled();
+              const batch: PriceCandle[] = await this.guardExport(firstValueFrom(this.securitiesApi.getPrices(secId, baseTf.id, PRICE_PAGE, before))) ?? [];
               const rows: PriceCandle[] = (batch as PriceCandle[]).map(normalizeCandle);
               if (!rows.length) break;
               rows.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
@@ -2085,16 +2487,17 @@ export class TrainerComponent implements OnInit, OnDestroy {
               const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
               this.exportStatus = `${secName}: 1m загрузка цен...${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
               this.cdr.markForCheck();
-              await Promise.race([
+              await this.guardExport(Promise.race([
                 firstValueFrom(this.securitiesApi.loadPrices({ security_id: secId, timeframe_id: baseTf.id, date_from: fmt(fromD), date_to: fmt(toD) })),
                 new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 120000)),
-              ]).catch(e => console.warn('Export: loadPrices 1m timeout/fail', secId, e));
+              ])).catch(e => { if (e?.message === 'EXPORT_CANCELLED') throw e; console.warn('Export: loadPrices 1m timeout/fail', secId, e); });
               for (let w = 0; w < 6 && baseCandles.length < MIN_BASE_CAP; w++) {
-                await new Promise(r => setTimeout(r, 2000));
+                await this.cancellableSleep(2000);
                 let before: string | undefined = undefined;
                 let reloaded: PriceCandle[] = [];
                 while (reloaded.length < maxBaseCap) {
-                  const batch2: PriceCandle[] = await firstValueFrom(this.securitiesApi.getPrices(secId, baseTf.id, PRICE_PAGE, before)) ?? [];
+                  this.throwIfExportCancelled();
+                  const batch2: PriceCandle[] = await this.guardExport(firstValueFrom(this.securitiesApi.getPrices(secId, baseTf.id, PRICE_PAGE, before))) ?? [];
                   const rows2: PriceCandle[] = (batch2 as PriceCandle[]).map(normalizeCandle);
                   if (!rows2.length) break;
                   rows2.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
@@ -2120,10 +2523,11 @@ export class TrainerComponent implements OnInit, OnDestroy {
         }
 
         for (let i = 0; i < tfs.length; i++) {
+          this.throwIfExportCancelled();
           const tf = tfs[i];
           this.exportStatus = `${secName}: ${tf.tf} сборка (${i + 1}/${tfs.length})${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
           this.cdr.markForCheck();
-          await new Promise(r => setTimeout(r, 0));
+          await this.cancellableSleep(0);
           const cap = Math.max(260, Math.round((1200 * 300) / Math.max(1, tf.sec)));
           let candles: PriceCandle[] = [];
 
@@ -2139,7 +2543,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
             try {
               let before: string | undefined = undefined;
               while (candles.length < cap) {
-                const batch: PriceCandle[] = await firstValueFrom(this.securitiesApi.getPrices(secId, tf.id, PRICE_PAGE, before)) ?? [];
+                this.throwIfExportCancelled();
+                const batch: PriceCandle[] = await this.guardExport(firstValueFrom(this.securitiesApi.getPrices(secId, tf.id, PRICE_PAGE, before))) ?? [];
                 const rows: PriceCandle[] = (batch as PriceCandle[]).map(normalizeCandle);
                 if (!rows.length) break;
                 rows.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
@@ -2157,22 +2562,28 @@ export class TrainerComponent implements OnInit, OnDestroy {
             }
             if (candles.length < cap) {
               try {
-                const daysBack = Math.max(365, Math.ceil((cap * tf.sec) / 86400) + 30);
+                const tradingSecPerDay = tf.sec < 86400 ? 8 * 3600 : 86400;
+                const candlesPerTradingDay = Math.max(1, tradingSecPerDay / Math.max(1, tf.sec));
+                const calDays = tf.sec < 86400
+                  ? Math.ceil((cap / candlesPerTradingDay) * 1.8) + 10
+                  : Math.ceil(cap * 1.6) + 14;
+                const daysBack = Math.max(30, Math.min(365, calDays));
                 const toD = new Date();
                 const fromD = new Date(toD.getTime() - daysBack * 86400000);
                 const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
                 this.exportStatus = `${secName}: ${tf.tf} загрузка цен...${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
                 this.cdr.markForCheck();
-                await Promise.race([
+                await this.guardExport(Promise.race([
                   firstValueFrom(this.securitiesApi.loadPrices({ security_id: secId, timeframe_id: tf.id, date_from: fmt(fromD), date_to: fmt(toD) })),
                   new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 120000)),
-                ]).catch(e => console.warn('Export: loadPrices timeout/fail', secId, tf.tf, e));
+                ])).catch(e => { if (e?.message === 'EXPORT_CANCELLED') throw e; console.warn('Export: loadPrices timeout/fail', secId, tf.tf, e); });
                 for (let w = 0; w < 6 && candles.length < cap; w++) {
-                  await new Promise(r => setTimeout(r, 2000));
+                  await this.cancellableSleep(2000);
                   let before2: string | undefined = undefined;
                   let reloaded: PriceCandle[] = [];
                   while (reloaded.length < cap) {
-                    const batch2: PriceCandle[] = await firstValueFrom(this.securitiesApi.getPrices(secId, tf.id, PRICE_PAGE, before2)) ?? [];
+                    this.throwIfExportCancelled();
+                    const batch2: PriceCandle[] = await this.guardExport(firstValueFrom(this.securitiesApi.getPrices(secId, tf.id, PRICE_PAGE, before2))) ?? [];
                     const rows2: PriceCandle[] = (batch2 as PriceCandle[]).map(normalizeCandle);
                     if (!rows2.length) break;
                     rows2.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
@@ -2197,7 +2608,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
           if (candles.length > 0) {
             this.exportStatus = `${secName}: ${tf.tf} (${i + 1}/${tfs.length})${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
             this.cdr.markForCheck();
-            await new Promise(r => setTimeout(r, 0));
+            await this.cancellableSleep(0);
             byTf[String(tf.id)] = buildExportTfData(tf.id, tf.tf, tf.sec, candles);
             includedTfs.push({ id: tf.id, tf: tf.tf, sec: tf.sec });
           }
@@ -2218,7 +2629,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
 
       this.exportStatus = 'Сборка HTML...';
       this.cdr.markForCheck();
-      await new Promise(r => setTimeout(r, 0));
+      await this.cancellableSleep(0);
 
       const defaultIndicators: Array<{ uid: string; type: string; period: number; color: string }> = [];
       const seenInd = new Set<string>();
@@ -2255,11 +2666,17 @@ export class TrainerComponent implements OnInit, OnDestroy {
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       this.exportStatus = `Готово: ${securities.length} бум., ${securities.reduce((n,s)=>n+s.timeframes.length,0)} ТФ`;
     } catch (err: any) {
-      console.error('Trainer export error', err);
-      this.loadingError = err?.message || 'Ошибка экспорта тренажёра';
+      if (err?.message === 'EXPORT_CANCELLED') {
+        this.exportStatus = 'Экспорт отменён';
+      } else {
+        console.error('Trainer export error', err);
+        this.loadingError = err?.message || 'Ошибка экспорта тренажёра';
+      }
     } finally {
+      this.exportCancelRejectors = [];
       this.exporting = false;
       this.exportProgress = 0;
+      this.exportCancelled = false;
       this.cdr.markForCheck();
       setTimeout(() => { if (!this.exporting) { this.exportStatus = ''; this.exportProgress = 0; this.cdr.markForCheck(); } }, 3000);
     }
@@ -2377,6 +2794,34 @@ export function calcDonchian(candles: PriceCandle[], period: number): { middle: 
     middle.push({ dt: candles[i].dt, value: (hi + lo) / 2 });
   }
   return { middle, upper, lower };
+}
+
+export function calcKeltner(candles: PriceCandle[], period: number, mult = 2, atrPeriod = period): { middle: Pt[]; upper: Pt[]; lower: Pt[]; slope: Pt[] } {
+  const middle = calcEma(candles, period);
+  const atr = calcAtr(candles, atrPeriod);
+  const atrByDt = new Map(atr.map(p => [p.dt, p.value]));
+  const upper: Pt[] = [];
+  const lower: Pt[] = [];
+  const mid: Pt[] = [];
+  const slope: Pt[] = [];
+  for (const p of middle) {
+    const a = atrByDt.get(p.dt);
+    if (a == null) continue;
+    mid.push(p);
+    upper.push({ dt: p.dt, value: p.value + mult * a });
+    lower.push({ dt: p.dt, value: p.value - mult * a });
+  }
+  const midByIdx = mid;
+  for (let i = 0; i < midByIdx.length; i++) {
+    const j = i - period;
+    if (j < 0) continue;
+    const a = atrByDt.get(midByIdx[i].dt);
+    if (a == null || a === 0) continue;
+    const delta = midByIdx[i].value - midByIdx[j].value;
+    const deg = Math.atan2(delta, period * a) * 180 / Math.PI;
+    slope.push({ dt: midByIdx[i].dt, value: deg });
+  }
+  return { middle: mid, upper, lower, slope };
 }
 
 export function calcRsi(candles: PriceCandle[], period: number): Pt[] {

@@ -977,6 +977,9 @@ INSERT INTO indicator_param_bounds (indicator_code, param_key, strict_value, loo
     ('SQUARE', 'period', 100, 10, TRUE),
     ('SQUARE', 'std_dev', 3, 1, FALSE),
     ('DONCHIAN', 'period', 100, 10, TRUE),
+    ('KELTNER', 'period', 100, 10, TRUE),
+    ('KELTNER', 'multiplier', 4, 1, FALSE),
+    ('KELTNER', 'atr_period', 50, 5, TRUE),
     ('SOLDIERS', 'period', 10, 2, TRUE),
     ('KELTNER', 'period', 50, 10, TRUE),
     ('PSAR', 'step', 0.05, 0.01, FALSE),
@@ -1010,6 +1013,7 @@ UPDATE indicators SET script = 'SELECT calc_ind_ema(:period, :series, :security_
 UPDATE indicators SET script = 'SELECT calc_ind_macd(:fast_period, :slow_period, :signal_period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'MACD';
 UPDATE indicators SET script = 'SELECT calc_ind_bb(:period, :std_dev, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'BB';
 UPDATE indicators SET script = 'SELECT calc_ind_donchian(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'DONCHIAN';
+UPDATE indicators SET script = 'SELECT calc_ind_keltner(:period, :std_dev, :k_period, :series, :security_id, :timeframe_id, :dt, :indicator_id)', calc_kind = 'sql_script', sig_trend_def = 'pp > UPPER', sig_ct_def = 'pp < LOWER', sig_profile = 'channel' WHERE code = 'KELTNER';
 UPDATE indicators SET script = 'SELECT calc_ind_atr(:period, :series, :security_id, :timeframe_id, :dt, :indicator_id)' WHERE code = 'ATR';
 UPDATE indicators SET name = 'Price Channel (Donchian)', description = 'Канал цен / Дончиан (max high / min low)' WHERE code = 'DONCHIAN';
 UPDATE indicators SET formula = NULL, is_custom = FALSE WHERE code = 'DONCHIAN';
@@ -1269,6 +1273,10 @@ JOIN (VALUES
     ('DONCHIAN', 'UPPER', 'Верх канала (Price Channel)', 'float', FALSE, NULL, 'Max high за period', 1),
     ('DONCHIAN', 'MIDDLE', 'Середина канала', 'float', FALSE, NULL, '(Upper+Lower)/2', 2),
     ('DONCHIAN', 'LOWER', 'Низ канала (Price Channel)', 'float', FALSE, NULL, 'Min low за period', 3),
+    ('KELTNER', 'UPPER', 'Верхний канал Кельтнера', 'float', FALSE, NULL, 'EMA + multiplier*ATR', 1),
+    ('KELTNER', 'MIDDLE', 'Средняя линия Кельтнера', 'float', FALSE, NULL, 'EMA(close, period)', 2),
+    ('KELTNER', 'LOWER', 'Нижний канал Кельтнера', 'float', FALSE, NULL, 'EMA - multiplier*ATR', 3),
+    ('KELTNER', 'SLOPE', 'Наклон Келтнера (градусы)', 'float', FALSE, NULL, 'atan2(MIDDLE-MIDDLE[period], period*ATR) в градусах, -90..90', 4),
     ('ATR', 'ATR', 'Значение ATR', 'float', FALSE, NULL, 'ATR', 1),
     ('ATR', 'ATR_PCT', 'ATR в процентах', 'float', FALSE, NULL, 'ATR %', 2),
     ('ATR', 'GROWTH5', 'Рост ATR за 5 баров %', 'float', FALSE, NULL, 'Бывший GrOk: (ATR/ATR[-5]-1)*100', 3),
@@ -4605,6 +4613,7 @@ CREATE TABLE IF NOT EXISTS logic_backtest_runs (
     started_at TIMESTAMP,
     finished_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_opt_eval_bar_dt TIMESTAMP,
     opt_grid_config JSONB,
     opt_grid_arms JSONB,
@@ -4646,6 +4655,7 @@ COMMENT ON TABLE logic_portfolio_signal_state IS
 -- Upgrade existing DBs: CREATE IF NOT EXISTS does not add columns; keep in sync with CREATE above.
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS slippage_pct NUMERIC(5, 2) NOT NULL DEFAULT 0;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS exec_delay_sec INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS close_all_at_end BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE logic_backtest_runs ADD COLUMN IF NOT EXISTS portfolio_close_pending BOOLEAN NOT NULL DEFAULT FALSE;
 COMMENT ON COLUMN logic_backtest_runs.close_all_at_end IS

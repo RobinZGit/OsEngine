@@ -1,0 +1,464 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOEX M1 — лучшая логика по 30 бумагам / best logic per security</title><style>
+  :root{--bg:#090e1a;--card:#121a2e;--card2:#182342;--text:#e9eef9;--muted:#98a6c2;--line:#273153;--green:#10b981;--red:#ef4444;--accent:#60a5fa;--amber:#f59e0b}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;background:#0c1324;padding:1px 5px;border-radius:5px;color:#d3e2ff}
+  .hero{background:linear-gradient(135deg,#101a38,#1b2b59 55%,#0f3448);border-bottom:1px solid var(--line);padding:38px 0 24px}
+  .wrap{max-width:1560px;margin:0 auto;padding:0 24px}.kicker{text-transform:uppercase;letter-spacing:.16em;color:#8fb6ff;font-size:12px;font-weight:700}
+  h1{font-size:34px;line-height:1.16;margin:10px 0 8px}h1 span{color:#9fc4ff;font-size:.62em;font-weight:500}.hero p{color:#c8d5ef;margin:0 0 14px}
+  .meta{color:var(--muted);font-size:13px}nav{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}nav a{background:rgba(255,255,255,.07);border:1px solid var(--line);padding:6px 10px;border-radius:999px;font-size:12px}
+  section{padding:32px 0 6px;border-bottom:1px solid rgba(255,255,255,.05)}h2{font-size:24px;margin:0 0 14px}h3{font-size:18px;margin:22px 0 10px;color:#cfe0ff}
+  .bilingual{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:10px 0 16px}.bilingual>div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .en{color:#d7e4fb}.ru b,.en b{color:#fff}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px;margin:18px 0}.card{background:linear-gradient(160deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:14px;padding:16px}.card span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}.card strong{display:block;font-size:24px;margin:6px 0}.card small{color:var(--muted)}
+  .pos{color:var(--green)!important}.neg{color:var(--red)!important}.zero{color:var(--muted)!important}.ann{font-weight:800;font-size:1.1em;letter-spacing:.02em}
+  .warn{background:rgba(245,158,11,.09);border:1px solid rgba(245,158,11,.35);border-radius:12px;padding:12px 14px;margin:14px 0}.note{color:var(--muted);font-size:13px}
+  .tablewrap{overflow:auto;max-height:620px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+  table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#17213e;z-index:1;color:#cfe0ff;font-weight:600;white-space:nowrap}tr:hover td{background:rgba(96,165,250,.07)}td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;white-space:nowrap;border:1px solid var(--line)}.badge.counter{background:rgba(16,185,129,.15);color:#a7f3d0}.badge.trend{background:rgba(96,165,250,.15);color:#bfdbfe}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}.controls label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}select,input{background:#0d1427;color:#e6efff;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px}
+  .formula-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}.formula-grid>div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}pre{white-space:pre-wrap;margin:8px 0 0;color:#cfe0ff;font-size:12.5px}
+  .conclusions{display:grid;grid-template-columns:1fr 1fr;gap:18px}.conclusions>div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 18px}
+  .footer{padding:30px 0 46px;color:var(--muted);font-size:12px}@media(max-width:900px){.bilingual,.formula-grid,.conclusions{grid-template-columns:1fr}h1{font-size:27px}}
+  </style></head><body>
+<header class="hero" id="top"><div class="wrap"><div class="kicker">OsEngine · MultiLogicTradePg · MOEX · M1 · best logic per security</div>
+<h1>Лучшая логика Кельтнера на 1 минуте<br><span>Best Keltner logic on M1 for 30 MOEX securities — one rule per ticker</span></h1>
+<p>Одна минута, 30 бумаг, 384 конфигурации на бумагу, комиссия 0.03% / side. Полный период плюс честный по-бумажный walk-forward. / One minute, 30 securities, 384 configurations each, 0.03% / side commission. Full-period winner plus a proper per-security walk-forward check.</p>
+<div class="meta">Branch <code>opencode/classic-indicator-derivatives-study</code> · 2026-10-01 → 2026-11-05 (36 calendar days) · internal FinRes model · no commits or push</div>
+<nav><a href="#summary">Сводка / Summary</a><a href="#method">Метод / Method</a><a href="#best-table">Лучшие по бумагам / Best per ticker</a><a href="#wf-table">Walk-forward</a><a href="#formula">Формула / Formula</a><a href="#conclusions">Выводы / Conclusions</a><a href="#repro">Файлы / Repro</a></nav>
+</div></header>
+
+<section id="summary" class="wrap"><h2>1. Сводка / Executive summary</h2>
+<div class="bilingual"><div class="ru"><p>Под «топ-30» здесь понимаются <b>первые 30 инструментов локальной подборки MOEX (ID 1–30)</b>: 29 обыкновенных акций и <code>TRNFP</code>. Привилегированные ID 31–34 исключены. На M1 полный период дал положительную лучшую конфигурацию у <b>26 из 30</b> бумаг; у 4 лучший результат всё равно отрицательный. Сумма лучших результатов — <b>145,982.81</b> FinRes. Абсолютный лидер — <b>ALRS</b>, <code>kc_revert|none|c003|close|longshort</code>, 22,108.61 FinRes (+24.8% годовых).</p></div>
+<div class="en"><p>“Top-30” here means the <b>first 30 instruments in the local MOEX set (ID 1–30)</b>: 29 common shares plus <code>TRNFP</code>; preferred IDs 31–34 are excluded. On M1, the best full-period configuration was positive for <b>26 of 30</b> securities; for 4 even the best result is negative. Sum of best results: <b>145,982.81</b> FinRes. Absolute leader: <b>ALRS</b>, <code>kc_revert|none|c003|close|longshort</code>, 22,108.61 FinRes (+24.8% annualized).</p></div></div>
+<div class="cards"><div class="card"><span>Positive full-period</span><strong class="pos">26/30</strong><small>best FinRes &gt; 0</small></div><div class="card"><span>Sum of best FinRes</span><strong class="pos">145,982.81</strong><small>internal relative model</small></div><div class="card"><span>Most common logic</span><strong>kc_revert</strong><small>20/30 securities</small></div><div class="card"><span>Per-security WF</span><strong class="neg">-16,511.01</strong><small>14/30 positive, 4 in both folds</small></div></div>
+<div class="warn"><div class="bilingual"><div class="ru"><b>Важно:</b> «лучшая логика» ниже — максимум FinRes на полном периоде, то есть in-sample. Настоящий по-бумажный walk-forward (выбор конфигурации по in-sample, проверка на следующем OOS-окне) дал суммарно <b class="neg">-16,511.01</b>, положительный результат у 14/30 бумаг и у обеих складок только у 4. Полные победители не являются устойчивой торговой рекомендацией.</div><div class="en"><b>Important:</b> “best logic” below is the full-period FinRes maximum, i.e. in-sample. A proper per-security walk-forward (select on in-sample, test on the next OOS window) totals <b class="neg">-16,511.01</b>, with 14/30 securities positive and only 4 positive in both folds. Full-period winners are not a turnkey trading recommendation.</div></div></div>
+<h3>Топ-5 по FinRes / Top-5 by FinRes</h3><ol><li><b>ALRS</b> — <code>kc_revert|none|c003|close|longshort</code>, 22,108.61 FinRes (+24.8%), 170 сделок, win 75.9%</li><li><b>CHMF</b> — <code>kc_revert|pct2_4|c003|close|longshort</code>, 14,986.41 FinRes (+16.3%), 115 сделок, win 76.5%</li><li><b>UPRO</b> — <code>kc_revert|pct1_2|c003|close|longshort</code>, 10,028.57 FinRes (+10.6%), 101 сделок, win 75.2%</li><li><b>FLOT</b> — <code>kc_squeeze|pct1_2|c003|close|longshort</code>, 8,700.66 FinRes (+9.2%), 71 сделок, win 69.0%</li><li><b>MTLR</b> — <code>kc_revert|none|c003|close|longshort</code>, 8,349.46 FinRes (+8.8%), 111 сделок, win 67.6%</li></ol>
+<h3>Устойчивые кандидаты walk-forward / Walk-forward-consistent candidates</h3><ul><li><b>PHOR</b>: 2,135.88 FinRes, обе складки положительны (660.22 + 1,475.66)</li><li><b>CHMF</b>: 5,373.00 FinRes, обе складки положительны (4,276.90 + 1,096.10)</li><li><b>SNGS</b>: 2,965.98 FinRes, обе складки положительны (2,077.07 + 888.91)</li><li><b>ROSN</b>: 1,427.36 FinRes, обе складки положительны (571.06 + 856.30)</li></ul>
+</section>
+
+<section id="method" class="wrap"><h2>2. Метод / Method</h2>
+<div class="bilingual"><div class="ru"><p>Для каждой бумаги перебраны <b>384 конфигурации</b>: 8 сигналов Кельтнера × 6 режимов стопа/тейка × 2 комиссии × 2 исполнения × 2 стиля. В таблице оставлены только реалистичные <code>c003</code> (0.03%/сторона) и хотя бы 1 сделка. Сигнал: закрытие цены выше/ниже средней, верхней или нижней полосы EMA20 ± 2×ATR20, с опциональными условиями наклона средней или расширения/сжатия ширины канала. Исполнение: <code>close</code> по закрытию сигнального бара или <code>next</code> по закрытию следующего бара того же дня. Позиции принудительно закрываются в конце торгового дня.</p></div>
+<div class="en"><p>For each security, <b>384 configurations</b> were scanned: 8 Keltner signals × 6 stop/take modes × 2 commission interpretations × 2 executions × 2 styles. The table keeps only realistic <code>c003</code> (0.03%/side) and at least 1 trade. Signals use close vs EMA20 ± 2×ATR20 bands, with optional midline-slope or channel-width expansion/contraction conditions. Fills: <code>close</code> at the signal bar close or <code>next</code> at the next same-day bar close. Positions are force-closed at the end of each trading day.</p></div></div>
+<div class="formula-grid"><div><b>Годовая доходность / Annualized return</b><pre>(1 + FinRes / 1 000 000)^(365 / 36) − 1</pre><p class="note">«н/о» при FinRes ≤ −1 000 000. / “н/о” when FinRes ≤ −1,000,000.</p></div><div><b>Выбор / Selection</b><pre>max FinRes among c003 configs with trades ≥ 1</pre><p class="note">Без фильтров, без проскальзывания, 10% депозита на позицию, не более 10 позиций в глобальной модели. / No filters, no slippage, 10% equity per position, max 10 positions in the global model.</p></div></div>
+<div class="warn"><div class="bilingual"><div class="ru"><b>Оговорка данных:</b> M1-бары для 25 из 30 бумаг заканчиваются <b>2026-10-23</b>, хотя номинальное окно до 2026-11-05. Поэтому годовая доходность считается по номинальным 36 дням (консервативно), а третий fold walk-forward (10-29…11-05) для большинства бумаг пустой и исключён из честной проверки.</div><div class="en"><b>Data caveat:</b> M1 bars for 25 of 30 securities end on <b>2026-10-23</b>, although the nominal window runs to 2026-11-05. Annualization therefore uses the nominal 36 days (conservative), and the third walk-forward fold (10-29…11-05) is empty for most securities and is excluded from the proper check.</div></div></div>
+</section>
+
+<section id="best-table" class="wrap"><h2>3. Лучшая логика по каждой бумаге / Best logic per security</h2>
+<div class="controls"><label>Семья / Family<select id="familyFilter"><option value="">all</option><option value="counter">контр-тренд</option><option value="trend">тренд</option></select></label><label>Статус / Status<select id="statusFilter"><option value="">all</option><option value="pos">FinRes &gt; 0</option><option value="neg">FinRes ≤ 0</option></select></label><label>Тикер / Ticker<input id="tickerSearch" placeholder="SBER, GAZP…"></label></div>
+<div class="tablewrap"><table id="bestTable"><thead><tr><th>#</th><th>Тикер</th><th>Название</th><th>Лучшая логика / Best logic</th><th>Семья</th><th>Стоп/тейк</th><th>Exec</th><th>Стиль</th><th>FinRes</th><th>Годовая</th><th>Сделки</th><th>Win%</th><th>WF OOS</th><th>WF folds</th><th>Данные до</th></tr></thead><tbody><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="sist">
+    <td class="num">1</td><td><b>SIST</b></td><td>АФК Система</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">5,030.20</td><td class="num ann pos">+5.2%</td><td class="num">104</td><td class="num">69.2%</td>
+    <td class="num neg">-4,391.95</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_squeeze" data-status="pos" data-ticker="phor">
+    <td class="num">2</td><td><b>PHOR</b></td><td>ФосАгро</td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code><br><small>KC-squeeze · C &lt; Low and dWidth &lt; 0 → long; C &gt; Up and dWidth &lt; 0 → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">2,453.76</td><td class="num ann pos">+2.5%</td><td class="num">56</td><td class="num">58.9%</td>
+    <td class="num pos">2,135.88</td><td class="num">2/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_squeeze" data-status="pos" data-ticker="flot">
+    <td class="num">3</td><td><b>FLOT</b></td><td>Совкомфлот</td>
+    <td><code>kc_squeeze|pct1_2|c003|close|longshort</code><br><small>KC-squeeze · C &lt; Low and dWidth &lt; 0 → long; C &gt; Up and dWidth &lt; 0 → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 1%, take 2%</td><td>close</td><td>L+S</td>
+    <td class="num pos">8,700.66</td><td class="num ann pos">+9.2%</td><td class="num">71</td><td class="num">69.0%</td>
+    <td class="num pos">2,131.56</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="aflt">
+    <td class="num">4</td><td><b>AFLT</b></td><td>Аэрофлот</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">7,767.27</td><td class="num ann pos">+8.2%</td><td class="num">94</td><td class="num">72.3%</td>
+    <td class="num neg">-1,082.09</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="ydex">
+    <td class="num">5</td><td><b>YDEX</b></td><td>Яндекс</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 1%, take 2%</td><td>close</td><td>L+S</td>
+    <td class="num pos">4,890.64</td><td class="num ann pos">+5.1%</td><td class="num">109</td><td class="num">61.5%</td>
+    <td class="num pos">112.46</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="rtkm">
+    <td class="num">6</td><td><b>RTKM</b></td><td>Ростелеком</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">4,516.87</td><td class="num ann pos">+4.7%</td><td class="num">91</td><td class="num">67.0%</td>
+    <td class="num neg">-408.76</td><td class="num">0/2</td><td class="num">2026-11-02</td>
+  </tr><tr data-family="counter" data-strategy="kc_squeeze" data-status="neg" data-ticker="moex">
+    <td class="num">7</td><td><b>MOEX</b></td><td>Московская биржа</td>
+    <td><code>kc_squeeze|none|c003|next|longshort</code><br><small>KC-squeeze · C &lt; Low and dWidth &lt; 0 → long; C &gt; Up and dWidth &lt; 0 → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>next</td><td>L+S</td>
+    <td class="num neg">-1,244.04</td><td class="num ann neg">-1.3%</td><td class="num">51</td><td class="num">54.9%</td>
+    <td class="num neg">-1,649.54</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="upro">
+    <td class="num">8</td><td><b>UPRO</b></td><td>Юнипро</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 1%, take 2%</td><td>close</td><td>L+S</td>
+    <td class="num pos">10,028.57</td><td class="num ann pos">+10.6%</td><td class="num">101</td><td class="num">75.2%</td>
+    <td class="num pos">559.78</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_mid" data-status="pos" data-ticker="rste">
+    <td class="num">9</td><td><b>RSTE</b></td><td>ФСК-Россети</td>
+    <td><code>kc_mid|none|c003|close|long</code><br><small>KC-mid · C &lt; Mid → long; C &gt; Mid → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L</td>
+    <td class="num pos">566.59</td><td class="num ann pos">+0.6%</td><td class="num">374</td><td class="num">83.7%</td>
+    <td class="num pos">1,198.67</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="trend" data-strategy="kt_expand" data-status="pos" data-ticker="irao">
+    <td class="num">10</td><td><b>IRAO</b></td><td>Интер РАО</td>
+    <td><code>kt_expand|none|c003|next|long</code><br><small>KT-expand · C &gt; Up and dWidth &gt; 0 → long; C &lt; Low and dWidth &gt; 0 → exit/short</small></td>
+    <td><span class="badge trend">тренд</span></td>
+    <td>No stop / no take</td><td>next</td><td>L</td>
+    <td class="num pos">1,835.86</td><td class="num ann pos">+1.9%</td><td class="num">43</td><td class="num">41.9%</td>
+    <td class="num neg">-1,997.56</td><td class="num">0/2</td><td class="num">2026-11-02</td>
+  </tr><tr data-family="counter" data-strategy="kc_mid" data-status="pos" data-ticker="hydr">
+    <td class="num">11</td><td><b>HYDR</b></td><td>РусГидро</td>
+    <td><code>kc_mid|none|c003|close|longshort</code><br><small>KC-mid · C &lt; Mid → long; C &gt; Mid → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">3,132.38</td><td class="num ann pos">+3.2%</td><td class="num">861</td><td class="num">74.4%</td>
+    <td class="num neg">-6,252.68</td><td class="num">0/2</td><td class="num">2026-11-03</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="rual">
+    <td class="num">12</td><td><b>RUAL</b></td><td>РУСАЛ</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">4,061.76</td><td class="num ann pos">+4.2%</td><td class="num">90</td><td class="num">70.0%</td>
+    <td class="num neg">-1,711.90</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_squeeze" data-status="pos" data-ticker="vtbr">
+    <td class="num">13</td><td><b>VTBR</b></td><td>ВТБ</td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code><br><small>KC-squeeze · C &lt; Low and dWidth &lt; 0 → long; C &gt; Up and dWidth &lt; 0 → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">2,136.48</td><td class="num ann pos">+2.2%</td><td class="num">57</td><td class="num">59.6%</td>
+    <td class="num neg">-826.06</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="mtss">
+    <td class="num">14</td><td><b>MTSS</b></td><td>МТС</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">3,742.91</td><td class="num ann pos">+3.9%</td><td class="num">78</td><td class="num">69.2%</td>
+    <td class="num neg">-1,826.71</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="mgnt">
+    <td class="num">15</td><td><b>MGNT</b></td><td>Магнит</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">5,960.27</td><td class="num ann pos">+6.2%</td><td class="num">106</td><td class="num">67.9%</td>
+    <td class="num neg">-328.49</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="mtlr">
+    <td class="num">16</td><td><b>MTLR</b></td><td>Мечел (обыкновенные)</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">8,349.46</td><td class="num ann pos">+8.8%</td><td class="num">111</td><td class="num">67.6%</td>
+    <td class="num pos">1,462.70</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="magn">
+    <td class="num">17</td><td><b>MAGN</b></td><td>ММК</td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 2%, take 4%</td><td>close</td><td>L+S</td>
+    <td class="num pos">5,594.24</td><td class="num ann pos">+5.8%</td><td class="num">106</td><td class="num">67.9%</td>
+    <td class="num neg">-444.31</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="nlmk">
+    <td class="num">18</td><td><b>NLMK</b></td><td>НЛМК</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">1,011.32</td><td class="num ann pos">+1.0%</td><td class="num">88</td><td class="num">68.2%</td>
+    <td class="num neg">-3,885.63</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="chmf">
+    <td class="num">19</td><td><b>CHMF</b></td><td>Северсталь</td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 2%, take 4%</td><td>close</td><td>L+S</td>
+    <td class="num pos">14,986.41</td><td class="num ann pos">+16.3%</td><td class="num">115</td><td class="num">76.5%</td>
+    <td class="num pos">5,373.00</td><td class="num">2/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="alrs">
+    <td class="num">20</td><td><b>ALRS</b></td><td>Алроса</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">22,108.61</td><td class="num ann pos">+24.8%</td><td class="num">170</td><td class="num">75.9%</td>
+    <td class="num pos">1,934.44</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="neg" data-ticker="plzl">
+    <td class="num">21</td><td><b>PLZL</b></td><td>Полюс</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 1%, take 2%</td><td>close</td><td>L+S</td>
+    <td class="num neg">-1,422.58</td><td class="num ann neg">-1.4%</td><td class="num">95</td><td class="num">62.1%</td>
+    <td class="num neg">-7,259.21</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_squeeze" data-status="pos" data-ticker="sngs">
+    <td class="num">22</td><td><b>SNGS</b></td><td>Сургутнефтегаз (обыкновенные)</td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code><br><small>KC-squeeze · C &lt; Low and dWidth &lt; 0 → long; C &gt; Up and dWidth &lt; 0 → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">5,230.54</td><td class="num ann pos">+5.4%</td><td class="num">63</td><td class="num">73.0%</td>
+    <td class="num pos">2,965.98</td><td class="num">2/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="tatn">
+    <td class="num">23</td><td><b>TATN</b></td><td>Татнефть (обыкновенные)</td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 2%, take 4%</td><td>close</td><td>L+S</td>
+    <td class="num pos">5,357.01</td><td class="num ann pos">+5.6%</td><td class="num">101</td><td class="num">70.3%</td>
+    <td class="num pos">1,152.24</td><td class="num">1/2</td><td class="num">2026-11-01</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="gmkn">
+    <td class="num">24</td><td><b>GMKN</b></td><td>Норникель</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 1%, take 2%</td><td>close</td><td>L+S</td>
+    <td class="num pos">2,592.33</td><td class="num ann pos">+2.7%</td><td class="num">102</td><td class="num">63.7%</td>
+    <td class="num pos">845.69</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="nvtk">
+    <td class="num">25</td><td><b>NVTK</b></td><td>НОВАТЭК</td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 2%, take 4%</td><td>close</td><td>L+S</td>
+    <td class="num pos">7,655.53</td><td class="num ann pos">+8.0%</td><td class="num">124</td><td class="num">69.4%</td>
+    <td class="num neg">-1,174.12</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_squeeze" data-status="pos" data-ticker="rosn">
+    <td class="num">26</td><td><b>ROSN</b></td><td>Роснефть</td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code><br><small>KC-squeeze · C &lt; Low and dWidth &lt; 0 → long; C &gt; Up and dWidth &lt; 0 → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">6,681.85</td><td class="num ann pos">+7.0%</td><td class="num">50</td><td class="num">64.0%</td>
+    <td class="num pos">1,427.36</td><td class="num">2/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="lkoh">
+    <td class="num">27</td><td><b>LKOH</b></td><td>ЛУКОЙЛ</td>
+    <td><code>kc_revert|none|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>No stop / no take</td><td>close</td><td>L+S</td>
+    <td class="num pos">2,071.24</td><td class="num ann pos">+2.1%</td><td class="num">121</td><td class="num">64.5%</td>
+    <td class="num pos">265.37</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="pos" data-ticker="gazp">
+    <td class="num">28</td><td><b>GAZP</b></td><td>Газпром</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 1%, take 2%</td><td>close</td><td>L+S</td>
+    <td class="num pos">5,432.98</td><td class="num ann pos">+5.6%</td><td class="num">98</td><td class="num">67.3%</td>
+    <td class="num pos">246.00</td><td class="num">1/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="counter" data-strategy="kc_revert" data-status="neg" data-ticker="sber">
+    <td class="num">29</td><td><b>SBER</b></td><td>Сбербанк (обыкновенные)</td>
+    <td><code>kc_revert|pct1_2|c003|next|long</code><br><small>KC-revert · C &lt; Low → long; C &gt; Up → exit/short</small></td>
+    <td><span class="badge counter">контр-тренд</span></td>
+    <td>Stop 1%, take 2%</td><td>next</td><td>L</td>
+    <td class="num neg">-2,441.06</td><td class="num ann neg">-2.4%</td><td class="num">52</td><td class="num">59.6%</td>
+    <td class="num neg">-1,821.64</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr><tr data-family="trend" data-strategy="kt_break" data-status="neg" data-ticker="trnfp">
+    <td class="num">30</td><td><b>TRNFP</b></td><td>Транснефть (привилегированные)</td>
+    <td><code>kt_break|none|c003|next|longshort</code><br><small>KT-break · C &gt; Up → long; C &lt; Low → exit/short</small></td>
+    <td><span class="badge trend">тренд</span></td>
+    <td>No stop / no take</td><td>next</td><td>L+S</td>
+    <td class="num neg">-805.25</td><td class="num ann neg">-0.8%</td><td class="num">66</td><td class="num">39.4%</td>
+    <td class="num neg">-3,261.49</td><td class="num">0/2</td><td class="num">2026-10-23</td>
+  </tr></tbody></table></div>
+<p class="note">Строки сортируются по ID бумаги. Ключ конфигурации: <code>signal|risk|c003|execution|style</code>. WF OOS — сумма по двум пригодным складкам; это не annualized доходность. / Rows are ordered by security ID. Config key: <code>signal|risk|c003|execution|style</code>. WF OOS is the sum over the two usable folds; it is not annualized.</p>
+</section>
+
+<section id="wf-table" class="wrap"><h2>4. По-бумажный walk-forward / Per-security walk-forward</h2>
+<div class="bilingual"><div class="ru"><p>Две пригодные складки: in-sample 10-01…10-14 → OOS 10-15…10-21 и in-sample 10-08…10-21 → OOS 10-22…10-28. Для каждой бумаги и складки выбиралась лучшая конфигурация по in-sample FinRes (минимум 1 сделка), затем применялась к OOS. Суммарно: <b class="neg">-16,511.01</b> FinRes; положительный OOS у <b>14/30</b>; обе складки положительны у <b>4</b>. Чаще всего выбирались <code>kc_mid</code> (12) и <code>kc_revert</code> (9).</p></div>
+<div class="en"><p>Two usable folds: in-sample 10-01…10-14 → OOS 10-15…10-21 and in-sample 10-08…10-21 → OOS 10-22…10-28. For each security and fold, the config with the best in-sample FinRes (min 1 trade) was selected and applied to OOS. Total: <b class="neg">-16,511.01</b> FinRes; positive OOS for <b>14/30</b>; both folds positive for <b>4</b>. Most selected: <code>kc_mid</code> (12) and <code>kc_revert</code> (9).</p></div></div>
+<div class="tablewrap"><table id="wfTable"><thead><tr><th>Тикер</th><th>IS→OOS 1: selected</th><th>OOS FinRes 1</th><th>IS→OOS 2: selected</th><th>OOS FinRes 2</th><th>Total OOS</th><th>Positive folds</th></tr></thead><tbody><tr data-ticker="sist">
+    <td><b>SIST</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-1,764.03</td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-2,627.92</td>
+    <td class="num neg">-4,391.95</td><td class="num">0/2</td>
+  </tr><tr data-ticker="phor">
+    <td><b>PHOR</b></td>
+    <td><code>kc_squeeze|none|c003|close|long</code></td><td class="num pos">660.22</td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code></td><td class="num pos">1,475.66</td>
+    <td class="num pos">2,135.88</td><td class="num">2/2</td>
+  </tr><tr data-ticker="flot">
+    <td><b>FLOT</b></td>
+    <td><code>kc_squeeze|pct1_2|c003|close|longshort</code></td><td class="num pos">2,381.86</td>
+    <td><code>kc_squeeze|pct1_2|c003|close|longshort</code></td><td class="num neg">-250.30</td>
+    <td class="num pos">2,131.56</td><td class="num">1/2</td>
+  </tr><tr data-ticker="aflt">
+    <td><b>AFLT</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-134.44</td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code></td><td class="num neg">-947.65</td>
+    <td class="num neg">-1,082.09</td><td class="num">0/2</td>
+  </tr><tr data-ticker="ydex">
+    <td><b>YDEX</b></td>
+    <td><code>kc_revert|pct1_2|c003|close|long</code></td><td class="num neg">-191.00</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code></td><td class="num pos">303.46</td>
+    <td class="num pos">112.46</td><td class="num">1/2</td>
+  </tr><tr data-ticker="rtkm">
+    <td><b>RTKM</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-127.40</td>
+    <td><code>kc_squeeze|none|c003|next|longshort</code></td><td class="num neg">-281.36</td>
+    <td class="num neg">-408.76</td><td class="num">0/2</td>
+  </tr><tr data-ticker="moex">
+    <td><b>MOEX</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-595.86</td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num neg">-1,053.68</td>
+    <td class="num neg">-1,649.54</td><td class="num">0/2</td>
+  </tr><tr data-ticker="upro">
+    <td><b>UPRO</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num pos">2,161.73</td>
+    <td><code>kc_squeeze|stop2atr|c003|close|longshort</code></td><td class="num neg">-1,601.95</td>
+    <td class="num pos">559.78</td><td class="num">1/2</td>
+  </tr><tr data-ticker="rste">
+    <td><b>RSTE</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num pos">1,331.42</td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-132.75</td>
+    <td class="num pos">1,198.67</td><td class="num">1/2</td>
+  </tr><tr data-ticker="irao">
+    <td><b>IRAO</b></td>
+    <td><code>kc_revert|pct1_2|c003|close|long</code></td><td class="num neg">-1,076.53</td>
+    <td><code>kt_break|none|c003|next|longshort</code></td><td class="num neg">-921.03</td>
+    <td class="num neg">-1,997.56</td><td class="num">0/2</td>
+  </tr><tr data-ticker="hydr">
+    <td><b>HYDR</b></td>
+    <td><code>kc_mid|pct1_2|c003|close|longshort</code></td><td class="num neg">-2,797.51</td>
+    <td><code>kc_revert|stop2atr|c003|close|longshort</code></td><td class="num neg">-3,455.17</td>
+    <td class="num neg">-6,252.68</td><td class="num">0/2</td>
+  </tr><tr data-ticker="rual">
+    <td><b>RUAL</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-114.27</td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num neg">-1,597.63</td>
+    <td class="num neg">-1,711.90</td><td class="num">0/2</td>
+  </tr><tr data-ticker="vtbr">
+    <td><b>VTBR</b></td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code></td><td class="num neg">-1,213.40</td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num pos">387.34</td>
+    <td class="num neg">-826.06</td><td class="num">1/2</td>
+  </tr><tr data-ticker="mtss">
+    <td><b>MTSS</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-1,059.77</td>
+    <td><code>kc_revert|none|c003|next|longshort</code></td><td class="num neg">-766.94</td>
+    <td class="num neg">-1,826.71</td><td class="num">0/2</td>
+  </tr><tr data-ticker="mgnt">
+    <td><b>MGNT</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-706.36</td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code></td><td class="num pos">377.87</td>
+    <td class="num neg">-328.49</td><td class="num">1/2</td>
+  </tr><tr data-ticker="mtlr">
+    <td><b>MTLR</b></td>
+    <td><code>kc_squeeze|pct1_2|c003|close|longshort</code></td><td class="num pos">1,848.33</td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num neg">-385.63</td>
+    <td class="num pos">1,462.70</td><td class="num">1/2</td>
+  </tr><tr data-ticker="magn">
+    <td><b>MAGN</b></td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code></td><td class="num pos">31.61</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code></td><td class="num neg">-475.92</td>
+    <td class="num neg">-444.31</td><td class="num">1/2</td>
+  </tr><tr data-ticker="nlmk">
+    <td><b>NLMK</b></td>
+    <td><code>kc_mid|none|c003|close|longshort</code></td><td class="num neg">-2,048.60</td>
+    <td><code>kc_revert|pct1_2|c003|next|longshort</code></td><td class="num neg">-1,837.03</td>
+    <td class="num neg">-3,885.63</td><td class="num">0/2</td>
+  </tr><tr data-ticker="chmf">
+    <td><b>CHMF</b></td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code></td><td class="num pos">4,276.90</td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code></td><td class="num pos">1,096.10</td>
+    <td class="num pos">5,373.00</td><td class="num">2/2</td>
+  </tr><tr data-ticker="alrs">
+    <td><b>ALRS</b></td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num pos">3,413.00</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code></td><td class="num neg">-1,478.56</td>
+    <td class="num pos">1,934.44</td><td class="num">1/2</td>
+  </tr><tr data-ticker="plzl">
+    <td><b>PLZL</b></td>
+    <td><code>kc_mid|pct1_2|c003|close|long</code></td><td class="num neg">-4,397.52</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code></td><td class="num neg">-2,861.69</td>
+    <td class="num neg">-7,259.21</td><td class="num">0/2</td>
+  </tr><tr data-ticker="sngs">
+    <td><b>SNGS</b></td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num pos">2,077.07</td>
+    <td><code>kc_squeeze|pct1_2|c003|close|longshort</code></td><td class="num pos">888.91</td>
+    <td class="num pos">2,965.98</td><td class="num">2/2</td>
+  </tr><tr data-ticker="tatn">
+    <td><b>TATN</b></td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code></td><td class="num neg">-377.81</td>
+    <td><code>kc_revert|none|c003|next|longshort</code></td><td class="num pos">1,530.05</td>
+    <td class="num pos">1,152.24</td><td class="num">1/2</td>
+  </tr><tr data-ticker="gmkn">
+    <td><b>GMKN</b></td>
+    <td><code>kc_mid|none|c003|close|long</code></td><td class="num neg">-695.09</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code></td><td class="num pos">1,540.78</td>
+    <td class="num pos">845.69</td><td class="num">1/2</td>
+  </tr><tr data-ticker="nvtk">
+    <td><b>NVTK</b></td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num neg">-849.30</td>
+    <td><code>kc_revert|pct2_4|c003|close|longshort</code></td><td class="num neg">-324.82</td>
+    <td class="num neg">-1,174.12</td><td class="num">0/2</td>
+  </tr><tr data-ticker="rosn">
+    <td><b>ROSN</b></td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code></td><td class="num pos">571.06</td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code></td><td class="num pos">856.30</td>
+    <td class="num pos">1,427.36</td><td class="num">2/2</td>
+  </tr><tr data-ticker="lkoh">
+    <td><b>LKOH</b></td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num pos">601.59</td>
+    <td><code>kc_revert|none|c003|close|longshort</code></td><td class="num neg">-336.22</td>
+    <td class="num pos">265.37</td><td class="num">1/2</td>
+  </tr><tr data-ticker="gazp">
+    <td><b>GAZP</b></td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code></td><td class="num pos">279.23</td>
+    <td><code>kc_revert|pct1_2|c003|close|longshort</code></td><td class="num neg">-33.23</td>
+    <td class="num pos">246.00</td><td class="num">1/2</td>
+  </tr><tr data-ticker="sber">
+    <td><b>SBER</b></td>
+    <td><code>kc_squeeze|none|c003|next|long</code></td><td class="num neg">-127.07</td>
+    <td><code>kc_squeeze|none|c003|next|longshort</code></td><td class="num neg">-1,694.57</td>
+    <td class="num neg">-1,821.64</td><td class="num">0/2</td>
+  </tr><tr data-ticker="trnfp">
+    <td><b>TRNFP</b></td>
+    <td><code>kc_squeeze|none|c003|close|longshort</code></td><td class="num neg">-2,613.31</td>
+    <td><code>kt_break|none|c003|next|longshort</code></td><td class="num neg">-648.18</td>
+    <td class="num neg">-3,261.49</td><td class="num">0/2</td>
+  </tr></tbody></table></div>
+</section>
+
+<section id="formula" class="wrap"><h2>5. Формула и файлы / Formula &amp; files</h2>
+<div class="formula-grid"><div><b>FinRes</b><pre>equity − 1 000 000; 10% notional per position; PnL = gross% × notional − 0.03% × notional per side</pre></div><div><b>Annualized</b><pre>(1 + FinRes / 1 000 000)^(365 / 36) − 1</pre></div></div>
+</section>
+
+<section id="conclusions" class="wrap"><h2>6. Выводы / Conclusions</h2><div class="conclusions"><div class="ru"><ul>
+<li>На M1 доминирует контр-тренд: <code>kc_revert</code> у 20/30, <code>kc_squeeze</code> у 6/30; тренд-сигналы встречаются редко.</li>
+<li>Без стопа/тейка лучшие логики у 19/30 бумаг; процентные стопы 1%/2% и 2%/4% занимают остаток.</li>
+<li>4 бумаг не дают положительной логики даже на полном периоде: MOEX, PLZL, SBER, TRNFP.</li>
+<li>Честный walk-forward отрицательный: -16,511.01 FinRes, 4 бумаги с двумя положительными складками. Это предупреждение против прямой торговли in-sample-победителями.</li>
+<li>При буквальной комиссии 3.00%/сторона положительных конфигураций на M1 нет — как и в предыдущих отчётах.</li>
+</ul></div><div class="en"><ul>
+<li>M1 is dominated by counter-trend rules: <code>kc_revert</code> for 20/30 and <code>kc_squeeze</code> for 6/30; trend signals are rare.</li>
+<li>No stop/take wins for 19/30 securities; percentage stops 1%/2% and 2%/4% make up the rest.</li>
+<li>4 securities have no positive logic even on the full period: MOEX, PLZL, SBER, TRNFP.</li>
+<li>Proper walk-forward is negative: -16,511.01 FinRes, with 4 securities positive in both folds — a warning against trading the in-sample winners directly.</li>
+<li>At the literal 3.00%/side commission there are no positive M1 configurations, consistent with earlier reports.</li>
+</ul></div></div></section>
+
+<section id="repro" class="wrap"><h2>7. Воспроизводимость / Reproducibility</h2><div class="bilingual"><div class="ru"><p>Скрипты: <code>keltner_study.js</code>, <code>keltner_walkforward_study.js</code>, <code>m1_top30_per_sec_wf.js</code>, <code>build_m1_top30_report.js</code> в temp-каталоге сессии. Результаты: <code>RESEARCH_keltner_moex_m1_top30_best_logic.json</code> и <code>.csv</code> рядом с этим отчётом. Исходные цены: <code>RESEARCH_keltner_moex_prices.csv</code> и локальная база <code>hs/prices.csv</code>. Коммитов и push не было.</p></div><div class="en"><p>Scripts: <code>keltner_study.js</code>, <code>keltner_walkforward_study.js</code>, <code>m1_top30_per_sec_wf.js</code>, <code>build_m1_top30_report.js</code> in the session temp folder. Results: <code>RESEARCH_keltner_moex_m1_top30_best_logic.json</code> and <code>.csv</code> next to this report. Prices: <code>RESEARCH_keltner_moex_prices.csv</code> and local DB <code>hs/prices.csv</code>. No commits or push were made.</p></div></div></section>
+
+<div class="footer wrap">Generated 2026-11-27T08:24:13.435Z · internal FinRes research, not an OsEngine engine backtest · branch <code>opencode/classic-indicator-derivatives-study</code></div>
+<script>
+(function(){
+  function filterTable(tableId, filters){
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#' + tableId + ' tbody tr'));
+    function apply(){
+      rows.forEach(function(tr){
+        var ok = filters.every(function(f){ return f(tr); });
+        tr.style.display = ok ? '' : 'none';
+      });
+    }
+    return apply;
+  }
+  var family = document.getElementById('familyFilter');
+  var status = document.getElementById('statusFilter');
+  var search = document.getElementById('tickerSearch');
+  var applyBest = filterTable('bestTable', [
+    function(tr){ return !family.value || tr.dataset.family === family.value; },
+    function(tr){ return !status.value || tr.dataset.status === status.value; },
+    function(tr){ return !search.value || tr.dataset.ticker.indexOf(search.value.toLowerCase().trim()) >= 0; }
+  ]);
+  family.addEventListener('change', applyBest);
+  status.addEventListener('change', applyBest);
+  search.addEventListener('input', applyBest);
+})();
+</script></body></html>

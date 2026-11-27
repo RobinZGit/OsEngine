@@ -550,6 +550,28 @@ BEGIN
         );
     END IF;
 
+    -- KELTNER: sql_script без scalar script template; on-the-fly через array fn.
+    IF v_code = 'KELTNER' THEN
+        SELECT a.value INTO v_ind_val
+        FROM calc_ind_keltner_array(
+            v_period,
+            v_std,
+            COALESCE(
+                parse_signal_param_num(p_params, 'k_period'),
+                parse_signal_param_num(p_params, 'atr_period'),
+                parse_signal_param_num(p_params, 'k')
+            )::INTEGER,
+            v_series,
+            p_security_id,
+            p_tf_id,
+            1,
+            p_bar_dt
+        ) a
+        ORDER BY a.dt DESC
+        LIMIT 1;
+        RETURN v_ind_val;
+    END IF;
+
     IF v_script IS NULL OR btrim(v_script) = '' THEN
         -- JS/custom indicators: no SQL on-the-fly eval; fallback to precomputed indicator_values.
         IF lower(COALESCE(v_calc_kind, '')) = 'js' OR EXISTS (
@@ -604,6 +626,7 @@ BEGIN
         v_std,
         COALESCE(
             parse_signal_param_num(p_params, 'k_period'),
+            parse_signal_param_num(p_params, 'atr_period'),
             parse_signal_param_num(p_params, 'k')
         )::INTEGER,
         COALESCE(

@@ -595,23 +595,28 @@
 
               <td class="col-timeframe">{{ row.timeframe }}</td>
 
-              <td class="col-equity-spark">
+                            <td class="col-equity-spark">
                 @if (equitySparkline(row); as spark) {
-                  <svg
-                    class="equity-sparkline"
-                    viewBox="0 0 100 24"
-                    preserveAspectRatio="none"
-                    [attr.aria-label]="isBacktestRunning(row.id) ? 'Эквити теста' : (row.is_enabled ? 'Эквити боя' : 'Эквити портфеля')"
-                  >
-                    <polyline
-                      [attr.points]="spark.points"
-                      fill="none"
-                      [attr.stroke]="spark.color"
-                      stroke-width="1.8"
-                      stroke-linejoin="round"
-                      stroke-linecap="round"
-                    ></polyline>
-                  </svg>
+                  <div class="equity-sparkline-wrap">
+                    <svg
+                      class="equity-sparkline"
+                      viewBox="0 0 100 24"
+                      preserveAspectRatio="none"
+                      [attr.aria-label]="isBacktestRunning(row.id) ? 'Эквити теста' : (row.is_enabled ? 'Эквити бой' : 'Эквити архив')"
+                    >
+                      <polyline
+                        [attr.points]="spark.points"
+                        fill="none"
+                        [attr.stroke]="spark.color"
+                        stroke-width="1.8"
+                        stroke-linejoin="round"
+                        stroke-linecap="round"
+                      ></polyline>
+                    </svg>
+                    <div class="equity-sparkline-pcts" [class.pnl-pos]="spark.pct >= 0" [class.pnl-neg]="spark.pct < 0">
+                      <span class="equity-sparkline-annual">{{ spark.annualPct >= 0 ? '+' : '' }}{{ spark.annualPct | number:'1.1-1' }}%г</span>
+                    </div>
+                  </div>
                 } @else if (isBacktestRunning(row.id) || row.is_enabled) {
                   <span class="equity-sparkline-empty" title="Эквити загружается…">…</span>
                 } @else {

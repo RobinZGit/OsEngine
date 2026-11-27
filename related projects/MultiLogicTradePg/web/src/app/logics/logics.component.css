@@ -1597,6 +1597,32 @@ tbody tr.logic-main-row:hover {
   font-size: 0.75rem;
 }
 
+.equity-sparkline-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.equity-sparkline-pcts {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.equity-sparkline-pcts.pnl-pos { color: #16a34a; }
+.equity-sparkline-pcts.pnl-neg { color: #dc2626; }
+
+.equity-sparkline-annual {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* When space is tight, hide secondary columns first — keep name, checkboxes, icons. */
 @media (max-width: 1180px) {
   .table-wrap > table .col-timeframe,

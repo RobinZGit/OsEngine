@@ -6,6 +6,7 @@ import { ReferencesService } from '../services/references.service';
 import { TrainerService } from '../services/trainer.service';
 import { MonitoringService } from '../services/monitoring.service';
 import { TerminalStateService } from '../services/terminal-state.service';
+import { LogicsService } from '../services/logics.service';
 
 describe('TrainerComponent', () => {
   let fixture: ComponentFixture<TrainerComponent>;
@@ -20,6 +21,7 @@ describe('TrainerComponent', () => {
         { provide: TrainerService, useValue: { saveSession: () => of({ ok: true }), saveTrades: () => of({ ok: true }), getSessionHistory: () => of([]), getSessionTrades: () => of([]), getStats: () => of({}) } },
         { provide: MonitoringService, useValue: { reportClientEvent: () => of({ ok: true }) } },
         { provide: TerminalStateService, useValue: { getAccounts: () => of([]) } },
+        { provide: LogicsService, useValue: { getLogics: () => of([]), getLogicIndicatorSignals: () => of([]), getLogicStops: () => of([]) } },
       ],
     }).compileComponents();
 

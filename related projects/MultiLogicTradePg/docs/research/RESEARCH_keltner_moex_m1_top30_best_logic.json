@@ -1,0 +1,2615 @@
+{
+  "meta": {
+    "generatedAt": "2026-11-27T08:24:13.444Z",
+    "top30Definition": "first 30 instruments (ID 1-30) in the local MOEX universe; 29 common + TRNFP",
+    "window": [
+      "2026-10-01",
+      "2026-11-05"
+    ],
+    "days": 36,
+    "commission": "0.03% / side",
+    "configsPerSecurity": 192,
+    "note": "Internal FinRes model, not an OsEngine engine backtest. Full-period winner is in-sample. Proper per-security walk-forward is reported separately."
+  },
+  "summary": {
+    "securities": 30,
+    "positiveFullPeriod": 26,
+    "totalFinRes": 145982.81,
+    "topProfit": [
+      {
+        "ticker": "ALRS",
+        "key": "kc_revert|none|c003|close|longshort",
+        "finRes": 22108.61,
+        "annualized": "+24.8%",
+        "trades": 170,
+        "winPct": 75.9
+      },
+      {
+        "ticker": "CHMF",
+        "key": "kc_revert|pct2_4|c003|close|longshort",
+        "finRes": 14986.41,
+        "annualized": "+16.3%",
+        "trades": 115,
+        "winPct": 76.5
+      },
+      {
+        "ticker": "UPRO",
+        "key": "kc_revert|pct1_2|c003|close|longshort",
+        "finRes": 10028.57,
+        "annualized": "+10.6%",
+        "trades": 101,
+        "winPct": 75.2
+      },
+      {
+        "ticker": "FLOT",
+        "key": "kc_squeeze|pct1_2|c003|close|longshort",
+        "finRes": 8700.66,
+        "annualized": "+9.2%",
+        "trades": 71,
+        "winPct": 69
+      },
+      {
+        "ticker": "MTLR",
+        "key": "kc_revert|none|c003|close|longshort",
+        "finRes": 8349.46,
+        "annualized": "+8.8%",
+        "trades": 111,
+        "winPct": 67.6
+      }
+    ],
+    "wfPositiveSecurities": 14,
+    "wfBothFoldsPositive": [
+      "PHOR",
+      "CHMF",
+      "SNGS",
+      "ROSN"
+    ],
+    "wfGrandTotal": -16511.009999999995,
+    "familyCount": {
+      "counter": 28,
+      "trend": 2
+    },
+    "strategyCount": {
+      "kc_revert": 20,
+      "kc_squeeze": 6,
+      "kc_mid": 2,
+      "kt_expand": 1,
+      "kt_break": 1
+    },
+    "riskCount": {
+      "none": 19,
+      "pct1_2": 7,
+      "pct2_4": 4
+    },
+    "styleCount": {
+      "longshort": 27,
+      "long": 3
+    },
+    "execCount": {
+      "close": 26,
+      "next": 4
+    }
+  },
+  "best": [
+    {
+      "sec": 1,
+      "ticker": "SIST",
+      "name": "АФК Система",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 5030.2,
+      "annualized": "+5.2%",
+      "trades": 104,
+      "winPct": 69.2,
+      "dataEnd": "2026-10-23",
+      "bars": 5741,
+      "wfOosTotal": -4391.95,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -1764.03,
+          "oosTrades": 32
+        },
+        {
+          "fold": 2,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -2627.92,
+          "oosTrades": 31
+        }
+      ]
+    },
+    {
+      "sec": 2,
+      "ticker": "PHOR",
+      "name": "ФосАгро",
+      "type": "Stock",
+      "key": "kc_squeeze|none|c003|close|longshort",
+      "strategy": "kc_squeeze",
+      "strategyLabel": "KC-squeeze",
+      "rule": "C < Low and dWidth < 0 → long; C > Up and dWidth < 0 → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 2453.76,
+      "annualized": "+2.5%",
+      "trades": 56,
+      "winPct": 58.9,
+      "dataEnd": "2026-10-23",
+      "bars": 4936,
+      "wfOosTotal": 2135.88,
+      "wfPositiveFolds": 2,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_squeeze|none|c003|close|long",
+          "oosFin": 660.22,
+          "oosTrades": 5
+        },
+        {
+          "fold": 2,
+          "selected": "kc_squeeze|none|c003|close|longshort",
+          "oosFin": 1475.66,
+          "oosTrades": 16
+        }
+      ]
+    },
+    {
+      "sec": 3,
+      "ticker": "FLOT",
+      "name": "Совкомфлот",
+      "type": "Stock",
+      "key": "kc_squeeze|pct1_2|c003|close|longshort",
+      "strategy": "kc_squeeze",
+      "strategyLabel": "KC-squeeze",
+      "rule": "C < Low and dWidth < 0 → long; C > Up and dWidth < 0 → exit/short",
+      "family": "counter",
+      "risk": "pct1_2",
+      "riskLabel": "Stop 1%, take 2%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 8700.66,
+      "annualized": "+9.2%",
+      "trades": 71,
+      "winPct": 69,
+      "dataEnd": "2026-10-23",
+      "bars": 4890,
+      "wfOosTotal": 2131.56,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_squeeze|pct1_2|c003|close|longshort",
+          "oosFin": 2381.86,
+          "oosTrades": 14
+        },
+        {
+          "fold": 2,
+          "selected": "kc_squeeze|pct1_2|c003|close|longshort",
+          "oosFin": -250.3,
+          "oosTrades": 12
+        }
+      ]
+    },
+    {
+      "sec": 4,
+      "ticker": "AFLT",
+      "name": "Аэрофлот",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 7767.27,
+      "annualized": "+8.2%",
+      "trades": 94,
+      "winPct": 72.3,
+      "dataEnd": "2026-10-23",
+      "bars": 6473,
+      "wfOosTotal": -1082.09,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -134.44,
+          "oosTrades": 28
+        },
+        {
+          "fold": 2,
+          "selected": "kc_squeeze|none|c003|close|longshort",
+          "oosFin": -947.65,
+          "oosTrades": 7
+        }
+      ]
+    },
+    {
+      "sec": 5,
+      "ticker": "YDEX",
+      "name": "Яндекс",
+      "type": "Stock",
+      "key": "kc_revert|pct1_2|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct1_2",
+      "riskLabel": "Stop 1%, take 2%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 4890.64,
+      "annualized": "+5.1%",
+      "trades": 109,
+      "winPct": 61.5,
+      "dataEnd": "2026-10-23",
+      "bars": 6109,
+      "wfOosTotal": 112.46,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|pct1_2|c003|close|long",
+          "oosFin": -191,
+          "oosTrades": 7
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct1_2|c003|close|longshort",
+          "oosFin": 303.46,
+          "oosTrades": 24
+        }
+      ]
+    },
+    {
+      "sec": 6,
+      "ticker": "RTKM",
+      "name": "Ростелеком",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 4516.87,
+      "annualized": "+4.7%",
+      "trades": 91,
+      "winPct": 67,
+      "dataEnd": "2026-11-02",
+      "bars": 5311,
+      "wfOosTotal": -408.76,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -127.4,
+          "oosTrades": 22
+        },
+        {
+          "fold": 2,
+          "selected": "kc_squeeze|none|c003|next|longshort",
+          "oosFin": -281.36,
+          "oosTrades": 11
+        }
+      ]
+    },
+    {
+      "sec": 7,
+      "ticker": "MOEX",
+      "name": "Московская биржа",
+      "type": "Stock",
+      "key": "kc_squeeze|none|c003|next|longshort",
+      "strategy": "kc_squeeze",
+      "strategyLabel": "KC-squeeze",
+      "rule": "C < Low and dWidth < 0 → long; C > Up and dWidth < 0 → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "next",
+      "style": "longshort",
+      "finRes": -1244.04,
+      "annualized": "-1.3%",
+      "trades": 51,
+      "winPct": 54.9,
+      "dataEnd": "2026-10-23",
+      "bars": 5644,
+      "wfOosTotal": -1649.54,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -595.86,
+          "oosTrades": 26
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": -1053.68,
+          "oosTrades": 20
+        }
+      ]
+    },
+    {
+      "sec": 8,
+      "ticker": "UPRO",
+      "name": "Юнипро",
+      "type": "Stock",
+      "key": "kc_revert|pct1_2|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct1_2",
+      "riskLabel": "Stop 1%, take 2%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 10028.57,
+      "annualized": "+10.6%",
+      "trades": 101,
+      "winPct": 75.2,
+      "dataEnd": "2026-10-23",
+      "bars": 3607,
+      "wfOosTotal": 559.78,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": 2161.73,
+          "oosTrades": 28
+        },
+        {
+          "fold": 2,
+          "selected": "kc_squeeze|stop2atr|c003|close|longshort",
+          "oosFin": -1601.95,
+          "oosTrades": 21
+        }
+      ]
+    },
+    {
+      "sec": 9,
+      "ticker": "RSTE",
+      "name": "ФСК-Россети",
+      "type": "Stock",
+      "key": "kc_mid|none|c003|close|long",
+      "strategy": "kc_mid",
+      "strategyLabel": "KC-mid",
+      "rule": "C < Mid → long; C > Mid → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "long",
+      "finRes": 566.59,
+      "annualized": "+0.6%",
+      "trades": 374,
+      "winPct": 83.7,
+      "dataEnd": "2026-10-23",
+      "bars": 4332,
+      "wfOosTotal": 1198.67,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": 1331.42,
+          "oosTrades": 40
+        },
+        {
+          "fold": 2,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -132.75,
+          "oosTrades": 42
+        }
+      ]
+    },
+    {
+      "sec": 10,
+      "ticker": "IRAO",
+      "name": "Интер РАО",
+      "type": "Stock",
+      "key": "kt_expand|none|c003|next|long",
+      "strategy": "kt_expand",
+      "strategyLabel": "KT-expand",
+      "rule": "C > Up and dWidth > 0 → long; C < Low and dWidth > 0 → exit/short",
+      "family": "trend",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "next",
+      "style": "long",
+      "finRes": 1835.86,
+      "annualized": "+1.9%",
+      "trades": 43,
+      "winPct": 41.9,
+      "dataEnd": "2026-11-02",
+      "bars": 6200,
+      "wfOosTotal": -1997.56,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|pct1_2|c003|close|long",
+          "oosFin": -1076.53,
+          "oosTrades": 7
+        },
+        {
+          "fold": 2,
+          "selected": "kt_break|none|c003|next|longshort",
+          "oosFin": -921.03,
+          "oosTrades": 17
+        }
+      ]
+    },
+    {
+      "sec": 11,
+      "ticker": "HYDR",
+      "name": "РусГидро",
+      "type": "Stock",
+      "key": "kc_mid|none|c003|close|longshort",
+      "strategy": "kc_mid",
+      "strategyLabel": "KC-mid",
+      "rule": "C < Mid → long; C > Mid → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 3132.38,
+      "annualized": "+3.2%",
+      "trades": 861,
+      "winPct": 74.4,
+      "dataEnd": "2026-11-03",
+      "bars": 4757,
+      "wfOosTotal": -6252.68,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|pct1_2|c003|close|longshort",
+          "oosFin": -2797.51,
+          "oosTrades": 32
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|stop2atr|c003|close|longshort",
+          "oosFin": -3455.17,
+          "oosTrades": 50
+        }
+      ]
+    },
+    {
+      "sec": 12,
+      "ticker": "RUAL",
+      "name": "РУСАЛ",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 4061.76,
+      "annualized": "+4.2%",
+      "trades": 90,
+      "winPct": 70,
+      "dataEnd": "2026-10-23",
+      "bars": 5557,
+      "wfOosTotal": -1711.9,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -114.27,
+          "oosTrades": 28
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": -1597.63,
+          "oosTrades": 16
+        }
+      ]
+    },
+    {
+      "sec": 13,
+      "ticker": "VTBR",
+      "name": "ВТБ",
+      "type": "Stock",
+      "key": "kc_squeeze|none|c003|close|longshort",
+      "strategy": "kc_squeeze",
+      "strategyLabel": "KC-squeeze",
+      "rule": "C < Low and dWidth < 0 → long; C > Up and dWidth < 0 → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 2136.48,
+      "annualized": "+2.2%",
+      "trades": 57,
+      "winPct": 59.6,
+      "dataEnd": "2026-10-23",
+      "bars": 6099,
+      "wfOosTotal": -826.06,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_squeeze|none|c003|close|longshort",
+          "oosFin": -1213.4,
+          "oosTrades": 11
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": 387.34,
+          "oosTrades": 25
+        }
+      ]
+    },
+    {
+      "sec": 14,
+      "ticker": "MTSS",
+      "name": "МТС",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 3742.91,
+      "annualized": "+3.9%",
+      "trades": 78,
+      "winPct": 69.2,
+      "dataEnd": "2026-10-23",
+      "bars": 5776,
+      "wfOosTotal": -1826.71,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -1059.77,
+          "oosTrades": 12
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|none|c003|next|longshort",
+          "oosFin": -766.94,
+          "oosTrades": 20
+        }
+      ]
+    },
+    {
+      "sec": 15,
+      "ticker": "MGNT",
+      "name": "Магнит",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 5960.27,
+      "annualized": "+6.2%",
+      "trades": 106,
+      "winPct": 67.9,
+      "dataEnd": "2026-10-23",
+      "bars": 4978,
+      "wfOosTotal": -328.49,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -706.36,
+          "oosTrades": 36
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct2_4|c003|close|longshort",
+          "oosFin": 377.87,
+          "oosTrades": 23
+        }
+      ]
+    },
+    {
+      "sec": 16,
+      "ticker": "MTLR",
+      "name": "Мечел (обыкновенные)",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 8349.46,
+      "annualized": "+8.8%",
+      "trades": 111,
+      "winPct": 67.6,
+      "dataEnd": "2026-10-23",
+      "bars": 5429,
+      "wfOosTotal": 1462.7,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_squeeze|pct1_2|c003|close|longshort",
+          "oosFin": 1848.33,
+          "oosTrades": 20
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": -385.63,
+          "oosTrades": 20
+        }
+      ]
+    },
+    {
+      "sec": 17,
+      "ticker": "MAGN",
+      "name": "ММК",
+      "type": "Stock",
+      "key": "kc_revert|pct2_4|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct2_4",
+      "riskLabel": "Stop 2%, take 4%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 5594.24,
+      "annualized": "+5.8%",
+      "trades": 106,
+      "winPct": 67.9,
+      "dataEnd": "2026-10-23",
+      "bars": 5842,
+      "wfOosTotal": -444.31,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|pct2_4|c003|close|longshort",
+          "oosFin": 31.61,
+          "oosTrades": 18
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct1_2|c003|close|longshort",
+          "oosFin": -475.92,
+          "oosTrades": 21
+        }
+      ]
+    },
+    {
+      "sec": 18,
+      "ticker": "NLMK",
+      "name": "НЛМК",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 1011.32,
+      "annualized": "+1.0%",
+      "trades": 88,
+      "winPct": 68.2,
+      "dataEnd": "2026-10-23",
+      "bars": 5268,
+      "wfOosTotal": -3885.63,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|longshort",
+          "oosFin": -2048.6,
+          "oosTrades": 22
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct1_2|c003|next|longshort",
+          "oosFin": -1837.03,
+          "oosTrades": 18
+        }
+      ]
+    },
+    {
+      "sec": 19,
+      "ticker": "CHMF",
+      "name": "Северсталь",
+      "type": "Stock",
+      "key": "kc_revert|pct2_4|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct2_4",
+      "riskLabel": "Stop 2%, take 4%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 14986.41,
+      "annualized": "+16.3%",
+      "trades": 115,
+      "winPct": 76.5,
+      "dataEnd": "2026-10-23",
+      "bars": 5573,
+      "wfOosTotal": 5373,
+      "wfPositiveFolds": 2,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|pct2_4|c003|close|longshort",
+          "oosFin": 4276.9,
+          "oosTrades": 24
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct2_4|c003|close|longshort",
+          "oosFin": 1096.1,
+          "oosTrades": 24
+        }
+      ]
+    },
+    {
+      "sec": 20,
+      "ticker": "ALRS",
+      "name": "Алроса",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 22108.61,
+      "annualized": "+24.8%",
+      "trades": 170,
+      "winPct": 75.9,
+      "dataEnd": "2026-10-23",
+      "bars": 11151,
+      "wfOosTotal": 1934.44,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": 3413,
+          "oosTrades": 20
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct1_2|c003|close|longshort",
+          "oosFin": -1478.56,
+          "oosTrades": 14
+        }
+      ]
+    },
+    {
+      "sec": 21,
+      "ticker": "PLZL",
+      "name": "Полюс",
+      "type": "Stock",
+      "key": "kc_revert|pct1_2|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct1_2",
+      "riskLabel": "Stop 1%, take 2%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": -1422.58,
+      "annualized": "-1.4%",
+      "trades": 95,
+      "winPct": 62.1,
+      "dataEnd": "2026-10-23",
+      "bars": 5873,
+      "wfOosTotal": -7259.21,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|pct1_2|c003|close|long",
+          "oosFin": -4397.52,
+          "oosTrades": 15
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct1_2|c003|close|longshort",
+          "oosFin": -2861.69,
+          "oosTrades": 20
+        }
+      ]
+    },
+    {
+      "sec": 22,
+      "ticker": "SNGS",
+      "name": "Сургутнефтегаз (обыкновенные)",
+      "type": "Stock",
+      "key": "kc_squeeze|none|c003|close|longshort",
+      "strategy": "kc_squeeze",
+      "strategyLabel": "KC-squeeze",
+      "rule": "C < Low and dWidth < 0 → long; C > Up and dWidth < 0 → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 5230.54,
+      "annualized": "+5.4%",
+      "trades": 63,
+      "winPct": 73,
+      "dataEnd": "2026-10-23",
+      "bars": 4873,
+      "wfOosTotal": 2965.98,
+      "wfPositiveFolds": 2,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": 2077.07,
+          "oosTrades": 22
+        },
+        {
+          "fold": 2,
+          "selected": "kc_squeeze|pct1_2|c003|close|longshort",
+          "oosFin": 888.91,
+          "oosTrades": 17
+        }
+      ]
+    },
+    {
+      "sec": 23,
+      "ticker": "TATN",
+      "name": "Татнефть (обыкновенные)",
+      "type": "Stock",
+      "key": "kc_revert|pct2_4|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct2_4",
+      "riskLabel": "Stop 2%, take 4%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 5357.01,
+      "annualized": "+5.6%",
+      "trades": 101,
+      "winPct": 70.3,
+      "dataEnd": "2026-11-01",
+      "bars": 6195,
+      "wfOosTotal": 1152.24,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|pct2_4|c003|close|longshort",
+          "oosFin": -377.81,
+          "oosTrades": 13
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|none|c003|next|longshort",
+          "oosFin": 1530.05,
+          "oosTrades": 26
+        }
+      ]
+    },
+    {
+      "sec": 24,
+      "ticker": "GMKN",
+      "name": "Норникель",
+      "type": "Stock",
+      "key": "kc_revert|pct1_2|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct1_2",
+      "riskLabel": "Stop 1%, take 2%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 2592.33,
+      "annualized": "+2.7%",
+      "trades": 102,
+      "winPct": 63.7,
+      "dataEnd": "2026-10-23",
+      "bars": 5784,
+      "wfOosTotal": 845.69,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_mid|none|c003|close|long",
+          "oosFin": -695.09,
+          "oosTrades": 13
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct1_2|c003|close|longshort",
+          "oosFin": 1540.78,
+          "oosTrades": 26
+        }
+      ]
+    },
+    {
+      "sec": 25,
+      "ticker": "NVTK",
+      "name": "НОВАТЭК",
+      "type": "Stock",
+      "key": "kc_revert|pct2_4|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct2_4",
+      "riskLabel": "Stop 2%, take 4%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 7655.53,
+      "annualized": "+8.0%",
+      "trades": 124,
+      "winPct": 69.4,
+      "dataEnd": "2026-10-23",
+      "bars": 6003,
+      "wfOosTotal": -1174.12,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": -849.3,
+          "oosTrades": 16
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct2_4|c003|close|longshort",
+          "oosFin": -324.82,
+          "oosTrades": 26
+        }
+      ]
+    },
+    {
+      "sec": 26,
+      "ticker": "ROSN",
+      "name": "Роснефть",
+      "type": "Stock",
+      "key": "kc_squeeze|none|c003|close|longshort",
+      "strategy": "kc_squeeze",
+      "strategyLabel": "KC-squeeze",
+      "rule": "C < Low and dWidth < 0 → long; C > Up and dWidth < 0 → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 6681.85,
+      "annualized": "+7.0%",
+      "trades": 50,
+      "winPct": 64,
+      "dataEnd": "2026-10-23",
+      "bars": 6003,
+      "wfOosTotal": 1427.36,
+      "wfPositiveFolds": 2,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_squeeze|none|c003|close|longshort",
+          "oosFin": 571.06,
+          "oosTrades": 12
+        },
+        {
+          "fold": 2,
+          "selected": "kc_squeeze|none|c003|close|longshort",
+          "oosFin": 856.3,
+          "oosTrades": 13
+        }
+      ]
+    },
+    {
+      "sec": 27,
+      "ticker": "LKOH",
+      "name": "ЛУКОЙЛ",
+      "type": "Stock",
+      "key": "kc_revert|none|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 2071.24,
+      "annualized": "+2.1%",
+      "trades": 121,
+      "winPct": 64.5,
+      "dataEnd": "2026-10-23",
+      "bars": 6011,
+      "wfOosTotal": 265.37,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": 601.59,
+          "oosTrades": 22
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|none|c003|close|longshort",
+          "oosFin": -336.22,
+          "oosTrades": 25
+        }
+      ]
+    },
+    {
+      "sec": 28,
+      "ticker": "GAZP",
+      "name": "Газпром",
+      "type": "Stock",
+      "key": "kc_revert|pct1_2|c003|close|longshort",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct1_2",
+      "riskLabel": "Stop 1%, take 2%",
+      "commission": "c003",
+      "exec": "close",
+      "style": "longshort",
+      "finRes": 5432.98,
+      "annualized": "+5.6%",
+      "trades": 98,
+      "winPct": 67.3,
+      "dataEnd": "2026-10-23",
+      "bars": 5962,
+      "wfOosTotal": 246,
+      "wfPositiveFolds": 1,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_squeeze|none|c003|close|longshort",
+          "oosFin": 279.23,
+          "oosTrades": 11
+        },
+        {
+          "fold": 2,
+          "selected": "kc_revert|pct1_2|c003|close|longshort",
+          "oosFin": -33.23,
+          "oosTrades": 16
+        }
+      ]
+    },
+    {
+      "sec": 29,
+      "ticker": "SBER",
+      "name": "Сбербанк (обыкновенные)",
+      "type": "Stock",
+      "key": "kc_revert|pct1_2|c003|next|long",
+      "strategy": "kc_revert",
+      "strategyLabel": "KC-revert",
+      "rule": "C < Low → long; C > Up → exit/short",
+      "family": "counter",
+      "risk": "pct1_2",
+      "riskLabel": "Stop 1%, take 2%",
+      "commission": "c003",
+      "exec": "next",
+      "style": "long",
+      "finRes": -2441.06,
+      "annualized": "-2.4%",
+      "trades": 52,
+      "winPct": 59.6,
+      "dataEnd": "2026-10-23",
+      "bars": 6164,
+      "wfOosTotal": -1821.64,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_squeeze|none|c003|next|long",
+          "oosFin": -127.07,
+          "oosTrades": 8
+        },
+        {
+          "fold": 2,
+          "selected": "kc_squeeze|none|c003|next|longshort",
+          "oosFin": -1694.57,
+          "oosTrades": 15
+        }
+      ]
+    },
+    {
+      "sec": 30,
+      "ticker": "TRNFP",
+      "name": "Транснефть (привилегированные)",
+      "type": "PreferredStock",
+      "key": "kt_break|none|c003|next|longshort",
+      "strategy": "kt_break",
+      "strategyLabel": "KT-break",
+      "rule": "C > Up → long; C < Low → exit/short",
+      "family": "trend",
+      "risk": "none",
+      "riskLabel": "No stop / no take",
+      "commission": "c003",
+      "exec": "next",
+      "style": "longshort",
+      "finRes": -805.25,
+      "annualized": "-0.8%",
+      "trades": 66,
+      "winPct": 39.4,
+      "dataEnd": "2026-10-23",
+      "bars": 5959,
+      "wfOosTotal": -3261.49,
+      "wfPositiveFolds": 0,
+      "wfFolds": [
+        {
+          "fold": 1,
+          "selected": "kc_squeeze|none|c003|close|longshort",
+          "oosFin": -2613.31,
+          "oosTrades": 4
+        },
+        {
+          "fold": 2,
+          "selected": "kt_break|none|c003|next|longshort",
+          "oosFin": -648.18,
+          "oosTrades": 14
+        }
+      ]
+    }
+  ],
+  "walkForward": {
+    "period": [
+      "2026-10-01",
+      "2026-11-05"
+    ],
+    "folds": [
+      {
+        "id": 1,
+        "isWindow": [
+          "2026-10-01",
+          "2026-10-14"
+        ],
+        "oosWindow": [
+          "2026-10-15",
+          "2026-10-21"
+        ]
+      },
+      {
+        "id": 2,
+        "isWindow": [
+          "2026-10-08",
+          "2026-10-21"
+        ],
+        "oosWindow": [
+          "2026-10-22",
+          "2026-10-28"
+        ]
+      }
+    ],
+    "commission": 0.0003,
+    "rows": [
+      {
+        "sec": 1,
+        "ticker": "SIST",
+        "name": "АФК Система",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 20178.11,
+            "isTrades": 154,
+            "oosFin": -1764.03,
+            "oosTrades": 32,
+            "oosWinPct": 71.9
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 3745.08,
+            "isTrades": 77,
+            "oosFin": -2627.92,
+            "oosTrades": 31,
+            "oosWinPct": 64.5
+          }
+        ],
+        "oosTotal": -4391.95,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 2,
+        "ticker": "PHOR",
+        "name": "ФосАгро",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_squeeze|none|c003|close|long",
+            "isFin": 195.52,
+            "isTrades": 14,
+            "oosFin": 660.22,
+            "oosTrades": 5,
+            "oosWinPct": 60
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_squeeze|none|c003|close|longshort",
+            "isFin": 1588.82,
+            "isTrades": 23,
+            "oosFin": 1475.66,
+            "oosTrades": 16,
+            "oosWinPct": 62.5
+          }
+        ],
+        "oosTotal": 2135.88,
+        "positiveFolds": 2
+      },
+      {
+        "sec": 3,
+        "ticker": "FLOT",
+        "name": "Совкомфлот",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_squeeze|pct1_2|c003|close|longshort",
+            "isFin": 6758.82,
+            "isTrades": 46,
+            "oosFin": 2381.86,
+            "oosTrades": 14,
+            "oosWinPct": 92.9
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_squeeze|pct1_2|c003|close|longshort",
+            "isFin": 10079.32,
+            "isTrades": 31,
+            "oosFin": -250.3,
+            "oosTrades": 12,
+            "oosWinPct": 58.3
+          }
+        ],
+        "oosTotal": 2131.56,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 4,
+        "ticker": "AFLT",
+        "name": "Аэрофлот",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 6167.12,
+            "isTrades": 112,
+            "oosFin": -134.44,
+            "oosTrades": 28,
+            "oosWinPct": 57.1
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_squeeze|none|c003|close|longshort",
+            "isFin": 6876.29,
+            "isTrades": 30,
+            "oosFin": -947.65,
+            "oosTrades": 7,
+            "oosWinPct": 28.6
+          }
+        ],
+        "oosTotal": -1082.09,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 5,
+        "ticker": "YDEX",
+        "name": "Яндекс",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|pct1_2|c003|close|long",
+            "isFin": 4693.73,
+            "isTrades": 39,
+            "oosFin": -191,
+            "oosTrades": 7,
+            "oosWinPct": 42.9
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct1_2|c003|close|longshort",
+            "isFin": 5117.02,
+            "isTrades": 40,
+            "oosFin": 303.46,
+            "oosTrades": 24,
+            "oosWinPct": 58.3
+          }
+        ],
+        "oosTotal": 112.46,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 6,
+        "ticker": "RTKM",
+        "name": "Ростелеком",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 6733.98,
+            "isTrades": 104,
+            "oosFin": -127.4,
+            "oosTrades": 22,
+            "oosWinPct": 59.1
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_squeeze|none|c003|next|longshort",
+            "isFin": 4433.06,
+            "isTrades": 25,
+            "oosFin": -281.36,
+            "oosTrades": 11,
+            "oosWinPct": 63.6
+          }
+        ],
+        "oosTotal": -408.76,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 7,
+        "ticker": "MOEX",
+        "name": "Московская биржа",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": -1228.97,
+            "isTrades": 100,
+            "oosFin": -595.86,
+            "oosTrades": 26,
+            "oosWinPct": 69.2
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": -151.19,
+            "isTrades": 33,
+            "oosFin": -1053.68,
+            "oosTrades": 20,
+            "oosWinPct": 45
+          }
+        ],
+        "oosTotal": -1649.54,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 8,
+        "ticker": "UPRO",
+        "name": "Юнипро",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 8065.91,
+            "isTrades": 87,
+            "oosFin": 2161.73,
+            "oosTrades": 28,
+            "oosWinPct": 71.4
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_squeeze|stop2atr|c003|close|longshort",
+            "isFin": 6538.91,
+            "isTrades": 49,
+            "oosFin": -1601.95,
+            "oosTrades": 21,
+            "oosWinPct": 28.6
+          }
+        ],
+        "oosTotal": 559.78,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 9,
+        "ticker": "RSTE",
+        "name": "ФСК-Россети",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 7220.65,
+            "isTrades": 94,
+            "oosFin": 1331.42,
+            "oosTrades": 40,
+            "oosWinPct": 65
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 6082.62,
+            "isTrades": 76,
+            "oosFin": -132.75,
+            "oosTrades": 42,
+            "oosWinPct": 66.7
+          }
+        ],
+        "oosTotal": 1198.67,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 10,
+        "ticker": "IRAO",
+        "name": "Интер РАО",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|pct1_2|c003|close|long",
+            "isFin": 2058.67,
+            "isTrades": 30,
+            "oosFin": -1076.53,
+            "oosTrades": 7,
+            "oosWinPct": 57.1
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kt_break|none|c003|next|longshort",
+            "isFin": 5238.93,
+            "isTrades": 27,
+            "oosFin": -921.03,
+            "oosTrades": 17,
+            "oosWinPct": 29.4
+          }
+        ],
+        "oosTotal": -1997.56,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 11,
+        "ticker": "HYDR",
+        "name": "РусГидро",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|pct1_2|c003|close|longshort",
+            "isFin": 9983.88,
+            "isTrades": 90,
+            "oosFin": -2797.51,
+            "oosTrades": 32,
+            "oosWinPct": 71.9
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|stop2atr|c003|close|longshort",
+            "isFin": 5159.04,
+            "isTrades": 73,
+            "oosFin": -3455.17,
+            "oosTrades": 50,
+            "oosWinPct": 28
+          }
+        ],
+        "oosTotal": -6252.68,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 12,
+        "ticker": "RUAL",
+        "name": "РУСАЛ",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 6314.14,
+            "isTrades": 112,
+            "oosFin": -114.27,
+            "oosTrades": 28,
+            "oosWinPct": 60.7
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": 3033.89,
+            "isTrades": 35,
+            "oosFin": -1597.63,
+            "oosTrades": 16,
+            "oosWinPct": 56.3
+          }
+        ],
+        "oosTotal": -1711.9,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 13,
+        "ticker": "VTBR",
+        "name": "ВТБ",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_squeeze|none|c003|close|longshort",
+            "isFin": 2851.28,
+            "isTrades": 30,
+            "oosFin": -1213.4,
+            "oosTrades": 11,
+            "oosWinPct": 45.5
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": 1798.61,
+            "isTrades": 38,
+            "oosFin": 387.34,
+            "oosTrades": 25,
+            "oosWinPct": 64
+          }
+        ],
+        "oosTotal": -826.06,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 14,
+        "ticker": "MTSS",
+        "name": "МТС",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 4328.3,
+            "isTrades": 95,
+            "oosFin": -1059.77,
+            "oosTrades": 12,
+            "oosWinPct": 58.3
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|none|c003|next|longshort",
+            "isFin": 3621.59,
+            "isTrades": 26,
+            "oosFin": -766.94,
+            "oosTrades": 20,
+            "oosWinPct": 55
+          }
+        ],
+        "oosTotal": -1826.71,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 15,
+        "ticker": "MGNT",
+        "name": "Магнит",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 7146.22,
+            "isTrades": 121,
+            "oosFin": -706.36,
+            "oosTrades": 36,
+            "oosWinPct": 61.1
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct2_4|c003|close|longshort",
+            "isFin": 6071.39,
+            "isTrades": 48,
+            "oosFin": 377.87,
+            "oosTrades": 23,
+            "oosWinPct": 73.9
+          }
+        ],
+        "oosTotal": -328.49,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 16,
+        "ticker": "MTLR",
+        "name": "Мечел (обыкновенные)",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_squeeze|pct1_2|c003|close|longshort",
+            "isFin": 4043.38,
+            "isTrades": 50,
+            "oosFin": 1848.33,
+            "oosTrades": 20,
+            "oosWinPct": 80
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": 3696.66,
+            "isTrades": 47,
+            "oosFin": -385.63,
+            "oosTrades": 20,
+            "oosWinPct": 55
+          }
+        ],
+        "oosTotal": 1462.7,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 17,
+        "ticker": "MAGN",
+        "name": "ММК",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|pct2_4|c003|close|longshort",
+            "isFin": 5842,
+            "isTrades": 68,
+            "oosFin": 31.61,
+            "oosTrades": 18,
+            "oosWinPct": 66.7
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct1_2|c003|close|longshort",
+            "isFin": 5650.45,
+            "isTrades": 46,
+            "oosFin": -475.92,
+            "oosTrades": 21,
+            "oosWinPct": 61.9
+          }
+        ],
+        "oosTotal": -444.31,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 18,
+        "ticker": "NLMK",
+        "name": "НЛМК",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|longshort",
+            "isFin": 6859.25,
+            "isTrades": 117,
+            "oosFin": -2048.6,
+            "oosTrades": 22,
+            "oosWinPct": 54.5
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct1_2|c003|next|longshort",
+            "isFin": 4435.33,
+            "isTrades": 41,
+            "oosFin": -1837.03,
+            "oosTrades": 18,
+            "oosWinPct": 44.4
+          }
+        ],
+        "oosTotal": -3885.63,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 19,
+        "ticker": "CHMF",
+        "name": "Северсталь",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|pct2_4|c003|close|longshort",
+            "isFin": 9686.94,
+            "isTrades": 67,
+            "oosFin": 4276.9,
+            "oosTrades": 24,
+            "oosWinPct": 83.3
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct2_4|c003|close|longshort",
+            "isFin": 10499.25,
+            "isTrades": 52,
+            "oosFin": 1096.1,
+            "oosTrades": 24,
+            "oosWinPct": 62.5
+          }
+        ],
+        "oosTotal": 5373,
+        "positiveFolds": 2
+      },
+      {
+        "sec": 20,
+        "ticker": "ALRS",
+        "name": "Алроса",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": 20260.45,
+            "isTrades": 139,
+            "oosFin": 3413,
+            "oosTrades": 20,
+            "oosWinPct": 75
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct1_2|c003|close|longshort",
+            "isFin": 17192.14,
+            "isTrades": 87,
+            "oosFin": -1478.56,
+            "oosTrades": 14,
+            "oosWinPct": 50
+          }
+        ],
+        "oosTotal": 1934.44,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 21,
+        "ticker": "PLZL",
+        "name": "Полюс",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|pct1_2|c003|close|long",
+            "isFin": 660.34,
+            "isTrades": 46,
+            "oosFin": -4397.52,
+            "oosTrades": 15,
+            "oosWinPct": 40
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct1_2|c003|close|longshort",
+            "isFin": 1434.13,
+            "isTrades": 39,
+            "oosFin": -2861.69,
+            "oosTrades": 20,
+            "oosWinPct": 50
+          }
+        ],
+        "oosTotal": -7259.21,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 22,
+        "ticker": "SNGS",
+        "name": "Сургутнефтегаз (обыкновенные)",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": 2757.2,
+            "isTrades": 50,
+            "oosFin": 2077.07,
+            "oosTrades": 22,
+            "oosWinPct": 72.7
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_squeeze|pct1_2|c003|close|longshort",
+            "isFin": 4049.13,
+            "isTrades": 31,
+            "oosFin": 888.91,
+            "oosTrades": 17,
+            "oosWinPct": 76.5
+          }
+        ],
+        "oosTotal": 2965.98,
+        "positiveFolds": 2
+      },
+      {
+        "sec": 23,
+        "ticker": "TATN",
+        "name": "Татнефть (обыкновенные)",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|pct2_4|c003|close|longshort",
+            "isFin": 2493.36,
+            "isTrades": 60,
+            "oosFin": -377.81,
+            "oosTrades": 13,
+            "oosWinPct": 46.2
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|none|c003|next|longshort",
+            "isFin": 1496.67,
+            "isTrades": 33,
+            "oosFin": 1530.05,
+            "oosTrades": 26,
+            "oosWinPct": 73.1
+          }
+        ],
+        "oosTotal": 1152.24,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 24,
+        "ticker": "GMKN",
+        "name": "Норникель",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_mid|none|c003|close|long",
+            "isFin": 1361.66,
+            "isTrades": 55,
+            "oosFin": -695.09,
+            "oosTrades": 13,
+            "oosWinPct": 61.5
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct1_2|c003|close|longshort",
+            "isFin": 3435.1,
+            "isTrades": 37,
+            "oosFin": 1540.78,
+            "oosTrades": 26,
+            "oosWinPct": 73.1
+          }
+        ],
+        "oosTotal": 845.69,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 25,
+        "ticker": "NVTK",
+        "name": "НОВАТЭК",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": 8741.02,
+            "isTrades": 81,
+            "oosFin": -849.3,
+            "oosTrades": 16,
+            "oosWinPct": 56.3
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct2_4|c003|close|longshort",
+            "isFin": 4169.69,
+            "isTrades": 42,
+            "oosFin": -324.82,
+            "oosTrades": 26,
+            "oosWinPct": 57.7
+          }
+        ],
+        "oosTotal": -1174.12,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 26,
+        "ticker": "ROSN",
+        "name": "Роснефть",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_squeeze|none|c003|close|longshort",
+            "isFin": 5071.35,
+            "isTrades": 25,
+            "oosFin": 571.06,
+            "oosTrades": 12,
+            "oosWinPct": 66.7
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_squeeze|none|c003|close|longshort",
+            "isFin": 8147.88,
+            "isTrades": 21,
+            "oosFin": 856.3,
+            "oosTrades": 13,
+            "oosWinPct": 61.5
+          }
+        ],
+        "oosTotal": 1427.36,
+        "positiveFolds": 2
+      },
+      {
+        "sec": 27,
+        "ticker": "LKOH",
+        "name": "ЛУКОЙЛ",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": 1809.74,
+            "isTrades": 75,
+            "oosFin": 601.59,
+            "oosTrades": 22,
+            "oosWinPct": 68.2
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|none|c003|close|longshort",
+            "isFin": 5315,
+            "isTrades": 46,
+            "oosFin": -336.22,
+            "oosTrades": 25,
+            "oosWinPct": 60
+          }
+        ],
+        "oosTotal": 265.37,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 28,
+        "ticker": "GAZP",
+        "name": "Газпром",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_squeeze|none|c003|close|longshort",
+            "isFin": 3159.52,
+            "isTrades": 35,
+            "oosFin": 279.23,
+            "oosTrades": 11,
+            "oosWinPct": 54.5
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_revert|pct1_2|c003|close|longshort",
+            "isFin": 5812.18,
+            "isTrades": 44,
+            "oosFin": -33.23,
+            "oosTrades": 16,
+            "oosWinPct": 62.5
+          }
+        ],
+        "oosTotal": 246,
+        "positiveFolds": 1
+      },
+      {
+        "sec": 29,
+        "ticker": "SBER",
+        "name": "Сбербанк (обыкновенные)",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_squeeze|none|c003|next|long",
+            "isFin": -1011.12,
+            "isTrades": 18,
+            "oosFin": -127.07,
+            "oosTrades": 8,
+            "oosWinPct": 62.5
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kc_squeeze|none|c003|next|longshort",
+            "isFin": 1000.77,
+            "isTrades": 31,
+            "oosFin": -1694.57,
+            "oosTrades": 15,
+            "oosWinPct": 26.7
+          }
+        ],
+        "oosTotal": -1821.64,
+        "positiveFolds": 0
+      },
+      {
+        "sec": 30,
+        "ticker": "TRNFP",
+        "name": "Транснефть (привилегированные)",
+        "folds": [
+          {
+            "fold": 1,
+            "isWindow": [
+              "2026-10-01",
+              "2026-10-14"
+            ],
+            "oosWindow": [
+              "2026-10-15",
+              "2026-10-21"
+            ],
+            "selected": "kc_squeeze|none|c003|close|longshort",
+            "isFin": -267.92,
+            "isTrades": 33,
+            "oosFin": -2613.31,
+            "oosTrades": 4,
+            "oosWinPct": 25
+          },
+          {
+            "fold": 2,
+            "isWindow": [
+              "2026-10-08",
+              "2026-10-21"
+            ],
+            "oosWindow": [
+              "2026-10-22",
+              "2026-10-28"
+            ],
+            "selected": "kt_break|none|c003|next|longshort",
+            "isFin": 1038.32,
+            "isTrades": 28,
+            "oosFin": -648.18,
+            "oosTrades": 14,
+            "oosWinPct": 35.7
+          }
+        ],
+        "oosTotal": -3261.49,
+        "positiveFolds": 0
+      }
+    ],
+    "grandTotal": -16511.009999999995,
+    "positiveSecs": 14,
+    "bothFolds": 4,
+    "byFold": [
+      {
+        "fold": 1,
+        "oosWindow": [
+          "2026-10-15",
+          "2026-10-21"
+        ],
+        "total": -1255.25,
+        "positiveSecs": 12
+      },
+      {
+        "fold": 2,
+        "oosWindow": [
+          "2026-10-22",
+          "2026-10-28"
+        ],
+        "total": -15255.76,
+        "positiveSecs": 9
+      }
+    ],
+    "mostSelected": [
+      [
+        "kc_mid|none|c003|close|longshort",
+        12
+      ],
+      [
+        "kc_revert|none|c003|close|longshort",
+        9
+      ],
+      [
+        "kc_squeeze|none|c003|close|longshort",
+        7
+      ],
+      [
+        "kc_revert|pct1_2|c003|close|longshort",
+        6
+      ],
+      [
+        "kc_revert|pct2_4|c003|close|longshort",
+        6
+      ],
+      [
+        "kc_squeeze|pct1_2|c003|close|longshort",
+        4
+      ],
+      [
+        "kc_revert|pct1_2|c003|close|long",
+        2
+      ],
+      [
+        "kc_squeeze|none|c003|next|longshort",
+        2
+      ]
+    ]
+  }
+}

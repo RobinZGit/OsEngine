@@ -35,6 +35,7 @@
 }
 
 .chart-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -44,12 +45,13 @@
   border-bottom: 1px solid #e5e7eb;
   min-height: 2rem;
   flex-wrap: wrap;
+  transition: background-color .25s ease, color .25s ease, border-color .25s ease;
 }
 
 .chart-title {
   font-size: 0.82rem;
   font-weight: 600;
-  color: #374151;
+  color: inherit;
   margin-right: auto;
   padding-left: 0.25rem;
   white-space: nowrap;
@@ -71,6 +73,20 @@
   flex-wrap: wrap;
   flex: 1 1 auto;
   min-width: 0;
+}
+.chart-toolbar-time {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1;
+  text-shadow: 0 1px 1px rgba(0,0,0,.08);
 }
 .chart-toolbar-end {
   margin-left: auto;

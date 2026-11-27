@@ -1438,6 +1438,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
     this.filterAnalysisApplySelectedIds = new Set<number>();
     if (!this.expandedLogics.has(logicId)) this.expandedLogics.add(logicId);
     this.expandedSignalsBlocks.add(logicId);
+    this.expandedStopsBlocks.add(logicId);
+    this.loadStopsForLogic(logicId);
     this.logicsService.getFilterAnalysisContext(logicId).subscribe({
       next: (ctx) => {
         this.filterAnalysisContext = ctx;
@@ -2626,6 +2628,8 @@ export class LogicsComponent implements OnInit, OnDestroy {
       this.expandedSignalsBlocks.add(logicId);
       this.loadSignalsForLogic(logicId);
       this.refreshOptGridAvailability(logicId);
+      this.expandedStopsBlocks.add(logicId);
+      this.loadStopsForLogic(logicId);
     }
   }
 
@@ -3850,6 +3854,8 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     }
     this.expandedSignalsBlocks.add(logicId);
     this.loadSignalsForLogic(logicId);
+    this.expandedStopsBlocks.add(logicId);
+    this.loadStopsForLogic(logicId);
   }
 
   onPickerSignalKindChange(kind: SignalKind): void {
@@ -3884,6 +3890,8 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     }
     this.expandedSignalsBlocks.add(logicId);
     this.loadSignalsForLogic(logicId);
+    this.expandedStopsBlocks.add(logicId);
+    this.loadStopsForLogic(logicId);
   }
 
   isPickerEditing(): boolean {
@@ -4075,6 +4083,8 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       this.loadSignalsForLogic(logicId);
       this.refreshOptGridAvailability(logicId);
     }
+    this.expandedStopsBlocks.add(logicId);
+    this.loadStopsForLogic(logicId);
     this.signalsHelpBlocks.add(logicId);
     this.cdr.markForCheck();
   }
@@ -5648,28 +5658,29 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     }
   }
 
-  /** Мини-график эквити для списка логик: грубая полилиния от начала до конца. */
-  equitySparkline(row: LogicRow): { points: string; color: string; positive: boolean } | null {
+  /** Мини-график эквити для строки логики: грубая полилиния + % и % годовых. */
+  equitySparkline(row: LogicRow): { points: string; color: string; positive: boolean; pct: number; annualPct: number } | null {
     const testing = this.isBacktestRunning(row.id);
-    let total: Array<{ dt: string; value: number }> | null | undefined;
+    let source: { total?: Array<{ dt: string; value: number }>; initial_balance?: number } | null | undefined;
     if (testing) {
-      total = this.testEquityByLogic.get(row.id)?.total;
+      source = this.testEquityByLogic.get(row.id);
     } else if (row.is_enabled) {
-      total = this.combatEquityByLogic.get(row.id)?.total;
+      source = this.combatEquityByLogic.get(row.id);
     } else {
-      total = this.testEquityByLogic.get(row.id)?.total;
-      if (!total || total.length < 2) {
-        total = this.combatEquityByLogic.get(row.id)?.total;
+      source = this.testEquityByLogic.get(row.id);
+      if (!source?.total || source.total.length < 2) {
+        source = this.combatEquityByLogic.get(row.id);
       }
     }
+    const total = source?.total;
     if (!total || total.length < 2) return null;
     // Грубое приближение: не более 48 точек, чтобы SVG был лёгким.
     const maxPts = 48;
     const step = total.length <= maxPts ? 1 : (total.length - 1) / (maxPts - 1);
     const sampled: number[] = [];
     for (let i = 0; i < maxPts && Math.round(i * step) < total.length; i++) {
-      const idx = Math.min(total.length - 1, Math.round(i * step));
-      sampled.push(Number(total[idx].value) || 0);
+      const idxPt = Math.min(total.length - 1, Math.round(i * step));
+      sampled.push(Number(total[idxPt].value) || 0);
     }
     if (sampled.length < 2) return null;
     let min = sampled[0];
@@ -5692,13 +5703,20 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       .join(' ');
     const last = sampled[sampled.length - 1];
     const positive = last >= 0;
+    const initialBalance = Number(source?.initial_balance) || 0;
+    const firstDt = new Date(total[0].dt).getTime();
+    const lastDt = new Date(total[total.length - 1].dt).getTime();
+    const days = Math.max((lastDt - firstDt) / 86400000, 0);
+    const pct = initialBalance !== 0 ? ((last - initialBalance) / Math.abs(initialBalance)) * 100 : 0;
+    const annualPct = days > 0 ? (pct * 365.25) / days : pct;
     return {
       points,
       color: positive ? '#22c55e' : '#ef4444',
       positive,
+      pct,
+      annualPct,
     };
   }
-
   private refreshPnlSummaries(): void {
     // Test PnL column: реже во время активных прогонов (колонка не критична mid-run).
     if (this.backtestPollIds.size === 0 || this.pollTick % 3 === 0) {

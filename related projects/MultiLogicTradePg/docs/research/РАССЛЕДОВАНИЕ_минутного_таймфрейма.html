@@ -1,0 +1,489 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Расследование минутного таймфрейма — MOEX M1</title><style>
+  :root{--bg:#090e1a;--card:#121a2e;--card2:#182342;--text:#e9eef9;--muted:#98a6c2;--line:#273153;--green:#10b981;--red:#ef4444;--accent:#60a5fa;--amber:#f59e0b}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;background:#0c1324;padding:1px 5px;border-radius:5px;color:#d3e2ff}
+  .hero{background:linear-gradient(135deg,#101a38,#1b2b59 55%,#0f3448);border-bottom:1px solid var(--line);padding:38px 0 24px}
+  .wrap{max-width:1600px;margin:0 auto;padding:0 24px}.kicker{text-transform:uppercase;letter-spacing:.16em;color:#8fb6ff;font-size:12px;font-weight:700}
+  h1{font-size:34px;line-height:1.16;margin:10px 0 8px}h1 span{color:#9fc4ff;font-size:.62em;font-weight:500}.hero p{color:#c8d5ef;margin:0 0 14px}
+  .meta{color:var(--muted);font-size:13px}nav{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}nav a{background:rgba(255,255,255,.07);border:1px solid var(--line);padding:6px 10px;border-radius:999px;font-size:12px}
+  section{padding:32px 0 6px;border-bottom:1px solid rgba(255,255,255,.05)}h2{font-size:24px;margin:0 0 14px}h3{font-size:18px;margin:22px 0 10px;color:#cfe0ff}
+  .bilingual{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0 14px}.bilingual>div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}.en{color:#d7e4fb}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px;margin:18px 0}.card{background:linear-gradient(160deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:14px;padding:16px}.card span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}.card strong{display:block;font-size:24px;margin:6px 0}.card small{color:var(--muted)}
+  .pos{color:var(--green)!important}.neg{color:var(--red)!important}.zero{color:var(--muted)!important}.ann{font-weight:800;font-size:1.1em;letter-spacing:.02em}
+  .warn{background:rgba(245,158,11,.09);border:1px solid rgba(245,158,11,.35);border-radius:12px;padding:12px 14px;margin:14px 0}.note{color:var(--muted);font-size:13px}
+  .tablewrap{overflow:auto;max-height:620px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+  table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#17213e;z-index:1;color:#cfe0ff;font-weight:600;white-space:nowrap}tr:hover td{background:rgba(96,165,250,.07)}td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;white-space:nowrap;border:1px solid var(--line)}.badge.counter{background:rgba(16,185,129,.15);color:#a7f3d0}.badge.trend{background:rgba(96,165,250,.15);color:#bfdbfe}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}.controls label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}select,input{background:#0d1427;color:#e6efff;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px}
+  .formula-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}.formula-grid>div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}pre{white-space:pre-wrap;margin:8px 0 0;color:#cfe0ff;font-size:12.5px}
+  .footer{padding:30px 0 46px;color:var(--muted);font-size:12px}@media(max-width:900px){h1{font-size:27px}.bilingual,.formula-grid{grid-template-columns:1fr}}
+  </style></head><body>
+<header class="hero" id="top"><div class="wrap"><div class="kicker">OsEngine · MultiLogicTradePg · MOEX · M1 investigation</div>
+<h1>Расследование минутного таймфрейма<br><span>M1 investigation: best logic per security, all indicator families, filters and sectors</span></h1>
+<p>Отдельный файл только для M1: не только Кельтнер, но Bollinger, ценовой канал, стохастик, RSI, MACD и скользящие средние. Для каждой из 30 бумаг — лучшая логика, фильтр, тренд/контр-тренд и разбивка по отраслям.<br><span class="en">Dedicated M1-only file: Keltner plus Bollinger, price channel, stochastic, RSI, MACD and moving averages. One best logic per security, with filters, trend/counter-trend labels and sector breakdown.</span></p>
+<div class="meta">Branch <code>opencode/classic-indicator-derivatives-study</code> · 2026-10-01 → 2026-11-05 (36 calendar days) · комиссия 0.03% / side / 0.03%/сторона · internal FinRes · no commits or push</div>
+<nav><a href="#summary">Сводка / Summary</a><a href="#method">Метод / Method</a><a href="#sectors">Отрасли / Sectors</a><a href="#best-table">По бумагам / Per ticker</a><a href="#families">Семейства / Families</a><a href="#filters">Фильтры / Filters</a><a href="#wf">Walk-forward</a><a href="#formula">Формула / Formula</a><a href="#repro">Файлы / Files</a></nav>
+</div></header>
+
+<section id="summary" class="wrap"><h2>1. Сводка / Executive summary</h2>
+<div class="bilingual"><div class="ru"><p>Под «топ-30» понимаются первые 30 инструментов локальной подборки MOEX (ID 1–30). На M1 лучшая конфигурация положительна у <b>29/30</b> бумаг, сумма лучших FinRes — <b>236,144.66</b>. Лидер: <b>ALRS</b> <code>kc_revert|none|none|close|longshort</code>, 22,108.61 FinRes (+24.8% годовых).</p></div>
+<div class="en"><p>“Top-30” means the first 30 instruments in the local MOEX set (ID 1–30). On M1 the best configuration is positive for <b>29/30</b> securities; the sum of best FinRes is <b>236,144.66</b>. Leader: <b>ALRS</b> <code>kc_revert|none|none|close|longshort</code>, 22,108.61 FinRes (+24.8% annualized).</p></div></div>
+<div class="cards"><div class="card"><span>Бумаг / Securities</span><strong>30</strong><small>ID 1–30 локальной подборки</small></div><div class="card"><span>Положительных / Positive</span><strong class="pos">29/30</strong><small>лучший FinRes &gt; 0</small></div><div class="card"><span>Сумма лучших FinRes</span><strong class="pos">236,144.66</strong><small>internal relative model</small></div><div class="card"><span>Лидер / Leader</span><strong>ALRS</strong><small>22,108.61 · +24.8%</small></div><div class="card"><span>Walk-forward</span><strong class="pos">6,666.62</strong><small>16/30 положительных, 9 в обеих складках</small></div></div>
+<div class="warn"><div class="bilingual"><div class="ru"><b>Ключевой вывод:</b> на минуте почти всё работает как контр-тренд — 28/30 лучших логик контр-трендовые. Абсолютный лидер — <code>kc_revert</code> по ALRS. Сильнейшая отрасль — Металлы и добыча (78,046.97 FinRes, 8/8 положительных), затем Нефть и газ (51,579.04, 7/7). Банки и финансы — слабейшая группа: 2/3, SBER остался в минусе. Ритейл (Магнит): лучший — <code>rsi_counter|vol_dry|none|close|longshort</code>. Полный период — in-sample; смотрите walk-forward ниже.</div>
+<div class="en"><b>Key finding:</b> on M1 almost everything works as counter-trend — 28/30 best logics are counter-trend. Absolute leader: <code>kc_revert</code> on ALRS. Strongest sector: Металлы и добыча (78,046.97 FinRes, 8/8 positive), then Нефть и газ (51,579.04, 7/7). Банки и финансы is the weakest: 2/3, SBER stays negative. Ритейл (Magnit): best is <code>rsi_counter|vol_dry|none|close|longshort</code>. Full period is in-sample; see walk-forward below.</div></div></div>
+<h3>Лучшие по отраслям / Best by sector</h3><ol><li><b>Металлы и добыча</b>: 8 бумаг, 78,046.97 FinRes, 8/8 положительных; лидирует <b>Keltner</b> (контр-тренд), лучшая бумага <b>ALRS</b> — <code>kc_revert|none|none|close|longshort</code>.</li><li><b>Нефть и газ</b>: 7 бумаг, 51,579.04 FinRes, 7/7 положительных; лидирует <b>RSI</b> (контр-тренд), лучшая бумага <b>SNGS</b> — <code>rsi_counter|vol_confirm|none|close|longshort</code>.</li><li><b>Энергетика и ЖКХ</b>: 4 бумаг, 35,314.55 FinRes, 4/4 положительных; лидирует <b>Keltner</b> (контр-тренд), лучшая бумага <b>UPRO</b> — <code>bb_mid_counter|none|none|close|longshort</code>.</li><li><b>Телеком / холдинги</b>: 3 бумаг, 27,221.44 FinRes, 3/3 положительных; лидирует <b>RSI</b> (контр-тренд), лучшая бумага <b>SIST</b> — <code>rsi_counter|none|none|close|longshort</code>.</li><li><b>Транспорт</b>: 2 бумаг, 20,043.19 FinRes, 2/2 положительных; лидирует <b>RSI</b> (контр-тренд), лучшая бумага <b>FLOT</b> — <code>rsi_counter|vol_confirm|none|next|longshort</code>.</li><li><b>Химия / удобрения</b>: 1 бумаг, 7,174.56 FinRes, 1/1 положительных; лидирует <b>RSI</b> (контр-тренд), лучшая бумага <b>PHOR</b> — <code>rsi_counter|vol_dry|none|next|longshort</code>.</li><li><b>Ритейл</b>: 1 бумаг, 6,979.11 FinRes, 1/1 положительных; лидирует <b>RSI</b> (контр-тренд), лучшая бумага <b>MGNT</b> — <code>rsi_counter|vol_dry|none|close|longshort</code>.</li><li><b>Банки и финансы</b>: 3 бумаг, 4,895.16 FinRes, 2/3 положительных; лидирует <b>RSI</b> (контр-тренд), лучшая бумага <b>MOEX</b> — <code>rsi_counter|adx_regime|none|close|longshort</code>.</li><li><b>IT</b>: 1 бумаг, 4,890.64 FinRes, 1/1 положительных; лидирует <b>Keltner</b> (контр-тренд), лучшая бумага <b>YDEX</b> — <code>kc_revert|none|pct1_2|close|longshort</code>.</li></ol>
+</section>
+
+<section id="method" class="wrap"><h2>2. Метод и логики / Method and logics</h2>
+<div class="bilingual"><div class="ru"><p>Для каждой бумаги перебрано <b>1 920</b> конфигураций: 20 сигналов × 8 фильтров × 3 режима риска × 2 исполнения × 2 стиля. Комиссия <b>0.03%/сторона</b>, 10% депозита на позицию, принудительное закрытие в конце торгового дня. Сигналы считаются по закрытию бара, исполнение — по закрытию сигнального или следующего бара.</p></div>
+<div class="en"><p>Each security was scanned over <b>1,920</b> configurations: 20 signals × 8 filters × 3 risk modes × 2 executions × 2 styles. Commission <b>0.03%/side</b>, 10% of equity per position, forced close at the end of the trading day. Signals are evaluated at bar close; fills are at the signal-bar close or the next same-day bar close.</p></div></div>
+<div class="warn">Буквальная комиссия <b>3.00%/сторона</b> здесь не применялась: на предыдущих этапах она не дала ни одной положительной конфигурации. Рабочий сценарий — <b>0.03%/сторона</b>. / The literal <b>3.00%/side</b> rate is not used here: earlier stages produced no positive configuration at that rate; the working scenario is <b>0.03%/side</b>.</div>
+<div class="formula-grid"><div><b>Семейства сигналов</b><pre>Keltner: EMA20 ± 2×ATR20 (break, revert, midline)
+Bollinger: SMA20 ± 2×σ20 (break, revert, midline, counter)
+Price channel: Donchian 20, previous bars (break, revert)
+Stochastic: K14/D3 (trend, counter, 50)
+RSI 14: counter 30/70, trend 55/45
+MACD 12/26/9: signal cross, counter
+MA: SMA10/30 cross, push, counter</pre></div><div><b>Фильтры и риск</b><pre>Filters: none, ADX 20, SMA20/50, price/SMA50,
+volume↑, volume↓, Stoch 50/20, channel width↑/↓
+Risk: none, 2ATR/4ATR, stop 1% / take 2%
+Exec: close / next bar close
+Style: long / long+short</pre></div></div>
+<div class="warn"><b>Оговорка:</b> у 25 из 30 бумаг M1-бары заканчиваются 2026-10-23, поэтому третий fold walk-forward (10-29…11-05) исключён, а годовая доходность считается по номинальным 36 дням консервативно. Это внутренняя модель FinRes, не бэктест движка OsEngine.</div>
+</section>
+
+<section id="sectors" class="wrap"><h2>3. Разбивка по отраслям / Sector breakdown</h2><div class="tablewrap"><table><thead><tr><th>Отрасль</th><th>Бумаг</th><th>Сумма FinRes</th><th>Положительных</th><th>Лидирующее семейство</th><th>Лучшая бумага / логика</th><th>WF OOS</th><th>WF позитивных</th></tr></thead><tbody><tr>
+  <td><b>Металлы и добыча</b></td><td class="num">8</td><td class="num pos">78,046.97</td><td class="num">8/8</td>
+  <td>Keltner / контр-тренд</td><td><b>ALRS</b> <code>kc_revert|none|none|close|longshort</code></td>
+  <td class="num pos">10,845.23</td><td class="num">5/8</td>
+  </tr><tr>
+  <td><b>Нефть и газ</b></td><td class="num">7</td><td class="num pos">51,579.04</td><td class="num">7/7</td>
+  <td>RSI / контр-тренд</td><td><b>SNGS</b> <code>rsi_counter|vol_confirm|none|close|longshort</code></td>
+  <td class="num pos">6,466.97</td><td class="num">5/7</td>
+  </tr><tr>
+  <td><b>Энергетика и ЖКХ</b></td><td class="num">4</td><td class="num pos">35,314.55</td><td class="num">4/4</td>
+  <td>Keltner / контр-тренд</td><td><b>UPRO</b> <code>bb_mid_counter|none|none|close|longshort</code></td>
+  <td class="num neg">-9,448.10</td><td class="num">1/4</td>
+  </tr><tr>
+  <td><b>Телеком / холдинги</b></td><td class="num">3</td><td class="num pos">27,221.44</td><td class="num">3/3</td>
+  <td>RSI / контр-тренд</td><td><b>SIST</b> <code>rsi_counter|none|none|close|longshort</code></td>
+  <td class="num pos">2,607.07</td><td class="num">2/3</td>
+  </tr><tr>
+  <td><b>Транспорт</b></td><td class="num">2</td><td class="num pos">20,043.19</td><td class="num">2/2</td>
+  <td>RSI / контр-тренд</td><td><b>FLOT</b> <code>rsi_counter|vol_confirm|none|next|longshort</code></td>
+  <td class="num neg">-185.46</td><td class="num">1/2</td>
+  </tr><tr>
+  <td><b>Химия / удобрения</b></td><td class="num">1</td><td class="num pos">7,174.56</td><td class="num">1/1</td>
+  <td>RSI / контр-тренд</td><td><b>PHOR</b> <code>rsi_counter|vol_dry|none|next|longshort</code></td>
+  <td class="num neg">-1,711.25</td><td class="num">0/1</td>
+  </tr><tr>
+  <td><b>Ритейл</b></td><td class="num">1</td><td class="num pos">6,979.11</td><td class="num">1/1</td>
+  <td>RSI / контр-тренд</td><td><b>MGNT</b> <code>rsi_counter|vol_dry|none|close|longshort</code></td>
+  <td class="num neg">-248.74</td><td class="num">0/1</td>
+  </tr><tr>
+  <td><b>Банки и финансы</b></td><td class="num">3</td><td class="num pos">4,895.16</td><td class="num">2/3</td>
+  <td>RSI / контр-тренд</td><td><b>MOEX</b> <code>rsi_counter|adx_regime|none|close|longshort</code></td>
+  <td class="num neg">-1,771.56</td><td class="num">1/3</td>
+  </tr><tr>
+  <td><b>IT</b></td><td class="num">1</td><td class="num pos">4,890.64</td><td class="num">1/1</td>
+  <td>Keltner / контр-тренд</td><td><b>YDEX</b> <code>kc_revert|none|pct1_2|close|longshort</code></td>
+  <td class="num pos">112.46</td><td class="num">1/1</td>
+  </tr></tbody></table></div></section>
+
+<section id="best-table" class="wrap"><h2>4. Лучшая логика по каждой бумаге / Best logic per security</h2>
+<div class="controls"><label>Отрасль<select id="sectorFilter"><option value="">all</option><option value="Телеком / холдинги">Телеком / холдинги</option><option value="Химия / удобрения">Химия / удобрения</option><option value="Транспорт">Транспорт</option><option value="IT">IT</option><option value="Банки и финансы">Банки и финансы</option><option value="Энергетика и ЖКХ">Энергетика и ЖКХ</option><option value="Металлы и добыча">Металлы и добыча</option><option value="Ритейл">Ритейл</option><option value="Нефть и газ">Нефть и газ</option></select></label><label>Индикатор<select id="indicatorFilter"><option value="">all</option><option value="Bollinger">Bollinger</option><option value="Keltner">Keltner</option><option value="MA">MA</option><option value="MACD">MACD</option><option value="PriceChannel">PriceChannel</option><option value="RSI">RSI</option><option value="Stochastic">Stochastic</option></select></label><label>Тип<select id="familyFilter"><option value="">all</option><option value="counter">контр-тренд</option><option value="trend">тренд</option></select></label><label>Тикер<input id="tickerSearch" placeholder="SBER, ALRS…"></label></div>
+<div class="tablewrap"><table id="bestTable"><thead><tr><th>#</th><th>Тикер</th><th>Название</th><th>Отрасль</th><th>Лучшая логика</th><th>Индикатор</th><th>Тип</th><th>Фильтр</th><th>Риск</th><th>Exec</th><th>Стиль</th><th>FinRes</th><th>Годовая</th><th>Сделки</th><th>Win%</th><th>WF OOS</th><th>WF folds</th></tr></thead><tbody><tr data-sector="Телеком / холдинги" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="sist">
+  <td class="num">1</td><td><b>SIST</b></td><td>АФК Система</td><td>Телеком / холдинги</td>
+  <td><code>rsi_counter|none|none|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">13,328.69</td><td class="num ann zero">+14.4%</td><td class="num">43</td><td class="num">69.8%</td>
+  <td class="num pos">1,471.59</td><td class="num">1/2</td>
+  </tr><tr data-sector="Химия / удобрения" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="phor">
+  <td class="num">2</td><td><b>PHOR</b></td><td>ФосАгро</td><td>Химия / удобрения</td>
+  <td><code>rsi_counter|vol_dry|none|next|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↓</td><td>нет</td><td>next</td><td>L+S</td>
+  <td class="num pos">7,174.56</td><td class="num ann zero">+7.5%</td><td class="num">32</td><td class="num">75.0%</td>
+  <td class="num neg">-1,711.25</td><td class="num">1/2</td>
+  </tr><tr data-sector="Транспорт" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="flot">
+  <td class="num">3</td><td><b>FLOT</b></td><td>Совкомфлот</td><td>Транспорт</td>
+  <td><code>rsi_counter|vol_confirm|none|next|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↑</td><td>нет</td><td>next</td><td>L+S</td>
+  <td class="num pos">11,643.68</td><td class="num ann zero">+12.5%</td><td class="num">39</td><td class="num">76.9%</td>
+  <td class="num pos">2,229.36</td><td class="num">2/2</td>
+  </tr><tr data-sector="Транспорт" data-indicator="Keltner" data-family="counter" data-status="pos" data-ticker="aflt">
+  <td class="num">4</td><td><b>AFLT</b></td><td>Аэрофлот</td><td>Транспорт</td>
+  <td><code>kc_revert|vol_dry|none|close|longshort</code><br><small>KC revert</small></td>
+  <td>Keltner</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↓</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">8,399.51</td><td class="num ann zero">+8.9%</td><td class="num">79</td><td class="num">81.0%</td>
+  <td class="num neg">-2,414.82</td><td class="num">0/2</td>
+  </tr><tr data-sector="IT" data-indicator="Keltner" data-family="counter" data-status="pos" data-ticker="ydex">
+  <td class="num">5</td><td><b>YDEX</b></td><td>Яндекс</td><td>IT</td>
+  <td><code>kc_revert|none|pct1_2|close|longshort</code><br><small>KC revert</small></td>
+  <td>Keltner</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>1%/2%</td><td>close</td><td>L+S</td>
+  <td class="num pos">4,890.64</td><td class="num ann zero">+5.1%</td><td class="num">109</td><td class="num">61.5%</td>
+  <td class="num pos">112.46</td><td class="num">1/2</td>
+  </tr><tr data-sector="Телеком / холдинги" data-indicator="Keltner" data-family="counter" data-status="pos" data-ticker="rtkm">
+  <td class="num">6</td><td><b>RTKM</b></td><td>Ростелеком</td><td>Телеком / холдинги</td>
+  <td><code>kc_revert|none|none|close|longshort</code><br><small>KC revert</small></td>
+  <td>Keltner</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">5,966.39</td><td class="num ann zero">+6.2%</td><td class="num">93</td><td class="num">67.7%</td>
+  <td class="num neg">-1,960.20</td><td class="num">1/2</td>
+  </tr><tr data-sector="Банки и финансы" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="moex">
+  <td class="num">7</td><td><b>MOEX</b></td><td>Московская биржа</td><td>Банки и финансы</td>
+  <td><code>rsi_counter|adx_regime|none|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>ADX 20</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">2,746.39</td><td class="num ann zero">+2.8%</td><td class="num">18</td><td class="num">66.7%</td>
+  <td class="num pos">68.17</td><td class="num">1/2</td>
+  </tr><tr data-sector="Энергетика и ЖКХ" data-indicator="Bollinger" data-family="counter" data-status="pos" data-ticker="upro">
+  <td class="num">8</td><td><b>UPRO</b></td><td>Юнипро</td><td>Энергетика и ЖКХ</td>
+  <td><code>bb_mid_counter|none|none|close|longshort</code><br><small>BB mid counter</small></td>
+  <td>Bollinger</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">13,370.36</td><td class="num ann zero">+14.4%</td><td class="num">686</td><td class="num">83.2%</td>
+  <td class="num pos">1,592.25</td><td class="num">2/2</td>
+  </tr><tr data-sector="Энергетика и ЖКХ" data-indicator="Keltner" data-family="trend" data-status="pos" data-ticker="rste">
+  <td class="num">9</td><td><b>RSTE</b></td><td>ФСК-Россети</td><td>Энергетика и ЖКХ</td>
+  <td><code>kt_break|ma_state|pct1_2|next|longshort</code><br><small>KT break</small></td>
+  <td>Keltner</td><td><span class="badge trend">тренд</span></td>
+  <td>SMA20/50</td><td>1%/2%</td><td>next</td><td>L+S</td>
+  <td class="num pos">6,601.57</td><td class="num ann zero">+6.9%</td><td class="num">62</td><td class="num">46.8%</td>
+  <td class="num neg">-5,258.12</td><td class="num">1/2</td>
+  </tr><tr data-sector="Энергетика и ЖКХ" data-indicator="Keltner" data-family="trend" data-status="pos" data-ticker="irao">
+  <td class="num">10</td><td><b>IRAO</b></td><td>Интер РАО</td><td>Энергетика и ЖКХ</td>
+  <td><code>kt_break|ma_state|none|next|longshort</code><br><small>KT break</small></td>
+  <td>Keltner</td><td><span class="badge trend">тренд</span></td>
+  <td>SMA20/50</td><td>нет</td><td>next</td><td>L+S</td>
+  <td class="num pos">4,197.58</td><td class="num ann zero">+4.3%</td><td class="num">64</td><td class="num">37.5%</td>
+  <td class="num neg">-1,258.71</td><td class="num">0/2</td>
+  </tr><tr data-sector="Энергетика и ЖКХ" data-indicator="MA" data-family="counter" data-status="pos" data-ticker="hydr">
+  <td class="num">11</td><td><b>HYDR</b></td><td>РусГидро</td><td>Энергетика и ЖКХ</td>
+  <td><code>ma_revert|adx_regime|pct1_2|close|longshort</code><br><small>MA counter</small></td>
+  <td>MA</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>ADX 20</td><td>1%/2%</td><td>close</td><td>L+S</td>
+  <td class="num pos">11,145.04</td><td class="num ann zero">+11.9%</td><td class="num">120</td><td class="num">57.5%</td>
+  <td class="num neg">-4,523.52</td><td class="num">0/2</td>
+  </tr><tr data-sector="Металлы и добыча" data-indicator="Bollinger" data-family="counter" data-status="pos" data-ticker="rual">
+  <td class="num">12</td><td><b>RUAL</b></td><td>РУСАЛ</td><td>Металлы и добыча</td>
+  <td><code>bb_revert|none|none|close|longshort</code><br><small>BB revert</small></td>
+  <td>Bollinger</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">9,379.46</td><td class="num ann zero">+9.9%</td><td class="num">130</td><td class="num">69.2%</td>
+  <td class="num pos">2,390.29</td><td class="num">2/2</td>
+  </tr><tr data-sector="Банки и финансы" data-indicator="MACD" data-family="counter" data-status="pos" data-ticker="vtbr">
+  <td class="num">13</td><td><b>VTBR</b></td><td>ВТБ</td><td>Банки и финансы</td>
+  <td><code>macd_counter|stoch_level|atr2_4|close|long</code><br><small>MACD counter</small></td>
+  <td>MACD</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>Stoch 50/20</td><td>2ATR/4ATR</td><td>close</td><td>L</td>
+  <td class="num pos">2,416.44</td><td class="num ann zero">+2.5%</td><td class="num">29</td><td class="num">55.2%</td>
+  <td class="num neg">-273.18</td><td class="num">1/2</td>
+  </tr><tr data-sector="Телеком / холдинги" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="mtss">
+  <td class="num">14</td><td><b>MTSS</b></td><td>МТС</td><td>Телеком / холдинги</td>
+  <td><code>rsi_counter|none|pct1_2|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>1%/2%</td><td>close</td><td>L+S</td>
+  <td class="num pos">7,926.36</td><td class="num ann zero">+8.3%</td><td class="num">46</td><td class="num">76.1%</td>
+  <td class="num pos">3,095.68</td><td class="num">2/2</td>
+  </tr><tr data-sector="Ритейл" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="mgnt">
+  <td class="num">15</td><td><b>MGNT</b></td><td>Магнит</td><td>Ритейл</td>
+  <td><code>rsi_counter|vol_dry|none|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↓</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">6,979.11</td><td class="num ann zero">+7.3%</td><td class="num">34</td><td class="num">67.6%</td>
+  <td class="num neg">-248.74</td><td class="num">0/2</td>
+  </tr><tr data-sector="Металлы и добыча" data-indicator="Keltner" data-family="counter" data-status="pos" data-ticker="mtlr">
+  <td class="num">16</td><td><b>MTLR</b></td><td>Мечел (обыкновенные)</td><td>Металлы и добыча</td>
+  <td><code>kc_revert|vol_confirm|none|close|longshort</code><br><small>KC revert</small></td>
+  <td>Keltner</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↑</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">8,958.33</td><td class="num ann zero">+9.5%</td><td class="num">102</td><td class="num">72.5%</td>
+  <td class="num pos">5,014.39</td><td class="num">2/2</td>
+  </tr><tr data-sector="Металлы и добыча" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="magn">
+  <td class="num">17</td><td><b>MAGN</b></td><td>ММК</td><td>Металлы и добыча</td>
+  <td><code>rsi_counter|vol_confirm|pct1_2|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↑</td><td>1%/2%</td><td>close</td><td>L+S</td>
+  <td class="num pos">7,311.63</td><td class="num ann zero">+7.7%</td><td class="num">55</td><td class="num">70.9%</td>
+  <td class="num neg">-491.64</td><td class="num">1/2</td>
+  </tr><tr data-sector="Металлы и добыча" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="nlmk">
+  <td class="num">18</td><td><b>NLMK</b></td><td>НЛМК</td><td>Металлы и добыча</td>
+  <td><code>rsi_counter|vol_confirm|none|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↑</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">7,325.71</td><td class="num ann zero">+7.7%</td><td class="num">38</td><td class="num">73.7%</td>
+  <td class="num neg">-2,362.69</td><td class="num">1/2</td>
+  </tr><tr data-sector="Металлы и добыча" data-indicator="Keltner" data-family="counter" data-status="pos" data-ticker="chmf">
+  <td class="num">19</td><td><b>CHMF</b></td><td>Северсталь</td><td>Металлы и добыча</td>
+  <td><code>kc_revert|none|none|close|longshort</code><br><small>KC revert</small></td>
+  <td>Keltner</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">15,077.00</td><td class="num ann zero">+16.4%</td><td class="num">112</td><td class="num">76.8%</td>
+  <td class="num pos">5,336.06</td><td class="num">2/2</td>
+  </tr><tr data-sector="Металлы и добыча" data-indicator="Keltner" data-family="counter" data-status="pos" data-ticker="alrs">
+  <td class="num">20</td><td><b>ALRS</b></td><td>Алроса</td><td>Металлы и добыча</td>
+  <td><code>kc_revert|none|none|close|longshort</code><br><small>KC revert</small></td>
+  <td>Keltner</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">22,108.61</td><td class="num ann zero">+24.8%</td><td class="num">170</td><td class="num">75.9%</td>
+  <td class="num pos">1,934.44</td><td class="num">1/2</td>
+  </tr><tr data-sector="Металлы и добыча" data-indicator="Bollinger" data-family="counter" data-status="pos" data-ticker="plzl">
+  <td class="num">21</td><td><b>PLZL</b></td><td>Полюс</td><td>Металлы и добыча</td>
+  <td><code>bb_revert|vol_dry|none|close|longshort</code><br><small>BB revert</small></td>
+  <td>Bollinger</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↓</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">4,296.43</td><td class="num ann zero">+4.4%</td><td class="num">100</td><td class="num">71.0%</td>
+  <td class="num pos">142.78</td><td class="num">1/2</td>
+  </tr><tr data-sector="Нефть и газ" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="sngs">
+  <td class="num">22</td><td><b>SNGS</b></td><td>Сургутнефтегаз (обыкновенные)</td><td>Нефть и газ</td>
+  <td><code>rsi_counter|vol_confirm|none|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↑</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">11,916.29</td><td class="num ann zero">+12.8%</td><td class="num">34</td><td class="num">76.5%</td>
+  <td class="num pos">3,744.07</td><td class="num">2/2</td>
+  </tr><tr data-sector="Нефть и газ" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="tatn">
+  <td class="num">23</td><td><b>TATN</b></td><td>Татнефть (обыкновенные)</td><td>Нефть и газ</td>
+  <td><code>rsi_counter|none|pct1_2|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>1%/2%</td><td>close</td><td>L+S</td>
+  <td class="num pos">6,951.82</td><td class="num ann zero">+7.3%</td><td class="num">51</td><td class="num">70.6%</td>
+  <td class="num pos">1,054.47</td><td class="num">1/2</td>
+  </tr><tr data-sector="Металлы и добыча" data-indicator="PriceChannel" data-family="counter" data-status="pos" data-ticker="gmkn">
+  <td class="num">24</td><td><b>GMKN</b></td><td>Норникель</td><td>Металлы и добыча</td>
+  <td><code>pc_revert|ma_state|none|close|longshort</code><br><small>Channel revert</small></td>
+  <td>PriceChannel</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>SMA20/50</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">3,589.80</td><td class="num ann zero">+3.7%</td><td class="num">107</td><td class="num">70.1%</td>
+  <td class="num neg">-1,118.40</td><td class="num">1/2</td>
+  </tr><tr data-sector="Нефть и газ" data-indicator="Keltner" data-family="counter" data-status="pos" data-ticker="nvtk">
+  <td class="num">25</td><td><b>NVTK</b></td><td>НОВАТЭК</td><td>Нефть и газ</td>
+  <td><code>kc_revert|vol_confirm|pct1_2|close|longshort</code><br><small>KC revert</small></td>
+  <td>Keltner</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↑</td><td>1%/2%</td><td>close</td><td>L+S</td>
+  <td class="num pos">8,426.32</td><td class="num ann zero">+8.9%</td><td class="num">122</td><td class="num">69.7%</td>
+  <td class="num neg">-1,971.82</td><td class="num">0/2</td>
+  </tr><tr data-sector="Нефть и газ" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="rosn">
+  <td class="num">26</td><td><b>ROSN</b></td><td>Роснефть</td><td>Нефть и газ</td>
+  <td><code>rsi_counter|none|none|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>нет</td><td>close</td><td>L+S</td>
+  <td class="num pos">8,767.65</td><td class="num ann zero">+9.3%</td><td class="num">50</td><td class="num">60.0%</td>
+  <td class="num pos">1,582.19</td><td class="num">2/2</td>
+  </tr><tr data-sector="Нефть и газ" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="lkoh">
+  <td class="num">27</td><td><b>LKOH</b></td><td>ЛУКОЙЛ</td><td>Нефть и газ</td>
+  <td><code>rsi_counter|adx_regime|pct1_2|next|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>ADX 20</td><td>1%/2%</td><td>next</td><td>L+S</td>
+  <td class="num pos">3,645.95</td><td class="num ann zero">+3.8%</td><td class="num">20</td><td class="num">85.0%</td>
+  <td class="num pos">80.56</td><td class="num">1/2</td>
+  </tr><tr data-sector="Нефть и газ" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="gazp">
+  <td class="num">28</td><td><b>GAZP</b></td><td>Газпром</td><td>Нефть и газ</td>
+  <td><code>rsi_counter|none|none|next|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>нет</td><td>нет</td><td>next</td><td>L+S</td>
+  <td class="num pos">8,537.40</td><td class="num ann zero">+9.0%</td><td class="num">46</td><td class="num">76.1%</td>
+  <td class="num pos">3,155.99</td><td class="num">2/2</td>
+  </tr><tr data-sector="Банки и финансы" data-indicator="Stochastic" data-family="counter" data-status="neg" data-ticker="sber">
+  <td class="num">29</td><td><b>SBER</b></td><td>Сбербанк (обыкновенные)</td><td>Банки и финансы</td>
+  <td><code>st_counter|adx_regime|none|close|long</code><br><small>Stoch counter</small></td>
+  <td>Stochastic</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>ADX 20</td><td>нет</td><td>close</td><td>L</td>
+  <td class="num neg">-267.67</td><td class="num ann zero">-0.3%</td><td class="num">22</td><td class="num">72.7%</td>
+  <td class="num neg">-1,566.55</td><td class="num">0/2</td>
+  </tr><tr data-sector="Нефть и газ" data-indicator="RSI" data-family="counter" data-status="pos" data-ticker="trnfp">
+  <td class="num">30</td><td><b>TRNFP</b></td><td>Транснефть (привилегированные)</td><td>Нефть и газ</td>
+  <td><code>rsi_counter|vol_dry|pct1_2|close|longshort</code><br><small>RSI counter</small></td>
+  <td>RSI</td><td><span class="badge counter">контр-тренд</span></td>
+  <td>volume↓</td><td>1%/2%</td><td>close</td><td>L+S</td>
+  <td class="num pos">3,333.61</td><td class="num ann zero">+3.4%</td><td class="num">39</td><td class="num">64.1%</td>
+  <td class="num neg">-1,178.49</td><td class="num">0/2</td>
+  </tr></tbody></table></div>
+<p class="note">Ключ: <code>signal|filter|risk|execution|style</code>. WF OOS — сумма по двум пригодным складкам, не annualized.</p>
+</section>
+
+<section id="families" class="wrap"><h2>5. Какие семейства выигрывают / Winning families</h2><div class="tablewrap"><table><thead><tr><th>Индикатор</th><th>Сколько раз лучший</th><th>Сумма FinRes по ним</th><th>Лучший пример</th><th>FinRes</th></tr></thead><tbody><tr><td><b>RSI</b></td><td class="num">14/30</td><td class="num pos">107,588.85</td><td><b>SIST</b> <code>rsi_counter|none|none|close|longshort</code></td><td class="num pos">13,328.69</td></tr><tr><td><b>Keltner</b></td><td class="num">9/30</td><td class="num pos">84,625.95</td><td><b>ALRS</b> <code>kc_revert|none|none|close|longshort</code></td><td class="num pos">22,108.61</td></tr><tr><td><b>Bollinger</b></td><td class="num">3/30</td><td class="num pos">27,046.25</td><td><b>UPRO</b> <code>bb_mid_counter|none|none|close|longshort</code></td><td class="num pos">13,370.36</td></tr><tr><td><b>MA</b></td><td class="num">1/30</td><td class="num pos">11,145.04</td><td><b>HYDR</b> <code>ma_revert|adx_regime|pct1_2|close|longshort</code></td><td class="num pos">11,145.04</td></tr><tr><td><b>PriceChannel</b></td><td class="num">1/30</td><td class="num pos">3,589.80</td><td><b>GMKN</b> <code>pc_revert|ma_state|none|close|longshort</code></td><td class="num pos">3,589.80</td></tr><tr><td><b>MACD</b></td><td class="num">1/30</td><td class="num pos">2,416.44</td><td><b>VTBR</b> <code>macd_counter|stoch_level|atr2_4|close|long</code></td><td class="num pos">2,416.44</td></tr><tr><td><b>Stochastic</b></td><td class="num">1/30</td><td class="num neg">-267.67</td><td><b>SBER</b> <code>st_counter|adx_regime|none|close|long</code></td><td class="num neg">-267.67</td></tr></tbody></table></div>
+<p class="note">RSI выиграл у 14/30 бумаг, Keltner — у 9/30, Bollinger — у 3/30. Трендовые логики встретились только у 2/30: RSTE (kt_break|ma_state|pct1_2|next|longshort), IRAO (kt_break|ma_state|none|next|longshort). Это не «универсальный индикатор», а результат узкого окна и конкретных параметров; для устойчивости смотрите walk-forward.</p>
+</section>
+
+<section id="filters" class="wrap"><h2>6. Влияние фильтров / Filter impact</h2><div class="tablewrap"><table><thead><tr><th>Фильтр</th><th>Случаев</th><th>Средний Δ FinRes</th><th>Доля улучшений</th></tr></thead><tbody><tr><td><b>Stoch 50/20</b> <code>stoch_level</code></td><td class="num">600</td><td class="num pos">12,195.21</td><td class="num">82.7%</td></tr><tr><td><b>SMA20/50</b> <code>ma_state</code></td><td class="num">600</td><td class="num pos">12,175.27</td><td class="num">84.8%</td></tr><tr><td><b>price&gt;SMA50</b> <code>price_ma</code></td><td class="num">600</td><td class="num pos">11,089.09</td><td class="num">81.0%</td></tr><tr><td><b>volume↑</b> <code>vol_confirm</code></td><td class="num">600</td><td class="num pos">10,504.12</td><td class="num">81.8%</td></tr><tr><td><b>ADX 20</b> <code>adx_regime</code></td><td class="num">600</td><td class="num pos">10,211.44</td><td class="num">83.0%</td></tr><tr><td><b>volume↓</b> <code>vol_dry</code></td><td class="num">600</td><td class="num pos">3,451.91</td><td class="num">74.2%</td></tr><tr><td><b>width↑/↓</b> <code>width_expand</code></td><td class="num">600</td><td class="num pos">3,392.35</td><td class="num">67.5%</td></tr></tbody></table></div>
+<p class="note">Δ считается на фиксированном базисе: без стопа, исполнение <code>close</code>, long+short; сравнивается один и тот же сигнал с фильтром и без него. Положительный Δ означает, что фильтр улучшил FinRes.</p>
+</section>
+
+<section id="wf" class="wrap"><h2>7. По-бумажный walk-forward / Per-security walk-forward</h2>
+<p>Две пригодные складки: IS 10-01…10-14 → OOS 10-15…10-21 и IS 10-08…10-21 → OOS 10-22…10-28. Для каждой бумаги и складки конфигурация выбиралась по in-sample FinRes, затем применялась к OOS. Суммарно <b class="pos">6,666.62</b> FinRes; положительный OOS у <b>16/30</b>; обе складки положительны у <b>9</b>: FLOT, UPRO, RUAL, MTSS, MTLR, CHMF, SNGS, ROSN, GAZP.</p>
+<div class="tablewrap"><table id="wfTable"><thead><tr><th>Тикер</th><th>Отрасль</th><th>Выбор fold 1</th><th>OOS 1</th><th>Выбор fold 2</th><th>OOS 2</th><th>Total OOS</th><th>Позитивных складок</th></tr></thead><tbody><tr data-sector="Телеком / холдинги">
+  <td><b>SIST</b></td><td>Телеком / холдинги</td>
+  <td><code>rsi_counter|none|none|close|longshort</code></td><td class="num pos">2,536.34</td>
+  <td><code>pc_revert|ma_state|none|close|longshort</code></td><td class="num neg">-1,064.75</td>
+  <td class="num pos">1,471.59</td><td class="num">1/2</td>
+  </tr><tr data-sector="Химия / удобрения">
+  <td><b>PHOR</b></td><td>Химия / удобрения</td>
+  <td><code>rsi_counter|vol_dry|none|close|longshort</code></td><td class="num pos">1,638.52</td>
+  <td><code>ma_revert|ma_state|pct1_2|close|longshort</code></td><td class="num neg">-3,349.77</td>
+  <td class="num neg">-1,711.25</td><td class="num">1/2</td>
+  </tr><tr data-sector="Транспорт">
+  <td><b>FLOT</b></td><td>Транспорт</td>
+  <td><code>rsi_counter|vol_confirm|none|next|longshort</code></td><td class="num pos">1,101.67</td>
+  <td><code>rsi_counter|vol_confirm|none|next|longshort</code></td><td class="num pos">1,127.69</td>
+  <td class="num pos">2,229.36</td><td class="num">2/2</td>
+  </tr><tr data-sector="Транспорт">
+  <td><b>AFLT</b></td><td>Транспорт</td>
+  <td><code>bb_mid_counter|price_ma|none|close|long</code></td><td class="num neg">-1,188.35</td>
+  <td><code>rsi_counter|none|none|close|longshort</code></td><td class="num neg">-1,226.47</td>
+  <td class="num neg">-2,414.82</td><td class="num">0/2</td>
+  </tr><tr data-sector="IT">
+  <td><b>YDEX</b></td><td>IT</td>
+  <td><code>kc_revert|price_ma|pct1_2|close|longshort</code></td><td class="num neg">-191.00</td>
+  <td><code>kc_revert|none|pct1_2|close|longshort</code></td><td class="num pos">303.46</td>
+  <td class="num pos">112.46</td><td class="num">1/2</td>
+  </tr><tr data-sector="Телеком / холдинги">
+  <td><b>RTKM</b></td><td>Телеком / холдинги</td>
+  <td><code>bb_mid_counter|none|none|close|longshort</code></td><td class="num neg">-2,803.84</td>
+  <td><code>bb_revert|ma_state|none|close|longshort</code></td><td class="num pos">843.64</td>
+  <td class="num neg">-1,960.20</td><td class="num">1/2</td>
+  </tr><tr data-sector="Банки и финансы">
+  <td><b>MOEX</b></td><td>Банки и финансы</td>
+  <td><code>rsi_counter|adx_regime|none|next|longshort</code></td><td class="num pos">275.94</td>
+  <td><code>rsi_counter|vol_dry|pct1_2|next|longshort</code></td><td class="num neg">-207.77</td>
+  <td class="num pos">68.17</td><td class="num">1/2</td>
+  </tr><tr data-sector="Энергетика и ЖКХ">
+  <td><b>UPRO</b></td><td>Энергетика и ЖКХ</td>
+  <td><code>bb_mid_counter|none|pct1_2|close|longshort</code></td><td class="num pos">1,277.89</td>
+  <td><code>bb_revert|none|pct1_2|close|longshort</code></td><td class="num pos">314.36</td>
+  <td class="num pos">1,592.25</td><td class="num">2/2</td>
+  </tr><tr data-sector="Энергетика и ЖКХ">
+  <td><b>RSTE</b></td><td>Энергетика и ЖКХ</td>
+  <td><code>kc_mid|none|pct1_2|close|longshort</code></td><td class="num neg">-6,621.07</td>
+  <td><code>kt_break|ma_state|pct1_2|next|longshort</code></td><td class="num pos">1,362.95</td>
+  <td class="num neg">-5,258.12</td><td class="num">1/2</td>
+  </tr><tr data-sector="Энергетика и ЖКХ">
+  <td><b>IRAO</b></td><td>Энергетика и ЖКХ</td>
+  <td><code>rsi_counter|width_expand|none|next|longshort</code></td><td class="num neg">-337.68</td>
+  <td><code>kt_break|none|none|next|longshort</code></td><td class="num neg">-921.03</td>
+  <td class="num neg">-1,258.71</td><td class="num">0/2</td>
+  </tr><tr data-sector="Энергетика и ЖКХ">
+  <td><b>HYDR</b></td><td>Энергетика и ЖКХ</td>
+  <td><code>kc_mid|none|none|close|longshort</code></td><td class="num neg">-2,816.48</td>
+  <td><code>bb_revert|vol_dry|none|close|longshort</code></td><td class="num neg">-1,707.04</td>
+  <td class="num neg">-4,523.52</td><td class="num">0/2</td>
+  </tr><tr data-sector="Металлы и добыча">
+  <td><b>RUAL</b></td><td>Металлы и добыча</td>
+  <td><code>bb_revert|none|none|close|longshort</code></td><td class="num pos">2,115.60</td>
+  <td><code>bb_revert|none|none|close|longshort</code></td><td class="num pos">274.69</td>
+  <td class="num pos">2,390.29</td><td class="num">2/2</td>
+  </tr><tr data-sector="Банки и финансы">
+  <td><b>VTBR</b></td><td>Банки и финансы</td>
+  <td><code>bb_revert|vol_confirm|none|close|longshort</code></td><td class="num pos">651.37</td>
+  <td><code>bb_revert|vol_confirm|pct1_2|close|longshort</code></td><td class="num neg">-924.55</td>
+  <td class="num neg">-273.18</td><td class="num">1/2</td>
+  </tr><tr data-sector="Телеком / холдинги">
+  <td><b>MTSS</b></td><td>Телеком / холдинги</td>
+  <td><code>rsi_counter|none|pct1_2|close|longshort</code></td><td class="num pos">1,406.78</td>
+  <td><code>rsi_counter|none|pct1_2|close|longshort</code></td><td class="num pos">1,688.90</td>
+  <td class="num pos">3,095.68</td><td class="num">2/2</td>
+  </tr><tr data-sector="Ритейл">
+  <td><b>MGNT</b></td><td>Ритейл</td>
+  <td><code>kc_revert|vol_confirm|none|close|long</code></td><td class="num neg">-93.22</td>
+  <td><code>rsi_counter|vol_dry|none|close|longshort</code></td><td class="num neg">-155.52</td>
+  <td class="num neg">-248.74</td><td class="num">0/2</td>
+  </tr><tr data-sector="Металлы и добыча">
+  <td><b>MTLR</b></td><td>Металлы и добыча</td>
+  <td><code>kc_revert|vol_confirm|none|close|longshort</code></td><td class="num pos">3,929.86</td>
+  <td><code>rsi_counter|none|none|close|longshort</code></td><td class="num pos">1,084.53</td>
+  <td class="num pos">5,014.39</td><td class="num">2/2</td>
+  </tr><tr data-sector="Металлы и добыча">
+  <td><b>MAGN</b></td><td>Металлы и добыча</td>
+  <td><code>kc_revert|none|pct1_2|close|longshort</code></td><td class="num pos">9.80</td>
+  <td><code>kc_revert|vol_confirm|pct1_2|close|longshort</code></td><td class="num neg">-501.44</td>
+  <td class="num neg">-491.64</td><td class="num">1/2</td>
+  </tr><tr data-sector="Металлы и добыча">
+  <td><b>NLMK</b></td><td>Металлы и добыча</td>
+  <td><code>bb_mid_counter|vol_confirm|none|close|longshort</code></td><td class="num neg">-3,093.11</td>
+  <td><code>rsi_counter|vol_confirm|none|close|longshort</code></td><td class="num pos">730.42</td>
+  <td class="num neg">-2,362.69</td><td class="num">1/2</td>
+  </tr><tr data-sector="Металлы и добыча">
+  <td><b>CHMF</b></td><td>Металлы и добыча</td>
+  <td><code>kc_revert|none|none|close|longshort</code></td><td class="num pos">4,239.96</td>
+  <td><code>kc_revert|none|none|close|longshort</code></td><td class="num pos">1,096.10</td>
+  <td class="num pos">5,336.06</td><td class="num">2/2</td>
+  </tr><tr data-sector="Металлы и добыча">
+  <td><b>ALRS</b></td><td>Металлы и добыча</td>
+  <td><code>kc_revert|none|none|close|longshort</code></td><td class="num pos">3,413.00</td>
+  <td><code>kc_revert|none|pct1_2|close|longshort</code></td><td class="num neg">-1,478.56</td>
+  <td class="num pos">1,934.44</td><td class="num">1/2</td>
+  </tr><tr data-sector="Металлы и добыча">
+  <td><b>PLZL</b></td><td>Металлы и добыча</td>
+  <td><code>bb_revert|width_expand|none|close|longshort</code></td><td class="num pos">1,396.68</td>
+  <td><code>bb_revert|none|pct1_2|close|longshort</code></td><td class="num neg">-1,253.90</td>
+  <td class="num pos">142.78</td><td class="num">1/2</td>
+  </tr><tr data-sector="Нефть и газ">
+  <td><b>SNGS</b></td><td>Нефть и газ</td>
+  <td><code>rsi_counter|vol_confirm|none|close|longshort</code></td><td class="num pos">3,511.88</td>
+  <td><code>rsi_counter|vol_confirm|none|close|longshort</code></td><td class="num pos">232.19</td>
+  <td class="num pos">3,744.07</td><td class="num">2/2</td>
+  </tr><tr data-sector="Нефть и газ">
+  <td><b>TATN</b></td><td>Нефть и газ</td>
+  <td><code>rsi_counter|none|pct1_2|close|longshort</code></td><td class="num pos">2,353.34</td>
+  <td><code>rsi_counter|none|pct1_2|close|longshort</code></td><td class="num neg">-1,298.87</td>
+  <td class="num pos">1,054.47</td><td class="num">1/2</td>
+  </tr><tr data-sector="Металлы и добыча">
+  <td><b>GMKN</b></td><td>Металлы и добыча</td>
+  <td><code>kt_break|ma_state|none|next|long</code></td><td class="num neg">-1,779.71</td>
+  <td><code>kc_revert|vol_confirm|pct1_2|close|longshort</code></td><td class="num pos">661.31</td>
+  <td class="num neg">-1,118.40</td><td class="num">1/2</td>
+  </tr><tr data-sector="Нефть и газ">
+  <td><b>NVTK</b></td><td>Нефть и газ</td>
+  <td><code>kc_revert|vol_confirm|none|close|longshort</code></td><td class="num neg">-676.66</td>
+  <td><code>rsi_counter|none|none|close|longshort</code></td><td class="num neg">-1,295.16</td>
+  <td class="num neg">-1,971.82</td><td class="num">0/2</td>
+  </tr><tr data-sector="Нефть и газ">
+  <td><b>ROSN</b></td><td>Нефть и газ</td>
+  <td><code>rsi_counter|width_expand|pct1_2|next|longshort</code></td><td class="num pos">167.08</td>
+  <td><code>rsi_counter|none|none|close|longshort</code></td><td class="num pos">1,415.11</td>
+  <td class="num pos">1,582.19</td><td class="num">2/2</td>
+  </tr><tr data-sector="Нефть и газ">
+  <td><b>LKOH</b></td><td>Нефть и газ</td>
+  <td><code>kc_revert|none|none|close|longshort</code></td><td class="num pos">601.59</td>
+  <td><code>kc_revert|vol_confirm|none|close|longshort</code></td><td class="num neg">-521.03</td>
+  <td class="num pos">80.56</td><td class="num">1/2</td>
+  </tr><tr data-sector="Нефть и газ">
+  <td><b>GAZP</b></td><td>Нефть и газ</td>
+  <td><code>pc_revert|vol_dry|none|close|longshort</code></td><td class="num pos">84.51</td>
+  <td><code>rsi_counter|none|none|next|longshort</code></td><td class="num pos">3,071.48</td>
+  <td class="num pos">3,155.99</td><td class="num">2/2</td>
+  </tr><tr data-sector="Банки и финансы">
+  <td><b>SBER</b></td><td>Банки и финансы</td>
+  <td><code>st_counter|adx_regime|none|close|long</code></td><td class="num neg">-9.92</td>
+  <td><code>bb_revert|vol_confirm|none|close|longshort</code></td><td class="num neg">-1,556.63</td>
+  <td class="num neg">-1,566.55</td><td class="num">0/2</td>
+  </tr><tr data-sector="Нефть и газ">
+  <td><b>TRNFP</b></td><td>Нефть и газ</td>
+  <td><code>rsi_counter|vol_dry|none|close|longshort</code></td><td class="num neg">-376.65</td>
+  <td><code>pc_break|ma_state|none|next|longshort</code></td><td class="num neg">-801.84</td>
+  <td class="num neg">-1,178.49</td><td class="num">0/2</td>
+  </tr></tbody></table></div>
+</section>
+
+<section id="formula" class="wrap"><h2>8. Формула / Formula</h2><div class="formula-grid"><div><b>FinRes</b><pre>equity − 1 000 000
+PnL = gross% × notional − 0.03% × notional per side</pre></div><div><b>Годовая доходность</b><pre>(1 + FinRes / 1 000 000)^(365 / 36) − 1</pre><p class="note">«н/о» при FinRes ≤ −1 000 000.</p></div></div></section>
+
+<section id="repro" class="wrap"><h2>9. Файлы / Files</h2><p><code>РАССЛЕДОВАНИЕ_минутного_таймфрейма.html</code>, <code>РАССЛЕДОВАНИЕ_минутного_таймфрейма.json</code>, <code>РАССЛЕДОВАНИЕ_минутного_таймфрейма.csv</code> в <code>related projects/MultiLogicTradePg/docs</code>. Скрипты: <code>m1_investigation_study.js</code>, <code>build_m1_investigation_report.js</code> в temp-каталоге сессии. Коммитов и push не было.</p></section>
+<div class="footer wrap">Generated 2026-11-27T09:01:36.417Z · internal FinRes research, not an OsEngine engine backtest · branch <code>opencode/classic-indicator-derivatives-study</code></div>
+<script>
+(function(){
+  var sec=document.getElementById('sectorFilter'),ind=document.getElementById('indicatorFilter'),fam=document.getElementById('familyFilter'),q=document.getElementById('tickerSearch');
+  function apply(){
+    Array.prototype.forEach.call(document.querySelectorAll('#bestTable tbody tr'),function(tr){
+      var ok=(!sec.value||tr.dataset.sector===sec.value)&&(!ind.value||tr.dataset.indicator===ind.value)&&(!fam.value||tr.dataset.family===fam.value)&&(!q.value||tr.dataset.ticker.indexOf(q.value.toLowerCase().trim())>=0);
+      tr.style.display=ok?'':'none';
+    });
+  }
+  [sec,ind,fam].forEach(function(x){x.addEventListener('change',apply)});q.addEventListener('input',apply);
+})();
+</script></body></html>

@@ -44,25 +44,30 @@
             {{ statsLoading ? 'Загрузка…' : 'Статистика по всем бумагам' }}
           </button>
           <div class="export-wrap">
-            <button type="button" class="btn-report btn-export" (click)="toggleExportPicker()" [disabled]="exporting" [title]="exportStatus || 'Экспорт в HTML'">
+            <button type="button" class="btn-report btn-export" [class.btn-export-cancel]="exporting" (click)="exporting ? cancelExport() : toggleExportPicker()" [title]="exporting ? 'Отменить экспорт' : (exportStatus || 'Экспорт в HTML')">
               <span class="btn-export-fill" [style.width.%]="exporting ? exportProgress : 0"></span>
-              <span class="btn-export-text">{{ exporting ? (exportProgress + '% ' + (exportStatus || 'Экспорт...')) : 'Экспорт' }}</span>
+              <span class="btn-export-text">{{ exporting ? ('Отменить экспорт · ' + exportProgress + '%') : 'Экспорт' }}</span>
             </button>
             @if (exportPickerOpen) {
               <div class="export-picker card">
                 <div class="export-picker-title">Бумаги для экспорта</div>
-                @for (s of exportSecurityOptions(); track s.id) {
-                  <label class="export-picker-item">
-                    <input type="checkbox" [checked]="exportSelectedIds.has(s.id)" (change)="toggleExportSecurity(s.id, $any($event.target).checked)" />
-                    <span>{{ s.name }}</span>
-                  </label>
-                }
-                @if (exportSecurityOptions().length === 0) {
-                  <div class="export-picker-empty">Нет доступных бумаг</div>
-                }
-                <div class="export-picker-actions">
+                <div class="export-picker-actions export-picker-actions-top">
                   <button type="button" class="btn-report" (click)="exportTrainerHtml()" [disabled]="exporting || exportSelectedIds.size === 0">Скачать HTML</button>
+                  <button type="button" class="btn-report" (click)="toggleExportSelectAll()">{{ exportAllSelected() ? 'Отменить выбор' : 'Выбрать все' }}</button>
                   <button type="button" class="btn-report" (click)="exportPickerOpen=false">Отмена</button>
+                </div>
+                <div class="export-picker-list">
+                  @for (s of exportSecurityOptions(); track s.id) {
+                    <label class="export-picker-item">
+                      <input type="checkbox" [checked]="exportSelectedIds.has(s.id)" (change)="toggleExportSecurity(s.id, $any($event.target).checked)" />
+                      <span>{{ s.name }}</span>
+                    </label>
+                  }
+                  @if (exportSecuritiesLoading) {
+                    <div class="export-picker-empty">Загрузка бумаг…</div>
+                  } @else if (exportSecurityOptions().length === 0) {
+                    <div class="export-picker-empty">Нет доступных бумаг</div>
+                  }
                 </div>
               </div>
             }
@@ -137,6 +142,20 @@
         </label>
 
         <div class="setup-right">
+          <div class="setup-field compact logic-signal-top" [class.logic-signal-on]="logicSignalEnabled" [class.logic-signal-off]="!logicSignalEnabled">
+            <div class="logic-signal-row">
+              <label class="logic-signal-toggle" [title]="logicSignalEnabled ? 'Автосделки по сигналам логики: включены' : 'Автосделки по сигналам логики: выключены'">
+                <input type="checkbox" [(ngModel)]="logicSignalEnabled" (ngModelChange)="onLogicSignalEnabledChange()" />
+              </label>
+              <select class="logic-signal-select" [(ngModel)]="selectedLogicId" (ngModelChange)="onLogicSignalSelectedChange()">
+                <option [ngValue]="null">Сигнал по логике</option>
+                @for (opt of logicOptions; track opt.id) {
+                  <option [ngValue]="opt.id" [title]="opt.hint">{{ opt.label }}</option>
+                }
+              </select>
+              @if (logicSignalsLoading) { <span class="logic-signal-loading">загрузка…</span> }
+            </div>
+          </div>
           <label class="setup-field compact speed-field speed-field-outlined">
             <span>Скорость</span>
             <div class="speed-ctrl speed-ctrl-compact">
@@ -223,40 +242,43 @@
             </div>
           </div>
           <div class="block-head-actions">
-            <button type="button" class="tca-btn tca-buy" [class.tca-close]="b.position === 'long' || b.position === 'short'" [disabled]="!canBuy(b)" (click)="buy(b)">
+            <button type="button" class="tca-btn tca-buy" [class.tca-close]="b.position === 'long' || b.position === 'short'" [disabled]="!canBuy(b)" (click)="buy(b)" [class.btn-flash-3]="!!b.buyBtnFlash">
 
-              <span class="tca-main" [class.close-on-buy]="b.position === 'long'">{{ b.position === 'long' ? 'ЗАКРЫТЬ' : 'КУПИТЬ' }}</span>
+              <span class="tca-main" [class.close-on-buy]="b.position === 'long'">{{ b.buyBtnFlash?.text || (b.position === 'long' ? 'Закрыть' : 'Купить') }}</span>
 
               <span class="tca-sub">{{ b.position !== 'flat' ? positionHoldingText(b) : 'ЛОНГ' }}</span>
 
             </button>
 
-            <button type="button" class="tca-btn tca-sell" [class.tca-close-sell]="b.position === 'short' || b.position === 'long'" [disabled]="!canSell(b)" (click)="sell(b)">
+            <button type="button" class="tca-btn tca-sell" [class.tca-close-sell]="b.position === 'short' || b.position === 'long'" [disabled]="!canSell(b)" (click)="sell(b)" [class.btn-flash-3]="!!b.sellBtnFlash">
 
-              <span class="tca-main" [class.close-on-sell]="b.position === 'short'">{{ b.position === 'short' ? 'ЗАКРЫТЬ' : 'ПРОДАТЬ' }}</span>
+              <span class="tca-main" [class.close-on-sell]="b.position === 'short'">{{ b.sellBtnFlash?.text || (b.position === 'short' ? 'Закрыть' : 'Продать') }}</span>
 
               <span class="tca-sub">{{ b.position !== 'flat' ? positionHoldingText(b) : 'ШОРТ' }}</span>
 
             </button>
 
-            <div class="signal-toggles">
+                        <div class="signal-toggles">
               <div class="signal-toggle-item">
-                <button type="button" class="signal-toggle-btn signal-toggle-tp" [class.active]="signalTpAuto" (click)="signalTpAuto = !signalTpAuto" [title]="signalTpAuto ? 'Авто тейк-профит: включён (лимит по цене срабатывания)' : 'Авто тейк-профит: выключен (только сигнал)'">
-                  <span class="signal-toggle-check">{{ signalTpAuto ? '☑' : '☐' }}</span>
+                <button type="button" class="signal-toggle-btn signal-toggle-tp" [class.active]="signalTpAuto" (click)="signalTpAuto = !signalTpAuto" [title]="signalTpAuto ? 'Авто тейк-профит: включён' : 'Авто тейк-профит: выключен'">
+                  <span class="signal-toggle-check">{{ signalTpAuto ? '✓' : '○' }}</span>
                   <span class="signal-toggle-label">TP</span>
                 </button>
-                <input class="signal-toggle-pct" type="number" step="0.1" min="0" [(ngModel)]="signalTpPct" title="Сигнальный тейк-профит, %" />
+                <input class="signal-toggle-pct" type="number" step="0.1" min="0" [(ngModel)]="signalTpPct" title="Процент тейк-профит, %" />
               </div>
               <div class="signal-toggle-item">
-                <button type="button" class="signal-toggle-btn signal-toggle-sl" [class.active]="signalSlAuto" (click)="signalSlAuto = !signalSlAuto" [title]="signalSlAuto ? 'Авто стоп-лосс: включён (лимит по цене срабатывания)' : 'Авто стоп-лосс: выключен (только сигнал)'">
-                  <span class="signal-toggle-check">{{ signalSlAuto ? '☑' : '☐' }}</span>
+                <button type="button" class="signal-toggle-btn signal-toggle-sl" [class.active]="signalSlAuto" (click)="signalSlAuto = !signalSlAuto" [title]="signalSlAuto ? 'Авто стоп-лосс: включён' : 'Авто стоп-лосс: выключен'">
+                  <span class="signal-toggle-check">{{ signalSlAuto ? '✓' : '○' }}</span>
                   <span class="signal-toggle-label">SL</span>
                 </button>
-                <input class="signal-toggle-pct" type="number" step="0.1" min="0" [(ngModel)]="signalSlPct" title="Сигнальный стоп-лосс, %" />
+                <input class="signal-toggle-pct" type="number" step="0.1" min="0" [(ngModel)]="signalSlPct" title="Процент стоп-лосс, %" />
               </div>
             </div>
 
-            <button type="button" class="tca-btn tca-start" (click)="onStartPauseClick(b)" [disabled]="b.loading">{{ startPauseLabel(b) }}</button>
+            <button type="button" class="tca-btn tca-start" (click)="onStartPauseClick(b)" [disabled]="b.loading">
+              <span class="tca-main">{{ startPauseLabel(b) }}</span>
+              <span class="tca-sub">{{ startPauseSubLabel(b) }}</span>
+            </button>
             <button type="button" class="tca-btn tca-reset" (click)="resetBlock(b)" [disabled]="b.loading || !b.started">Сначала</button>
             <div class="tca-info tca-total">
               <div class="tca-lbl">Итоговый финрез</div>
@@ -288,6 +310,7 @@
             [tradeMarkers]="chartMarkers(b)"
             [showRecalcButton]="false"
             [followLast]="true"
+            [showToolbarCandleTime]="true"
           >
             <div chartToolbarActions class="trainer-chart-nav">
               <span class="tca-nav">{{ b.playIndex }} / {{ b.allCandles.length }}</span>

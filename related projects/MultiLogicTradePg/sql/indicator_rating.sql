@@ -43,7 +43,7 @@ LANGUAGE sql IMMUTABLE AS $$
         WHEN 'STOCH' THEN 'k=14,d=3,smooth=3,series=' || p_series
         WHEN 'ROC' THEN 'period=10,series=' || p_series
         WHEN 'BB' THEN 'period=20,std_dev=2,series=' || p_series
-        WHEN 'KELTNER' THEN 'period=20,multiplier=2,atr_period=10,series=' || p_series
+        WHEN 'KELTNER' THEN 'period=20,multiplier=2,atr_period=20,series=' || p_series
         WHEN 'DONCHIAN' THEN 'period=20,series=' || p_series
         -- 3 последовательные свечи — рабочий период SOLDIERS (period=20 не даёт сигналов вообще).
         WHEN 'SOLDIERS' THEN 'period=3,series=' || p_series

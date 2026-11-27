@@ -254,6 +254,8 @@
 .tca-buy { background: #16a34a; color: #fff; }
 .tca-sell { background: #dc2626; color: #fff; }
 .tca-start { background: #2563eb; color: #fff; min-width: 130px; font-size: 20px; }
+.tca-main { font-size: 20px; line-height: 1.1; }
+.tca-sub { font-size: 11px; font-weight: 600; opacity: .9; line-height: 1.2; margin-top: 2px; white-space: nowrap; }
 .tca-reset { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; min-width: 110px; font-size: 18px; }
 .tca-close, .tca-close-sell { box-shadow: inset 0 0 0 2px rgba(255,255,255,.3); }
 .tca-info { display: flex; flex-direction: column; justify-content: center; padding: 6px 10px; border-radius: 10px; background: #fff; border: 1px solid #e2e8f0; min-width: 150px; min-height: 58px; }
@@ -300,9 +302,47 @@
 .btn-export-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(34, 197, 94, 0.35); transition: width .25s ease; pointer-events: none; }
 .btn-export-text { position: relative; z-index: 1; }
 .btn-export:disabled { opacity: 1; }
-.export-picker { position: absolute; top: 100%; right: 0; z-index: 30; min-width: 280px; max-width: 420px; max-height: min(60vh, 420px); overflow: auto; padding: 10px; margin-top: 6px; box-shadow: 0 8px 24px rgba(15,23,42,.12); }
-.export-picker-title { font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px; }
+.btn-export-cancel { border-color: #dc2626; color: #b91c1c; background: #fef2f2; }
+.btn-export-cancel:hover { background: #fee2e2; }
+.btn-export-cancel .btn-export-fill { background: rgba(220, 38, 38, 0.18); }
+.export-picker { position: absolute; top: 100%; right: 0; z-index: 30; min-width: 280px; max-width: 420px; max-height: min(60vh, 420px); display: flex; flex-direction: column; overflow: hidden; padding: 10px; margin-top: 6px; box-shadow: 0 8px 24px rgba(15,23,42,.12); }
+.export-picker-title { font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px; flex: 0 0 auto; }
+.export-picker-list { overflow: auto; flex: 1 1 auto; min-height: 0; padding-right: 2px; }
 .export-picker-item { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 13px; color: #0f172a; cursor: pointer; }
 .export-picker-item input { margin: 0; }
 .export-picker-empty { font-size: 12px; color: #64748b; padding: 6px 0; }
-.export-picker-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+.export-picker-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; flex: 0 0 auto; }
+.export-picker-actions-top { justify-content: flex-start; margin-top: 0; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }
+
+
+/* Logic signal mode */
+.logic-signal-item { display:flex; align-items:center; gap:8px; padding:4px 8px; border-radius:8px; border:1px solid #dbe3ee; background:#f8fafc; transition: all .15s ease; }
+.logic-signal-item.logic-signal-on { background:#eff6ff; border-color:#60a5fa; box-shadow: 0 0 0 1px rgba(59,130,246,.15); opacity:1; }
+.logic-signal-item.logic-signal-off { opacity:.55; filter:saturate(.6); }
+.logic-signal-toggle { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:12px; font-weight:600; color:#334155; user-select:none; }
+.logic-signal-item.logic-signal-on .logic-signal-toggle { color:#1d4ed8; }
+.logic-signal-toggle input[type="checkbox"] { width:16px; height:16px; cursor:pointer; }
+.logic-signal-select { min-width:220px; max-width:340px; height:30px; border:1px solid #cbd5e1; border-radius:6px; padding:0 8px; font-size:12px; background:#fff; }
+.logic-signal-item.logic-signal-on .logic-signal-select { border-color:#93c5fd; }
+.logic-signal-select:disabled { background:#f1f5f9; color:#94a3b8; }
+.logic-signal-loading { font-size:11px; color:#64748b; }
+.logic-signal-top { display:flex; flex-direction:column; gap:4px; padding:4px 8px; border-radius:8px; border:1px solid #dbe3ee; background:#f8fafc; transition: all .15s ease; }
+.logic-signal-top.logic-signal-on { background:#eff6ff; border-color:#60a5fa; box-shadow: 0 0 0 1px rgba(59,130,246,.15); opacity:1; }
+.logic-signal-top.logic-signal-off { opacity:1; }
+.logic-signal-top .logic-signal-toggle { color:#334155; display:flex; align-items:center; margin:0; }
+.logic-signal-top.logic-signal-on .logic-signal-toggle { color:#1d4ed8; }
+.logic-signal-top .logic-signal-select { min-width:200px; max-width:280px; height:30px; }
+.logic-signal-row { display:flex; align-items:center; gap:6px; }
+
+/* 3x button flash for auto trades */
+@keyframes btnFlash3 {
+  0%, 100% { filter: brightness(1); box-shadow: none; }
+  16.6% { filter: brightness(1.8); box-shadow: 0 0 0 3px rgba(250,204,21,.7); }
+  33.3% { filter: brightness(1); box-shadow: none; }
+  50% { filter: brightness(1.8); box-shadow: 0 0 0 3px rgba(250,204,21,.7); }
+  66.6% { filter: brightness(1); box-shadow: none; }
+  83.3% { filter: brightness(1.8); box-shadow: 0 0 0 3px rgba(250,204,21,.7); }
+}
+.btn-flash-3 { animation: btnFlash3 1.2s ease-in-out 1; }
+
+.btn-flash-3 .tca-main { font-size: 11px !important; line-height: 1.15; white-space: normal; max-width: 140px; }

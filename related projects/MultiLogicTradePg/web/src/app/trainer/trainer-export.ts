@@ -102,7 +102,12 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
 .head-pnl.signal-close-text.signal-close-sl{color:#991b1b;background:rgba(220,38,38,.12);border-color:rgba(220,38,38,.32)}
 .head-pnl.signal-close-text .val{font-size:14px;font-weight:900}
 .chart-wrap{height:52vh;min-height:260px;padding:8px 10px}.chart-wrap canvas{width:100%;height:100%;display:block;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
-.meta{padding:6px 12px;font-size:12px;color:var(--muted);border-top:1px solid #f1f5f9;display:flex;gap:12px;flex-wrap:wrap}
+.meta{padding:6px 12px;font-size:12px;color:var(--muted);border-top:1px solid #f1f5f9;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.chart-meta-bar{position:relative;transition:background-color .25s ease,color .25s ease,border-color .25s ease}
+.chart-meta-bar span,.chart-meta-bar b{color:inherit}
+.chart-meta-bar .chart-time-center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;justify-content:center;align-items:center;pointer-events:none;z-index:1}
+.candle-time-badge{font-size:12px;font-weight:700;line-height:1.2;letter-spacing:.02em;white-space:nowrap;text-shadow:0 1px 1px rgba(0,0,0,.08)}
+.candle-time-badge:empty{display:none}
 .ind-topbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-top:1px solid #f1f5f9;background:#f8fafc}
 .ind-topbar-label{font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;white-space:nowrap}
 .ind-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border-top:1px solid #f1f5f9}
@@ -119,6 +124,7 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
 .ind-empty-hint{font-size:12px;color:#94a3b8}
 
 @media(max-width:900px){.chart-wrap{height:46vh;min-height:240px}.tca{min-width:92px}.info{min-width:130px}.bar{max-width:100%}}
+@keyframes btnFlash3{0%,100%{filter:brightness(1);box-shadow:none}16.6%{filter:brightness(1.8);box-shadow:0 0 0 3px rgba(250,204,21,.7)}33.3%{filter:brightness(1);box-shadow:none}50%{filter:brightness(1.8);box-shadow:0 0 0 3px rgba(250,204,21,.7)}66.6%{filter:brightness(1);box-shadow:none}83.3%{filter:brightness(1.8);box-shadow:0 0 0 3px rgba(250,204,21,.7)}} .btn-flash-3{animation:btnFlash3 1.2s ease-in-out 1;}
 </style>
 </head>
 <body>
@@ -161,7 +167,7 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
     </div>
     <div id="pending" class="meta" style="display:none;color:#92400e;background:#fffbeb"></div>
     <div class="chart-wrap"><canvas id="chart"></canvas></div>
-    <div class="meta"><span>Свечи: <b id="cCount">0/0</b></span><span>Комиссия: ${data.defaults.commissionPct}%</span><span>Задержка: ${data.defaults.executionDelaySec}с</span><span id="markLegend">Сделки: ▲ покупка, ▼ продажа, ◆ закрытие, пунктир — момент сделки</span></div>
+        <div class="meta chart-meta-bar" id="chartMetaBar"><span>?????: <b id="cCount">0/0</b></span><span class="chart-time-center"><span id="candleTimeBadge" class="candle-time-badge"></span></span><span>????????: ${data.defaults.commissionPct}%</span><span>????????: ${data.defaults.executionDelaySec}?</span><span id="markLegend">??????: ? ???????, ? ???????, ? ????????, ??????? ? ?????? ??????</span></div>
     <div class="ind-bar">
       <span style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;white-space:nowrap">Индикаторы</span>
       <div class="ind-chips" id="indChips"></div>
@@ -188,6 +194,7 @@ const state={
   signalSlAuto: !!DATA.defaults.signalSlAuto,
   playing:false, started:false, finished:false, timer:null,
   playIndex:0, visibleCount:0,
+  playbackStartDt: null,
   position:'flat', entryPrice:null, entryIdx:null, entryWallMs:null, entryDt:null, qty:1, entryCommission:0,
   trades:[], totalPnlMoney:0, lastPnlMoney:null, lastPnlPct:null, pending:null,
   markers:[],
@@ -204,11 +211,50 @@ function curPrice(){ const c=curC(); return c?+c[4]:null; }
 function curDt(){ const c=curC(); return c?c[0]:null; }
 function fmtMoney(v){ if(v==null||!Number.isFinite(v)) return '—'; const n=+v; return (n>0?'+':'')+n.toFixed(2); }
 function fmtPct(v){ if(v==null||!Number.isFinite(v)) return '—'; const n=+v; return (n>0?'+':'')+n.toFixed(2)+'%'; }
-function fmtPrice(v){ const n=+v; if(!Number.isFinite(n)) return '—'; return n.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:6}); }
+function fmtPrice(v){ const n=+v; if(!Number.isFinite(n)) return '-'; return n.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:6}); }
+function candleTimeOfDayStyle(hour){
+  const keys=[[0,15,35,71],[4,22,51,95],[5.5,70,110,170],[7,255,214,102],[12,255,247,178],[17,255,214,102],[19,70,110,170],[21,22,51,95],[24,15,35,71]];
+  const h=((hour%24)+24)%24; let a=keys[0],b=keys[keys.length-1];
+  for(let i=0;i<keys.length-1;i++){ if(h>=keys[i][0]&&h<=keys[i+1][0]){ a=keys[i]; b=keys[i+1]; break; } }
+  const span=b[0]-a[0]||1; const t=Math.max(0,Math.min(1,(h-a[0])/span)); const sm=t*t*(3-2*t);
+  const r=Math.round(a[1]+(b[1]-a[1])*sm), g=Math.round(a[2]+(b[2]-a[2])*sm), bl=Math.round(a[3]+(b[3]-a[3])*sm);
+  const lum=(0.2126*r+0.7152*g+0.0722*bl)/255;
+  return {bg:'rgb('+r+','+g+','+bl+')', color: lum>0.62?'#1e293b':'#f8fafc', border: lum>0.62?'rgba(15,23,42,.18)':'rgba(255,255,255,.22)'};
+}
+function updateCandleTimeBadge(){
+  const el=document.getElementById('candleTimeBadge');
+  const bar=document.getElementById('chartMetaBar');
+  if(!el) return;
+  const c=candles(); const i=state.visibleCount-1;
+  if(!c.length||i<0||i>=c.length){
+    el.textContent='';
+    if(bar){ bar.style.backgroundColor=''; bar.style.color=''; bar.style.borderColor=''; }
+    return;
+  }
+  const dt=c[i][0]; const d=new Date(dt);
+  if(Number.isNaN(d.getTime())){
+    el.textContent=String(dt);
+    if(bar){ bar.style.backgroundColor=''; bar.style.color=''; bar.style.borderColor=''; }
+    return;
+  }
+  const hh=String(d.getHours()).padStart(2,'0'), mm=String(d.getMinutes()).padStart(2,'0');
+  const dd=String(d.getDate()).padStart(2,'0'), mo=String(d.getMonth()+1).padStart(2,'0');
+  el.textContent=dd+'.'+mo+' '+hh+':'+mm;
+  const st=candleTimeOfDayStyle(d.getHours()+d.getMinutes()/60+d.getSeconds()/3600);
+  if(bar){ bar.style.backgroundColor=st.bg; bar.style.color=st.color; bar.style.borderColor=st.border; }
+}
 function fmtHold(ms,bars){ const hasBars=Number.isFinite(bars)&&bars>=0; const hasMs=ms!=null&&Number.isFinite(ms)&&ms>=0; if(!hasBars && !hasMs) return '—'; let t=''; if(hasMs){ const s=Math.floor(ms/1000); if(s<60) t=s+' сек'; else { const m=Math.floor(s/60); if(m<60) t=m+' мин '+(s%60)+' сек'; else { const h=Math.floor(m/60); if(h<24) t=h+' ч '+(m%60)+' мин'; else { const d=Math.floor(h/24); t=d+' д '+(h%24)+' ч'; } } } }
   if(hasBars && t) return bars+' св. · '+t;
   if(hasBars) return bars+' св.';
   return t; }
+
+function simElapsedStr(){
+  const cur=curDt(); const start=state.playbackStartDt;
+  if(!start||!cur) return '-';
+  const ms=dtMs(cur)-dtMs(start);
+  if(!Number.isFinite(ms)||ms<0) return '-';
+  return fmtHold(ms, NaN);
+}
 function pnlClass(v){ return v>0?'pos':v<0?'neg':'flat'; }
 function dtMs(dt){ const t=Date.parse(String(dt).replace(' ','T')); return Number.isFinite(t)?t:NaN; }
 function basePrice(){ if(state.trades.length>0) return state.trades.reduce((s,t)=>s+t.openPrice,0)/state.trades.length; if(state.entryPrice!=null) return state.entryPrice; const c=candles(); return c.length?+c[0][4]:null; }
@@ -242,6 +288,7 @@ const IND_DEFS=[
   {code:'HMA',name:'HMA - Среднее Халла',period:20,onPrice:true,hasPeriod:true,desc:'Быстрая и сглаженная средняя Халла. Хорошо показывает направление тренда с меньшим запаздыванием, но не даёт зон перекупленности.'},
   {code:'BB',name:'BB - Полосы Боллинджера',period:20,onPrice:true,hasPeriod:true,desc:'Полосы волатильности вокруг SMA. У верхней полосы — возможна перекупленность, у нижней — перепроданность; сужение полос означает низкую волатильность.'},
   {code:'DONCHIAN',name:'Donchian - Канал Дончиана',period:20,onPrice:true,hasPeriod:true,desc:'Канал максимумов и минимумов за период. Пробой верхней границы указывает на силу роста, нижней — на силу падения; внутри канала — диапазон.'},
+  {code:'KELTNER',name:'Keltner - каналы Келтнера',period:20,onPrice:true,hasPeriod:true,desc:'Каналы волатильности: EMA + 2*ATR. Средняя линия - EMA, границы расширяются от ATR. Серия SLOPE показывает наклон средней линии в градусах (-90..90) и выводится отдельным подграфиком.'},
   {code:'VWAP',name:'VWAP - Средняя по объёму',period:1,onPrice:true,hasPeriod:false,desc:'Средняя цена с учётом объёма. Выше VWAP — перевес покупателей, ниже — продавцов; часто используется как ориентир справедливой цены.'},
   {code:'RSI',name:'RSI - Индекс относительной силы',period:14,onPrice:false,hasPeriod:true,desc:'Импульс в диапазоне 0–100. Обычно выше 70 — перекупленность, ниже 30 — перепроданность; середина диапазона — нейтральная зона.'},
   {code:'MACD',name:'MACD - Схождение/расхождение',period:12,onPrice:false,hasPeriod:true,desc:'Разница быстрых и медленных EMA. Пересечение линии MACD с сигнальной или нулём показывает смену импульса; гистограмма отражает его силу.'},
@@ -264,6 +311,7 @@ function hmaArr(closes,period){ const n2=Math.max(2,Math.floor(period/2)); const
 function vwapArr(){ const c=candles(); const out=new Array(c.length).fill(null); let cumPV=0,cumV=0; for(let i=0;i<c.length;i++){ const tp=(+c[i][2]+ +c[i][3]+ +c[i][4])/3; const vol=Math.max(0,+c[i][5]||0); cumPV+=tp*vol; cumV+=vol; if(cumV>0) out[i]=cumPV/cumV; } return out; }
 function bbArr(closes,period,mult){ const mid=smaArr(closes,period); const upper=new Array(closes.length).fill(null); const lower=new Array(closes.length).fill(null); for(let i=period-1;i<closes.length;i++){ let sumSq=0; const mean=mid[i]; if(mean==null) continue; for(let j=i-period+1;j<=i;j++){ const d=closes[j]-mean; sumSq+=d*d; } const std=Math.sqrt(sumSq/period); upper[i]=mean+mult*std; lower[i]=mean-mult*std; } return {middle:mid,upper,lower}; }
 function donchArr(period){ const c=candles(); const upper=new Array(c.length).fill(null), lower=new Array(c.length).fill(null), middle=new Array(c.length).fill(null); for(let i=period-1;i<c.length;i++){ let hi=-Infinity,lo=Infinity; for(let j=i-period+1;j<=i;j++){ hi=Math.max(hi,+c[j][2]); lo=Math.min(lo,+c[j][3]); } upper[i]=hi; lower[i]=lo; middle[i]=(hi+lo)/2; } return {middle,upper,lower}; }
+function keltnerArr(period,mult,atrPeriod){ const closes=candleCloses(); const mid=emaArr(closes,period); const atr=atrArr(atrPeriod||period); const m=mult==null?2:mult; const upper=new Array(closes.length).fill(null), lower=new Array(closes.length).fill(null), slope=new Array(closes.length).fill(null); for(let i=0;i<closes.length;i++){ if(mid[i]==null||atr[i]==null) continue; upper[i]=mid[i]+m*atr[i]; lower[i]=mid[i]-m*atr[i]; const j=i-period; if(j>=0 && mid[j]!=null && atr[i]!==0){ slope[i]=Math.atan2(mid[i]-mid[j], period*atr[i])*180/Math.PI; } } return {middle:mid,upper,lower,slope}; }
 function rsiArr(closes,period){ const out=new Array(closes.length).fill(null); if(closes.length<period+1) return out; let gain=0,loss=0; for(let i=1;i<=period;i++){ const diff=closes[i]-closes[i-1]; if(diff>=0) gain+=diff; else loss-=diff; } gain/=period; loss/=period; const rsi=(g,l)=>l===0?100:100-100/(1+g/l); out[period]=rsi(gain,loss); for(let i=period+1;i<closes.length;i++){ const diff=closes[i]-closes[i-1]; const g=diff>0?diff:0; const l=diff<0?-diff:0; gain=(gain*(period-1)+g)/period; loss=(loss*(period-1)+l)/period; out[i]=rsi(gain,loss); } return out; }
 function emaFromArr(values,period){ const out=new Array(values.length).fill(null); const idx=[]; for(let i=0;i<values.length;i++) if(values[i]!=null) idx.push(i); if(idx.length<period) return out; const k=2/(period+1); let ema=0; for(let i=0;i<period;i++) ema+=values[idx[i]]; ema/=period; out[idx[period-1]]=ema; for(let i=period;i<idx.length;i++){ ema=values[idx[i]]*k+ema*(1-k); out[idx[i]]=ema; } return out; }
 function smaFromArr(values,period){ const out=new Array(values.length).fill(null); const idx=[]; for(let i=0;i<values.length;i++) if(values[i]!=null) idx.push(i); let sum=0; for(let i=0;i<idx.length;i++){ sum+=values[idx[i]]; if(i>=period) sum-=values[idx[i-period]]; if(i>=period-1) out[idx[i]]=sum/period; } return out; }
@@ -293,6 +341,7 @@ function rebuildIndicators(){
       case 'VWAP': out.push(mk('VALUE',label,ind.color,vwapArr())); break;
       case 'BB': { const b=bbArr(closes,period,2); out.push(mk('MIDDLE',label+' Mid',ind.color,b.middle)); out.push(mk('UPPER',label+' Upper',shiftColor(ind.color,40),b.upper)); out.push(mk('LOWER',label+' Lower',shiftColor(ind.color,-40),b.lower)); break; }
       case 'DONCHIAN': { const d=donchArr(period); out.push(mk('MIDDLE',label+' Mid',ind.color,d.middle)); out.push(mk('UPPER',label+' Upper',shiftColor(ind.color,40),d.upper)); out.push(mk('LOWER',label+' Lower',shiftColor(ind.color,-40),d.lower)); break; }
+      case 'KELTNER': { const k=keltnerArr(period,2,period); out.push(mk('MIDDLE',label+' Mid',ind.color,k.middle)); out.push(mk('UPPER',label+' Upper',shiftColor(ind.color,40),k.upper)); out.push(mk('LOWER',label+' Lower',shiftColor(ind.color,-40),k.lower)); out.push(mk('SLOPE',label+' Slope','#7c3aed',k.slope,false)); break; }
       case 'RSI': out.push(mk('VALUE',label,ind.color,rsiArr(closes,period),false)); break;
       case 'MACD': { const m=macdArr(closes,period,26,9); out.push(mk('MACD',label+' MACD',ind.color,m.macd,false)); out.push(mk('SIGNAL',label+' Signal',shiftColor(ind.color,60),m.signal,false)); out.push(mk('HIST',label+' Hist',shiftColor(ind.color,-60),m.hist,false)); break; }
       case 'STOCH': { const st=stochArr(period,3,3); out.push(mk('K',label+' %K',ind.color,st.k,false)); out.push(mk('D',label+' %D',shiftColor(ind.color,60),st.d,false)); break; }
@@ -376,6 +425,7 @@ function resetForTf(){
   state.playIndex=warmup;
   state.visibleCount=state.playIndex;
   state.playing=false; state.started=false; state.finished=false;
+  state.playbackStartDt=null;
   state.position='flat'; state.entryPrice=null; state.entryIdx=null; state.entryWallMs=null; state.entryDt=null; state.qty=1; state.entryCommission=0;
   state.trades=[]; state.totalPnlMoney=0; state.lastPnlMoney=null; state.lastPnlPct=null; state.pending=null; state.markers=[];
   state.signalCloseFlash=null;
@@ -395,8 +445,16 @@ function startTimer(){ stopTimer(); state.timer=setInterval(tick, state.speedMs)
 function stopTimer(){ if(state.timer){ clearInterval(state.timer); state.timer=null; } }
 
 function startPause(){
-  if(!state.started){ state.started=true; state.playing=true; startTimer(); render(); return; }
-  if(state.finished){ resetForTf(); state.started=true; state.playing=true; startTimer(); render(); return; }
+  if(!state.started){
+    state.started=true; state.playing=true;
+    if(!state.playbackStartDt) state.playbackStartDt = curDt() || (candles()[0] && candles()[0][0]) || null;
+    startTimer(); render(); return;
+  }
+  if(state.finished){
+    resetForTf(); state.started=true; state.playing=true;
+    state.playbackStartDt = curDt() || (candles()[0] && candles()[0][0]) || null;
+    startTimer(); render(); return;
+  }
   state.playing=!state.playing;
   if(state.playing) startTimer(); else stopTimer();
   render();
@@ -487,6 +545,14 @@ function signalLimitPrice(targetPct){
   if(Math.abs(denom)<1e-12) return null;
   return entry*(targetPct/100 + dir + cRate)/denom;
 }
+function flashTradeBtn(which){
+  const btn = document.getElementById(which==='buy'?'buyBtn':'sellBtn');
+  if(!btn) return;
+  btn.classList.remove('btn-flash-3');
+  void btn.offsetWidth;
+  btn.classList.add('btn-flash-3');
+  setTimeout(()=>btn.classList.remove('btn-flash-3'), 1400);
+}
 function maybeAutoCloseBySignal(){
   if(state.position==='flat' || state.pending) return;
   const pct = unrealizedPct();
@@ -506,6 +572,7 @@ function maybeAutoCloseBySignal(){
   state.signalCloseFlash = flash;
   setTimeout(()=>{ if(state.signalCloseFlash===flash){ state.signalCloseFlash={...flash, phase:'text'}; render(); } }, 650);
   setTimeout(()=>{ if(state.signalCloseFlash && state.signalCloseFlash.text===flashText && state.signalCloseFlash.phase==='text'){ state.signalCloseFlash=null; render(); } }, 1850);
+  flashTradeBtn(state.position==='long'?'buy':'sell');
   executeOrder(state.position==='long'?'short':'long','close',dt,limitPrice);
 }
 
@@ -552,6 +619,7 @@ function render(){
   avgHoldEl.textContent = 'Ср.: ' + (avgHoldMs()==null?'—':fmtHold(avgHoldMs(), avgHoldBars()));
 
   document.getElementById('cCount').textContent=state.visibleCount+'/'+c.length;
+  updateCandleTimeBadge();
   const canTrade = state.started && !state.pending && curPrice()!=null && !state.finished;
   const buyBtn=document.getElementById('buyBtn'); const sellBtn=document.getElementById('sellBtn');
   buyBtn.disabled=!canTrade; sellBtn.disabled=!canTrade;
@@ -563,7 +631,9 @@ function render(){
   buyBtn.querySelector('.sub').textContent = holdSub || 'ЛОНГ';
   sellBtn.querySelector('.sub').textContent = holdSub || 'ШОРТ';
   document.getElementById('startMain').textContent=!state.started?'Начать':(state.finished?'Сначала':(state.playing?'Пауза':'Продолжить'));
-  document.getElementById('startSub').textContent=state.playing?'идёт':'пауза';
+  const simEl = simElapsedStr();
+  const startSub = !state.started ? 'старт' : (state.finished ? 'сначала' : (simEl !== '-' ? simEl : (state.playing ? 'идёт' : 'пауза')));
+  document.getElementById('startSub').textContent = startSub;
   document.getElementById('resetBtn').disabled=!state.started;
   const pEl=document.getElementById('pending');
   if(state.pending){ pEl.style.display='block'; pEl.textContent='Отложенное исполнение: '+(state.pending.action==='close'?'закрытие':'открытие')+' '+(state.pending.side==='long'?'лонг':'шорт')+'...'; }

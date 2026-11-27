@@ -317,6 +317,10 @@ async function updateRun(pool, runId, patch) {
     values.push(val);
     i += 1;
   }
+  // Heartbeat: any update means the worker is alive. Stale-run watchdog relies on this.
+  if (!Object.prototype.hasOwnProperty.call(patch, 'updated_at')) {
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+  }
   if (fields.length === 0) return;
   await pool.query(
     `UPDATE logic_backtest_runs SET ${fields.join(', ')} WHERE id = $1`,
@@ -2368,6 +2372,45 @@ async function runBacktestAsync(pool, logicId, dateFrom, dateTo, runId, options 
 }
 
 /**
+ * Mark in-progress runs as failed when heartbeat (updated_at) is stale.
+ * Catches orphaned workers after process kill/timeout/crash where in-process
+ * catch/finally could not run. UI polls DB status, so terminal status clears the button.
+ */
+async function sweepStaleBacktestRuns(pool, staleMs = 5 * 60 * 1000) {
+  const staleSec = Math.max(60, Math.floor(Number(staleMs) / 1000));
+  const { rows } = await pool.query(
+    `
+    UPDATE logic_backtest_runs
+    SET status = 'failed',
+        cancel_requested = TRUE,
+        finished_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP,
+        phase_message = 'Остановлено: процесс теста потерян (таймаут/сбой)',
+        error_message = COALESCE(NULLIF(error_message, ''), 'Stale run: worker heartbeat timeout; process likely crashed, timed out, or was killed')
+    WHERE status IN ('pending', 'loading_prices', 'loading_indicators', 'running')
+      AND COALESCE(updated_at, started_at, created_at) < NOW() - make_interval(secs => $1::int)
+    RETURNING id, logic_id, status
+    `,
+    [staleSec]
+  );
+  for (const r of rows || []) {
+    const runId = Number(r.id);
+    if (Number.isFinite(runId)) activeBacktestRuns.delete(runId);
+    try {
+      await writeErrorLog(pool, {
+        level: 'warn',
+        source: 'backtest',
+        category: 'run',
+        code: 'BACKTEST_STALE',
+        message: `Backtest run ${r.id} (logic ${r.logic_id}) marked failed by stale watchdog`,
+        logicId: r.logic_id,
+      });
+    } catch (_err) {}
+  }
+  return { marked: (rows || []).length, staleSec };
+}
+
+/**
  * After API/process restart: pick up DB rows still marked in-progress and continue
  * the same run_id from processed_bars (no trade wipe).
  */
@@ -2652,6 +2695,7 @@ module.exports = {
   getBacktestStatus,
   cancelBacktest,
   resumeOrphanBacktests,
+  sweepStaleBacktestRuns,
 };
 
 function shiftDate(isoDate, days) {

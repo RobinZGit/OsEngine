@@ -333,6 +333,7 @@ BEGIN
         );
         v_k := COALESCE(
             parse_signal_param_num(v_parsed.params, 'k_period'),
+            parse_signal_param_num(v_parsed.params, 'atr_period'),
             parse_signal_param_num(v_parsed.params, 'k')
         );
         v_d := COALESCE(

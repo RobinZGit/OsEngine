@@ -26,7 +26,7 @@ const { ensureTbankTls } = require('./lib/tbank-tls');
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
-const { resumeOrphanBacktests } = require('./logic-backtest');
+const { resumeOrphanBacktests, sweepStaleBacktestRuns } = require('./logic-backtest');
 const { startTradeRunner } = require('./trade-runner');
 const { startMaintenanceScheduler } = require('./maintenance-scheduler');
 const { startBrowserSignalWatch } = require('./lib/browser-focus');
@@ -232,6 +232,14 @@ app.use((_req, res) => {
         );
       })
       .catch((err) => console.error('resumeOrphanBacktests', err));
+    // Safety net: close stale in-progress runs whose worker died/timed out.
+    const backtestStaleSweepMs = Math.max(60_000, Number(process.env.BACKTEST_STALE_SWEEP_MS) || 60_000);
+    const backtestStaleMs = Math.max(120_000, Number(process.env.BACKTEST_STALE_MS) || 5 * 60_000);
+    setInterval(() => {
+      sweepStaleBacktestRuns(pool, backtestStaleMs)
+        .then((r) => { if (r && r.marked) console.warn(`Backtest stale sweep: marked=${r.marked} staleSec=${r.staleSec}`); })
+        .catch((err) => console.error('sweepStaleBacktestRuns', err));
+    }, backtestStaleSweepMs);
     console.log('API ready — keep this window open. Trade cycles every 15s (see lines below).');
     console.log(
       'Коды ошибок расшифровываются ниже (HTTP 429, ETIMEDOUT ...). Справочник: node api/lib/error-codes.js'
