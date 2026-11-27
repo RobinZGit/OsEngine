@@ -1243,7 +1243,7 @@
 Коммит: [b624e34b](https://github.com/RobinZGit/OsEngine/commit/b624e34b90c0cfff74831721880617922c80aa19)
 
 200. Тренажёр/экспорт: добавлена «Доля деп.» в setup-панели после комиссии/задержки. По умолчанию `0.1`, редактируемое поле, допускает `>1` (плечо), `datalist` варианты `0.1..1.0`. В тренажёрном режиме объём сделки считается от условного депозита `1_000_000 * доля`; в БОЙ — от баланса выбранного счёта. Доля влияет на расчёт % годовых/леверидж в отчёте; экспорт тренажёра включает выбранную долю. Для вмещения в ширину укорочены подписи комиссии/задержки и сужены кнопки БОЙ/Купить/Продать. Установщики пересобраны: **v1.0.634 / Build 634** (Windows Setup.exe/.ex_ + Linux tar.gz).
-Коммит: [TBD](https://github.com/RobinZGit/OsEngine/commit/TBD)
+Коммит: [0110c4ae](https://github.com/RobinZGit/OsEngine/commit/0110c4ae4b5593f9b66c42d222e40af289e66421)
 
 201. Бэктест: фикс зависания в prep из-за stale heartbeat. Во время `ensureSecurityData` (долгие blocking SQL CALL `sync_security_indicator_series_for_indicator`) heartbeat `updated_at` не обновлялся, и `sweepStaleBacktestRuns` помечал run как stale/failed при 0 баров/0 сделок. Добавлены `touchRunHeartbeat`/`startRunHeartbeat` (60с) в `api/logic-backtest.js`, heartbeat оборачивает prep по каждой бумаге. Проявлялось на логике 49843, M1, 2026-11-25..2026-11-27, 39 бумаг, 3 индикатора.
-Коммит: [TBD](https://github.com/RobinZGit/OsEngine/commit/TBD)
+Коммит: [0110c4ae](https://github.com/RobinZGit/OsEngine/commit/0110c4ae4b5593f9b66c42d222e40af289e66421)
