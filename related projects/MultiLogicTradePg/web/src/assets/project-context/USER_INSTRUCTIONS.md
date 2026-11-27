@@ -1237,3 +1237,4 @@
 Коммит: [9a9ec0a0](https://github.com/RobinZGit/OsEngine/commit/9a9ec0a0fdc4738792a438b09cf7cccc6da75b36)
 
 198. Установщики MultiLogicTradePg пересобраны: **v1.0.629 / Build 629** (Windows Setup.exe/.ex_ + Linux tar.gz). Релиз `trainer-v1.0.581` обновлён до v1.0.629 (включает дефолтный индикатор `KELTNER (20)` в тренажёре и экспорте).
+Коммит: [916697d0](https://github.com/RobinZGit/OsEngine/commit/916697d03baf4ebfe23fcc55805e95e758a55b23)
