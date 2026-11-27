@@ -167,12 +167,19 @@
         <button type="button" class="btn-add-block" (click)="addBlock()" [disabled]="addSecurityId == null || dataLoading" title="Добавить блок с выбранной бумагой">+ Добавить</button>
 
         <label class="setup-field compact">
-          <span>Комиссия %</span>
+          <span>Комис. %</span>
           <input class="narrow-num" type="number" step="0.01" min="0" [(ngModel)]="commissionPct" />
         </label>
         <label class="setup-field compact">
-          <span>Задержка, сек</span>
+          <span>Задерж., с</span>
           <input class="narrow-num" type="number" step="1" min="0" [(ngModel)]="executionDelaySec" [disabled]="battleMode" />
+        </label>
+        <label class="setup-field compact">
+          <span>Доля деп.</span>
+          <input class="narrow-num" type="number" step="0.1" min="0.01" list="depositFractionList" [(ngModel)]="depositFraction" />
+          <datalist id="depositFractionList">
+            @for (opt of depositFractionOptions; track opt) { <option [value]="opt"></option> }
+          </datalist>
         </label>
 
         <div class="setup-right">
@@ -222,10 +229,10 @@
                       }
                     </select>
                   </label>
-                  <label class="battle-field">
-                    <span>% депозита на сделку</span>
-                    <input type="number" min="0.1" max="100" step="0.1" [(ngModel)]="battleDepositPct" />
-                  </label>
+                  <div class="battle-field battle-field-note">
+                    <span>Доля депозита</span>
+                    <span class="battle-field-value">{{ depositFraction }}</span>
+                  </div>
                   <div class="battle-picker-actions">
                     @if (!battleMode) {
                       <button type="button" class="btn-battle-start" (click)="enterBattle()" [disabled]="!battleAccountId">Войти в бой</button>

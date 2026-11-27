@@ -29,7 +29,7 @@ export interface TrainerExportData {
   securities: ExportSecurityData[];
   defaultSecurityId: number | null;
   defaultIndicators: ExportIndicatorInstance[];
-  defaults: { commissionPct: number; executionDelaySec: number; speedMs: number; signalTpPct?: number; signalSlPct?: number; signalTpAuto?: boolean; signalSlAuto?: boolean };
+  defaults: { commissionPct: number; executionDelaySec: number; speedMs: number; signalTpPct?: number; signalSlPct?: number; signalTpAuto?: boolean; signalSlAuto?: boolean; depositFraction?: number };
 }
 
 export function buildExportTfData(tfId: number, tf: string, sec: number, candles: PriceCandle[]): ExportTfData {
@@ -167,7 +167,7 @@ export function buildTrainerExportHtml(data: TrainerExportData): string {
     </div>
     <div id="pending" class="meta" style="display:none;color:#92400e;background:#fffbeb"></div>
     <div class="chart-wrap"><canvas id="chart"></canvas></div>
-        <div class="meta chart-meta-bar" id="chartMetaBar"><span>?????: <b id="cCount">0/0</b></span><span class="chart-time-center"><span id="candleTimeBadge" class="candle-time-badge"></span></span><span>????????: ${data.defaults.commissionPct}%</span><span>????????: ${data.defaults.executionDelaySec}?</span><span id="markLegend">??????: ? ???????, ? ???????, ? ????????, ??????? ? ?????? ??????</span></div>
+        <div class="meta chart-meta-bar" id="chartMetaBar"><span>?????: <b id="cCount">0/0</b></span><span class="chart-time-center"><span id="candleTimeBadge" class="candle-time-badge"></span></span><span>????????: ${data.defaults.commissionPct}%</span><span>????????: ${data.defaults.executionDelaySec}?</span><span>Доля деп.: ${data.defaults.depositFraction ?? 0.1}</span><span id="markLegend">??????: ? ???????, ? ???????, ? ????????, ??????? ? ?????? ??????</span></div>
     <div class="ind-bar">
       <span style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;white-space:nowrap">Индикаторы</span>
       <div class="ind-chips" id="indChips"></div>
@@ -188,6 +188,8 @@ const state={
   speedMs: DATA.defaults.speedMs||1000,
   commissionPct: +DATA.defaults.commissionPct||0.03,
   delaySec: Math.max(0,+DATA.defaults.executionDelaySec||0),
+  depositFraction: (+DATA.defaults.depositFraction > 0 ? +DATA.defaults.depositFraction : 0.1),
+  nominalDeposit: 1000000,
   signalTpPct: Math.max(0, +DATA.defaults.signalTpPct || 0.4),
   signalSlPct: Math.max(0, +DATA.defaults.signalSlPct || 0.2),
   signalTpAuto: !!DATA.defaults.signalTpAuto,
@@ -514,7 +516,8 @@ function executeOrder(side,action,dt,price){
     state.lastPnlMoney=net; state.lastPnlPct=pnlPct;
   } else {
     if(state.position!=='flat') return;
-    const qty=1; const comm=commission(price,qty);
+    const frac = (+state.depositFraction > 0 ? +state.depositFraction : 0.1);
+    const qty=Math.max(1, Math.floor((state.nominalDeposit * frac) / price)); const comm=commission(price,qty);
     state.position=side; state.entryPrice=price; state.entryIdx=state.visibleCount-1; state.entryWallMs=Date.now(); state.qty=qty; state.entryCommission=comm; state.entryDt=dt;
     state.markers.push({idx:Math.max(0,state.visibleCount-1), dt, price, side: side==='long'?'buy':'sell', kind:'open'});
     state.lastPnlMoney=null; state.lastPnlPct=null;

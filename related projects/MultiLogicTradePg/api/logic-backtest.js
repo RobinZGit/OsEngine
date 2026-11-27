@@ -338,6 +338,28 @@ async function updateRun(pool, runId, patch) {
   }
 }
 
+async function touchRunHeartbeat(pool, runId) {
+  try {
+    await pool.query(
+      `UPDATE logic_backtest_runs
+       SET updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+         AND status IN ('pending','loading_prices','loading_indicators','running')`,
+      [runId]
+    );
+  } catch (_e) {
+    /* best-effort heartbeat */
+  }
+}
+
+function startRunHeartbeat(pool, runId, intervalMs = 60000) {
+  const timer = setInterval(() => {
+    void touchRunHeartbeat(pool, runId);
+  }, intervalMs);
+  if (typeof timer.unref === 'function') timer.unref();
+  return () => clearInterval(timer);
+}
+
 /**
  * Троттлинг записи progress_pct, чтобы UI не «стоял», но и не долбил БД каждый мс.
  * force — всегда писать (конец фазы / 100%).
@@ -1406,6 +1428,7 @@ async function syncActiveSecurities(
     paperFrac.set(secId, 0.05);
     await bumpPrepProgress();
 
+    const stopHeartbeat = startRunHeartbeat(pool, runId, 60000);
     try {
       await ensureSecurityData(
         pool,
@@ -1442,6 +1465,7 @@ async function syncActiveSecurities(
         tfId
       );
     } finally {
+      stopHeartbeat();
       inFlight.delete(secId);
       paperFrac.delete(secId);
       completed += 1;

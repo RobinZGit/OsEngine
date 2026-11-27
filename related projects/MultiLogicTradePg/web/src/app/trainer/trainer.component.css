@@ -82,7 +82,7 @@
 
 /* battle */
 .battle-wrap { position: relative; }
-.btn-battle { height: 28px; padding: 0 14px; border: 2px solid #ea580c; border-radius: 8px; background: #ffedd5; color: #9a3412; font-weight: 900; font-size: 13px; letter-spacing: .03em; cursor: pointer; white-space: nowrap; }
+.btn-battle { height: 28px; padding: 0 10px; border: 2px solid #ea580c; border-radius: 8px; background: #ffedd5; color: #9a3412; font-weight: 900; font-size: 13px; letter-spacing: .03em; cursor: pointer; white-space: nowrap; }
 .btn-battle:hover:not(:disabled) { background: #fed7aa; }
 .btn-battle.active { background: #ea580c; color: #fff; box-shadow: 0 0 0 3px rgba(234,88,12,.25); }
 .btn-battle.active.real { background: #dc2626; border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,.25); }
@@ -246,7 +246,7 @@
 
 /* projected chart toolbar actions */
 .trainer-chart-actions { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; }
-.tca-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 110px; min-height: 58px; padding: 4px 10px; border: none; border-radius: 10px; cursor: pointer; font-family: inherit; font-weight: 800; line-height: 1.1; }
+.tca-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 96px; min-height: 58px; padding: 4px 8px; border: none; border-radius: 10px; cursor: pointer; font-family: inherit; font-weight: 800; line-height: 1.1; }
 .tca-btn:disabled { opacity: .45; cursor: default; }
 .tca-btn:not(:disabled):hover { filter: brightness(1.05); }
 .tca-main { font-size: 20px; font-weight: 900; letter-spacing: .02em; }

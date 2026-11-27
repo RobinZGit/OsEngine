@@ -47,6 +47,7 @@ interface TrainerTrade {
   openPrice: number;
   closeDt: string;
   closePrice: number;
+  qty: number;
   commission: number;
   pnl: number;
   pnlPct: number;
@@ -288,7 +289,10 @@ export class TrainerComponent implements OnInit, OnDestroy {
   battleMode = false;
   battleAccounts: AccountRow[] = [];
   battleAccountId: number | null = null;
-  battleDepositPct = 10;
+  /** Доля депозита на сделку (0.1 = 10%). Может быть > 1 (плечо). */
+  depositFraction = 0.1;
+  readonly depositFractionOptions = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+  private readonly nominalDeposit = 1_000_000;
   battleLoading = false;
   battlePlacing = false;
   battlePickerOpen = false;
@@ -890,12 +894,26 @@ export class TrainerComponent implements OnInit, OnDestroy {
     return Number.isFinite(n) ? n : null;
   }
 
-  battleQty(b: TrainerBlock): number {
+  private normalizedDepositFraction(): number {
+    const raw = Number(this.depositFraction);
+    if (!Number.isFinite(raw) || raw <= 0) return 0.1;
+    return raw;
+  }
+
+  orderQty(b: TrainerBlock): number {
     const price = this.currentPrice(b);
-    const bal = this.battleAccountBalance;
-    const pct = Math.max(0.01, Math.min(100, Number(this.battleDepositPct) || 10));
-    if (price == null || price <= 0 || bal == null || bal <= 0) return 0;
-    return Math.max(0, Math.floor((bal * pct / 100) / price));
+    if (price == null || price <= 0) return 0;
+    const frac = this.normalizedDepositFraction();
+    if (this.battleMode) {
+      const bal = this.battleAccountBalance;
+      if (bal == null || bal <= 0) return 0;
+      return Math.max(0, Math.floor((bal * frac) / price));
+    }
+    return Math.max(1, Math.floor((this.nominalDeposit * frac) / price));
+  }
+
+  battleQty(b: TrainerBlock): number {
+    return this.orderQty(b);
   }
 
   async enterBattle(): Promise<void> {
@@ -1286,7 +1304,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
       this.closePosition(b, price, dt);
     } else {
       if (b.position !== 'flat') return;
-      this.openPosition(b, side, price, dt);
+      this.openPosition(b, side, price, dt, this.orderQty(b));
     }
   }
 
@@ -1325,7 +1343,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
     const trade: TrainerTrade = {
       id: (b.trades[0]?.id ?? 0) + 1,
       side: b.position, openDt: b.entryDt, openPrice: b.entryPrice, closeDt: dt, closePrice: price,
-      commission, pnl, pnlPct, annualPct, holdingMs: Math.max(0, holdMs),
+      qty, commission, pnl, pnlPct, annualPct, holdingMs: Math.max(0, holdMs),
     };
     b.trades = [trade, ...b.trades];
     b.totalPnl += pnl; b.lastPnl = pnl; b.lastPnlPct = pnlPct; b.lastAnnualPct = annualPct;
@@ -1700,9 +1718,9 @@ export class TrainerComponent implements OnInit, OnDestroy {
             id: (allSynthTrades.length + synthTrades.length + 1) * 10 + 1,
             logic_id: -1, logic_name: 'Тренажёр', source: 'web', mode: 'paper', account_id: null as any,
             security_id: b.securityId ?? 0, security_name: securityName, timeframe_id: this.timeframeId ?? 0, timeframe_tf: tf?.tf ?? 'M5',
-            side: t.side, entry_dt: t.openDt, entry_ts: Number.isFinite(entryTs) ? entryTs : null, entry_price: t.openPrice, entry_qty: 1,
+            side: t.side, entry_dt: t.openDt, entry_ts: Number.isFinite(entryTs) ? entryTs : null, entry_price: t.openPrice, entry_qty: t.qty || 1,
             entry_commission: t.commission / 2, exit_dt: t.closeDt, exit_ts: Number.isFinite(exitTs) ? exitTs : null,
-            exit_price: t.closePrice, exit_qty: 1, exit_commission: t.commission / 2, exit_reason: 'manual',
+            exit_price: t.closePrice, exit_qty: t.qty || 1, exit_commission: t.commission / 2, exit_reason: 'manual',
             pnl: t.pnl, pnl_pct: t.pnlPct, status: 'filled', close_not_before_ts: null, mtm_pnl: 0,
           } as unknown as LogicTradeRow);
         }
@@ -1727,7 +1745,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
           markers: b.tradeMarkers.filter(m => m.kind === 'open' || m.kind === 'close'),
           stops: [], shaded: [], equity, equityShadow: [], closes: buildPaperReportCloseRows(synthTrades),
           pnl: this.totalPnlWithUnrealized(b), dealCount: b.trades.length,
-          openQty: b.position !== 'flat' ? 1 : 0, lastPrice: this.currentPrice(b), loadError: null,
+          openQty: b.position !== 'flat' ? Math.max(1, Number(b.positionQty) || 1) : 0, lastPrice: this.currentPrice(b), loadError: null,
         });
       }
 
@@ -1737,8 +1755,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
         created_at: nowIso, updated_at: nowIso, author: null, status: 'active',
         type: 'paper', indicator_codes: [], signal_mode: 'any', entry_signal_mode: 'any', exit_signal_mode: 'any',
         entry_invert: false, exit_invert: false, exit_opposite: true, exit_target_pct: null, exit_stop_pct: null, exit_trail_pct: null, position_timeout_sec: null,
-        lookback_bars: 1, stop_loss_pct: 0, take_profit_pct: 0, max_position_pct: 100, commission_pct: Number(this.commissionPct) || 0,
-        initial_capital: 0, allow_short: true, mode: 'paper', close_on_opposite: true, close_positions_eod: false, leverage: 1,
+        lookback_bars: 1, stop_loss_pct: 0, take_profit_pct: 0, max_position_pct: Math.round(this.normalizedDepositFraction() * 10000) / 100, commission_pct: Number(this.commissionPct) || 0,
+        initial_capital: 0, allow_short: true, mode: 'paper', close_on_opposite: true, close_positions_eod: false, leverage: this.normalizedDepositFraction(),
         status_calc: 'stopped', last_error: null, last_trained_at: null, trained_tf_sec: null, train_from: minDt ?? '', train_to: maxDt ?? '',
         train_exchange_id: null, train_security_ids: blocks.map(b => b.securityId).filter((x): x is number => x != null),
         train_timeframe_ids: this.timeframeId ? [this.timeframeId] : [], test_from: minDt ?? '', test_to: maxDt ?? '',
@@ -2188,8 +2206,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
         type: 'paper', indicator_codes: b.indicators.map(i => i.type), signal_mode: 'any',
         entry_signal_mode: 'any', exit_signal_mode: 'any', entry_invert: false, exit_invert: false,
         exit_opposite: true, exit_target_pct: null, exit_stop_pct: null, exit_trail_pct: null, position_timeout_sec: null,
-        lookback_bars: 1, stop_loss_pct: 0, take_profit_pct: 0, max_position_pct: 100, commission_pct: Number(this.commissionPct) || 0,
-        initial_capital: 0, allow_short: true, mode: 'paper', close_on_opposite: true, close_positions_eod: false, leverage: 1,
+        lookback_bars: 1, stop_loss_pct: 0, take_profit_pct: 0, max_position_pct: Math.round(this.normalizedDepositFraction() * 10000) / 100, commission_pct: Number(this.commissionPct) || 0,
+        initial_capital: 0, allow_short: true, mode: 'paper', close_on_opposite: true, close_positions_eod: false, leverage: this.normalizedDepositFraction(),
         status_calc: 'stopped', last_error: null, last_trained_at: null, trained_tf_sec: null, train_from: reportStartDt,
         train_to: reportEndDt, train_exchange_id: null, train_security_ids: b.securityId ? [b.securityId] : [],
         train_timeframe_ids: this.timeframeId ? [this.timeframeId] : [], test_from: reportStartDt, test_to: reportEndDt,
@@ -2215,7 +2233,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
       for (const t of synthCloses) {
         const entryTs = dtToMs(t.openDt);
         const exitTs = dtToMs(t.closeDt);
-        const qty = basePrice > 0 ? 1 : 1;
+        const qty = t.qty || 1;
         synthTrades.push({
           id: t.id * 10 + 1, logic_id: -1, logic_name: (synthLogic as any).name, source: 'web', mode: 'paper', account_id: null as any,
           security_id: b.securityId ?? 0, security_name: securityName, timeframe_id: this.timeframeId ?? 0, timeframe_tf: tf?.tf ?? 'M5',
@@ -2607,7 +2625,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
         securities,
         defaultSecurityId: securities[0].id,
         defaultIndicators,
-        defaults: { commissionPct: this.commissionPct, executionDelaySec: this.executionDelaySec, speedMs: this.speedMs, signalTpPct: this.signalTpPct, signalSlPct: this.signalSlPct, signalTpAuto: this.signalTpAuto, signalSlAuto: this.signalSlAuto },
+        defaults: { commissionPct: this.commissionPct, executionDelaySec: this.executionDelaySec, speedMs: this.speedMs, signalTpPct: this.signalTpPct, signalSlPct: this.signalSlPct, signalTpAuto: this.signalTpAuto, signalSlAuto: this.signalSlAuto, depositFraction: this.normalizedDepositFraction() },
       };
 
       const html = buildTrainerExportHtml(data);
