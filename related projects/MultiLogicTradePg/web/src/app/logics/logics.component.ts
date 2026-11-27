@@ -5702,13 +5702,20 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
       })
       .join(' ');
     const last = sampled[sampled.length - 1];
-    const positive = last >= 0;
-    const initialBalance = Number(source?.initial_balance) || 0;
-    const firstDt = new Date(total[0].dt).getTime();
-    const lastDt = new Date(total[total.length - 1].dt).getTime();
-    const days = Math.max((lastDt - firstDt) / 86400000, 0);
-    const pct = initialBalance !== 0 ? ((last - initialBalance) / Math.abs(initialBalance)) * 100 : 0;
-    const annualPct = days > 0 ? (pct * 365.25) / days : pct;
+    const rawInitial = this.isBacktestRunning(row.id)
+      ? (Number(row.test_initial_balance) > 0 ? Number(row.test_initial_balance) : Number(row.initial_balance))
+      : Number(row.initial_balance);
+    const initialBalance = Number.isFinite(rawInitial) && rawInitial > 0 ? rawInitial : 1_000_000;
+    const firstDateOnly = String(total[0].dt).slice(0, 10);
+    const lastDateOnly = String(total[total.length - 1].dt).slice(0, 10);
+    const fromMs = Date.parse(`${firstDateOnly}T00:00:00Z`);
+    const toMs = Date.parse(`${lastDateOnly}T00:00:00Z`);
+    const days = (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs >= fromMs)
+      ? Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1)
+      : 0;
+    const pct = (last - initialBalance) / Math.abs(initialBalance) * 100;
+    const annualPct = days > 0 ? (pct * 365) / days : pct;
+    const positive = pct >= 0;
     return {
       points,
       color: positive ? '#22c55e' : '#ef4444',

@@ -10846,7 +10846,7 @@ BEGIN
           AND sd.name = 'Open'
           AND ac.name = v_close.action_name
           AND lt.status IN ('filled', 'submitted')
-          AND lt.executed_at <= v_close.executed_at
+          AND (lt.bar_dt < v_close.bar_dt OR lt.executed_at <= v_close.executed_at)
           AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
           AND COALESCE(lt.is_test, FALSE) = COALESCE(v_close.is_test, FALSE)
           AND COALESCE(lt.opt_lane, '') = COALESCE(v_close.opt_lane, '')
@@ -10868,7 +10868,7 @@ BEGIN
               AND sd.name = 'Open'
               AND ac.name = v_close.action_name
               AND lt.status IN ('filled', 'submitted')
-              AND lt.executed_at <= v_close.executed_at
+              AND (lt.bar_dt < v_close.bar_dt OR lt.executed_at <= v_close.executed_at)
               AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
               AND COALESCE(lt.is_test, FALSE) = COALESCE(v_close.is_test, FALSE)
               AND COALESCE(lt.opt_lane, '') = COALESCE(v_close.opt_lane, '')
@@ -10919,7 +10919,7 @@ BEGIN
               AND sd.name = 'Open'
               AND ac.name = v_close.action_name
               AND lt.status IN ('filled', 'submitted')
-              AND lt.executed_at <= v_close.executed_at
+              AND (lt.bar_dt < v_close.bar_dt OR lt.executed_at <= v_close.executed_at)
               AND COALESCE(lt.is_shadow, FALSE) = COALESCE(v_close.is_shadow, FALSE)
               AND COALESCE(lt.is_test, FALSE) = COALESCE(v_close.is_test, FALSE)
               AND COALESCE(lt.opt_lane, '') = COALESCE(v_close.opt_lane, '')

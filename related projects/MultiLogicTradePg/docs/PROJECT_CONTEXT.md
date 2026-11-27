@@ -2169,6 +2169,7 @@
 | 2026-11-27 | Бэктест: heartbeat `updated_at` + `sweepStaleBacktestRuns` для зависших active runs; `docs/research/*` добавлены. Установщики 1.0.628/628. |
 | 2026-11-27 | Тренажёр/экспорт: индикатор по умолчанию — один `KELTNER (20)` вместо SMA 9/21. |
 | 2026-11-27 | Установщики 1.0.629/629 пересобраны, релиз trainer-v1.0.581 обновлён до v1.0.629. |
+| 2026-11-27 | Фикс `logic_trade_build_lots` для EOD-close при `exec_delay_sec>0` (bar_dt<close.bar_dt OR executed_at<=close.executed_at); run 664 лоты восстановлены точечно, run 665 перезапущен с чистого листа; установщики 1.0.633/633. |
 
 ---
 

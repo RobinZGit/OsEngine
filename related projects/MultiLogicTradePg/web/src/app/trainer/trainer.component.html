@@ -72,8 +72,42 @@
               </div>
             }
           </div>
+          @if (exportProtocol.length) {
+            <button type="button" class="btn-report" (click)="exportProtocolOpen = !exportProtocolOpen">Протокол экспорта</button>
+          }
           <button type="button" class="btn-report btn-fs" (click)="enterFullscreen()" [disabled]="blocks.length === 0" title="Полный экран">⛶ Полный экран</button>
         </div>
+        @if (exporting && exportStatus) {
+          <div class="export-status-line" [title]="exportStatus">{{ exportStatus }}</div>
+        }
+        @if (exportProtocolOpen && exportProtocol.length) {
+          <div class="export-protocol card">
+            <div class="export-protocol-head">
+              <strong>Протокол экспорта</strong>
+              @if (exportProtocolAt) { <span class="export-protocol-at">{{ exportProtocolAt }}</span> }
+              <button type="button" class="btn-report" (click)="exportProtocolOpen = false">Закрыть</button>
+            </div>
+            <div class="export-protocol-summary">
+              Полностью: {{ exportProtocolCount('full') }} · Частично: {{ exportProtocolCount('partial') }} · Не загружено: {{ exportProtocolCount('none') }} · Ошибка: {{ exportProtocolCount('error') }}
+            </div>
+            <div class="export-protocol-list">
+              <table class="export-protocol-table">
+                <thead><tr><th>Бумага</th><th>ТФ</th><th>Статус</th><th>Свечей</th><th>Примечание</th></tr></thead>
+                <tbody>
+                  @for (r of exportProtocol; track r.securityId + '-' + r.timeframe) {
+                    <tr [class.ep-full]="r.status==='full'" [class.ep-partial]="r.status==='partial'" [class.ep-none]="r.status==='none'" [class.ep-error]="r.status==='error'">
+                      <td>{{ r.securityName }}</td>
+                      <td>{{ r.timeframe }}</td>
+                      <td>{{ exportProtocolStatusLabel(r.status) }}</td>
+                      <td>{{ r.loaded }} / {{ r.cap }}</td>
+                      <td>{{ r.note || '' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
         <p class="trainer-sub">Добавляйте бумаги кнопкой «+», торгуйте по каждой отдельно. В боевом режиме сделки отправляются на выбранный счёт.</p>
       </div>
       <div class="trainer-total">

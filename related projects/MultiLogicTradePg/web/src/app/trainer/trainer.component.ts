@@ -277,6 +277,9 @@ export class TrainerComponent implements OnInit, OnDestroy {
   exportSecuritiesLoading = false;
   exportCancelled = false;
   private exportCancelRejectors: Array<(err: Error) => void> = [];
+  exportProtocol: Array<{ securityId: number; securityName: string; timeframe: string; loaded: number; cap: number; status: 'full' | 'partial' | 'none' | 'error'; note?: string }> = [];
+  exportProtocolOpen = false;
+  exportProtocolAt: string | null = null;
   totalDetailsOpen = false;
   private dataLoadSlowTimer: ReturnType<typeof setTimeout> | null = null;
   private dataLoadStartedAt = 0;
@@ -2379,6 +2382,19 @@ export class TrainerComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  exportProtocolCount(status: 'full' | 'partial' | 'none' | 'error'): number {
+    return this.exportProtocol.filter(r => r.status === status).length;
+  }
+
+  exportProtocolStatusLabel(status: 'full' | 'partial' | 'none' | 'error'): string {
+    switch (status) {
+      case 'full': return 'Загружен полностью';
+      case 'partial': return 'Загружен частично';
+      case 'none': return 'Не загружен';
+      case 'error': return 'Ошибка';
+    }
+  }
+
   private throwIfExportCancelled(): void {
     if (this.exportCancelled) throw new Error('EXPORT_CANCELLED');
   }
@@ -2428,6 +2444,9 @@ export class TrainerComponent implements OnInit, OnDestroy {
     this.exportPickerOpen = false;
     this.exportProgress = 0;
     this.exportStatus = 'Подготовка...';
+    this.exportProtocol = [];
+    this.exportProtocolOpen = false;
+    this.exportProtocolAt = null;
     this.loadingError = null;
     this.cdr.markForCheck();
 
@@ -2478,45 +2497,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
           } catch (e) {
             console.warn('Export: failed to load 1m base', secId, e);
           }
-          if (baseCandles.length < MIN_BASE_CAP) {
-            try {
-              const daysBack = Math.max(30, Math.ceil((maxBaseCap * 60) / 86400) + 10);
-              const toD = new Date();
-              const fromD = new Date(toD.getTime() - daysBack * 86400000);
-              const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-              this.exportStatus = `${secName}: 1m загрузка цен...${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
-              this.cdr.markForCheck();
-              await this.guardExport(Promise.race([
-                firstValueFrom(this.securitiesApi.loadPrices({ security_id: secId, timeframe_id: baseTf.id, date_from: fmt(fromD), date_to: fmt(toD) })),
-                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 120000)),
-              ])).catch(e => { if (e?.message === 'EXPORT_CANCELLED') throw e; console.warn('Export: loadPrices 1m timeout/fail', secId, e); });
-              for (let w = 0; w < 6 && baseCandles.length < MIN_BASE_CAP; w++) {
-                await this.cancellableSleep(2000);
-                let before: string | undefined = undefined;
-                let reloaded: PriceCandle[] = [];
-                while (reloaded.length < maxBaseCap) {
-                  this.throwIfExportCancelled();
-                  const batch2: PriceCandle[] = await this.guardExport(firstValueFrom(this.securitiesApi.getPrices(secId, baseTf.id, PRICE_PAGE, before))) ?? [];
-                  const rows2: PriceCandle[] = (batch2 as PriceCandle[]).map(normalizeCandle);
-                  if (!rows2.length) break;
-                  rows2.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
-                  const fdt = rows2[0].dt;
-                  if (before && fdt === before) break;
-                  const ex = new Set(reloaded.map(c => c.dt));
-                  reloaded = rows2.filter((r: PriceCandle) => !ex.has(r.dt)).concat(reloaded);
-                  reloaded.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
-                  before = rows2[0].dt;
-                  this.exportProgress = Math.round(secBaseProgress + secSlice * 0.6 * Math.min(1, reloaded.length / Math.max(1, MIN_BASE_CAP)));
-                  this.cdr.markForCheck();
-                  if (rows2.length < PRICE_PAGE) break;
-                }
-                if (reloaded.length >= baseCandles.length) baseCandles = reloaded;
-                if (baseCandles.length >= maxBaseCap) break;
-              }
-            } catch (e) {
-              console.warn('Export: auto-load 1m base failed', secId, e);
-            }
-          }
+          // Тяжёлый loadPrices-fallback убран: используем данные, которые уже есть в БД.
+          // Если данных нет/мало — зафиксируем это в протоколе по каждому ТФ.
           this.exportProgress = Math.round(secBaseProgress + secSlice * 0.6);
           this.cdr.markForCheck();
         }
@@ -2559,50 +2541,20 @@ export class TrainerComponent implements OnInit, OnDestroy {
             } catch (e) {
               console.warn('Export: failed to load prices', secId, tf.tf, e);
             }
-            if (candles.length < cap) {
-              try {
-                const tradingSecPerDay = tf.sec < 86400 ? 8 * 3600 : 86400;
-                const candlesPerTradingDay = Math.max(1, tradingSecPerDay / Math.max(1, tf.sec));
-                const calDays = tf.sec < 86400
-                  ? Math.ceil((cap / candlesPerTradingDay) * 1.8) + 10
-                  : Math.ceil(cap * 1.6) + 14;
-                const daysBack = Math.max(30, Math.min(365, calDays));
-                const toD = new Date();
-                const fromD = new Date(toD.getTime() - daysBack * 86400000);
-                const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-                this.exportStatus = `${secName}: ${tf.tf} загрузка цен...${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
-                this.cdr.markForCheck();
-                await this.guardExport(Promise.race([
-                  firstValueFrom(this.securitiesApi.loadPrices({ security_id: secId, timeframe_id: tf.id, date_from: fmt(fromD), date_to: fmt(toD) })),
-                  new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 120000)),
-                ])).catch(e => { if (e?.message === 'EXPORT_CANCELLED') throw e; console.warn('Export: loadPrices timeout/fail', secId, tf.tf, e); });
-                for (let w = 0; w < 6 && candles.length < cap; w++) {
-                  await this.cancellableSleep(2000);
-                  let before2: string | undefined = undefined;
-                  let reloaded: PriceCandle[] = [];
-                  while (reloaded.length < cap) {
-                    this.throwIfExportCancelled();
-                    const batch2: PriceCandle[] = await this.guardExport(firstValueFrom(this.securitiesApi.getPrices(secId, tf.id, PRICE_PAGE, before2))) ?? [];
-                    const rows2: PriceCandle[] = (batch2 as PriceCandle[]).map(normalizeCandle);
-                    if (!rows2.length) break;
-                    rows2.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
-                    const fdt = rows2[0].dt;
-                    if (before2 && fdt === before2) break;
-                    const ex = new Set(reloaded.map(c => c.dt));
-                    reloaded = rows2.filter((r: PriceCandle) => !ex.has(r.dt)).concat(reloaded);
-                    reloaded.sort((a: PriceCandle, b: PriceCandle) => dtToMs(a.dt) - dtToMs(b.dt));
-                    before2 = rows2[0].dt;
-                    if (rows2.length < PRICE_PAGE) break;
-                  }
-                  if (reloaded.length >= candles.length) candles = reloaded;
-                  if (candles.length >= cap) break;
-                }
-              } catch (e) {
-                console.warn('Export: auto-load prices failed', secId, tf.tf, e);
-              }
-            }
+            // Тяжёлый loadPrices-fallback убран: используем то, что есть в БД.
             if (candles.length > cap) candles = candles.slice(candles.length - cap);
           }
+
+          const tfStatus: 'full' | 'partial' | 'none' = candles.length === 0 ? 'none' : (candles.length >= cap ? 'full' : 'partial');
+          this.exportProtocol.push({
+            securityId: secId,
+            securityName: secName,
+            timeframe: tf.tf,
+            loaded: candles.length,
+            cap,
+            status: tfStatus,
+            note: candles.length === 0 ? 'Нет данных в БД' : (candles.length < cap ? `Загружено ${candles.length} из ${cap}` : undefined),
+          });
 
           if (candles.length > 0) {
             this.exportStatus = `${secName}: ${tf.tf} (${i + 1}/${tfs.length})${targetIds.length > 1 ? ` [${si + 1}/${targetIds.length}]` : ''}`;
@@ -2624,7 +2576,14 @@ export class TrainerComponent implements OnInit, OnDestroy {
         }
       }
 
-      if (!securities.length) { this.loadingError = 'Нет загруженных цен для экспорта выбранных бумаг'; return; }
+      if (!securities.length) {
+        this.loadingError = 'Нет загруженных цен для экспорта выбранных бумаг';
+        if (this.exportProtocol.length) {
+          this.exportProtocolAt = new Date().toLocaleString('ru-RU');
+          this.exportProtocolOpen = true;
+        }
+        return;
+      }
 
       this.exportStatus = 'Сборка HTML...';
       this.cdr.markForCheck();
@@ -2663,12 +2622,22 @@ export class TrainerComponent implements OnInit, OnDestroy {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       this.exportStatus = `Готово: ${securities.length} бум., ${securities.reduce((n,s)=>n+s.timeframes.length,0)} ТФ`;
+      this.exportProtocolAt = new Date().toLocaleString('ru-RU');
+      this.exportProtocolOpen = true;
     } catch (err: any) {
       if (err?.message === 'EXPORT_CANCELLED') {
         this.exportStatus = 'Экспорт отменён';
+        if (this.exportProtocol.length) {
+          this.exportProtocolAt = new Date().toLocaleString('ru-RU');
+          this.exportProtocolOpen = true;
+        }
       } else {
         console.error('Trainer export error', err);
         this.loadingError = err?.message || 'Ошибка экспорта тренажёра';
+        if (this.exportProtocol.length) {
+          this.exportProtocolAt = new Date().toLocaleString('ru-RU');
+          this.exportProtocolOpen = true;
+        }
       }
     } finally {
       this.exportCancelRejectors = [];
