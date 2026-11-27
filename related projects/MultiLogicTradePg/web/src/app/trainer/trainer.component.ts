@@ -182,11 +182,10 @@ function createBlock(securityId: number | null, securityName: string): TrainerBl
     buyBtnFlash: null,
     sellBtnFlash: null,
     indicators: [
-      { uid: 'sma-short-default', type: 'SMA', period: 9, color: '#2563eb' },
-      { uid: 'sma-long-default', type: 'SMA', period: 21, color: '#f59e0b' },
+      { uid: 'keltner-default', type: 'KELTNER', period: 20, color: '#2563eb' },
     ],
     indicatorSeries: [],
-    addIndicatorType: 'SMA',
+    addIndicatorType: 'KELTNER',
     addIndicatorPeriod: 20,
     colorIdx: 0,
     detailsOpen: false,
@@ -2639,8 +2638,7 @@ export class TrainerComponent implements OnInit, OnDestroy {
         seenInd.add(k);
         defaultIndicators.push({ uid: `ind-${type}-${period}-${defaultIndicators.length}`, type, period, color });
       };
-      pushInd('SMA', 9, '#2563eb');
-      pushInd('SMA', 21, '#f59e0b');
+      pushInd('KELTNER', 20, '#2563eb');
       for (const b of this.blocks) {
         for (const ind of (b.indicators ?? [])) pushInd(ind.type, Math.max(2, Math.floor(Number(ind.period) || 20)), ind.color || '#2563eb');
       }
