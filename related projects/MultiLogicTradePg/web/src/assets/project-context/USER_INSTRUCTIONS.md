@@ -1240,4 +1240,4 @@
 Коммит: [916697d0](https://github.com/RobinZGit/OsEngine/commit/916697d03baf4ebfe23fcc55805e95e758a55b23)
 
 199. Бэктест/лоты: в `logic_trade_build_lots` исправлен подбор open-лотов для EOD-close при `exec_delay_sec>0`. При задержке исполнения open мог иметь `executed_at = bar_dt + exec_delay`, а EOD-close — `bar_dt`, из-за чего `(lt.executed_at <= v_close.executed_at)` не срабатывал; связанный open оставался фантомно открытым в lot-ledger, `logic_open_notional_exposure` завышал notional и блокировал новые входы (`qty < lot`). Исправление: условие `(lt.bar_dt < v_close.bar_dt OR lt.executed_at <= v_close.executed_at)`, фикс применён в live DB, для run 664 точечно перестроены битые/каскадные лоты; run 665 (48244, 2026-10-26..2026-11-26, M15, exec_delay 30, close_all_at_end) запущен с чистого листа. Установщики пересобраны: **v1.0.633 / Build 633** (Windows Setup.exe/.ex_ + Linux tar.gz).
-Коммит: [TBD](https://github.com/RobinZGit/OsEngine/commit/TBD)
+Коммит: [b624e34b](https://github.com/RobinZGit/OsEngine/commit/b624e34b90c0cfff74831721880617922c80aa19)
