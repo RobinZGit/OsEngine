@@ -1235,3 +1235,5 @@
 
 197. Тренажёр и экспорт тренажёра: по умолчанию вместо двух SMA (9/21) добавлен один индикатор `KELTNER (20)`; тип индикатора по умолчанию в селекторе — `KELTNER`.
 Коммит: [9a9ec0a0](https://github.com/RobinZGit/OsEngine/commit/9a9ec0a0fdc4738792a438b09cf7cccc6da75b36)
+
+198. Установщики MultiLogicTradePg пересобраны: **v1.0.629 / Build 629** (Windows Setup.exe/.ex_ + Linux tar.gz). Релиз `trainer-v1.0.581` обновлён до v1.0.629 (включает дефолтный индикатор `KELTNER (20)` в тренажёре и экспорте).
