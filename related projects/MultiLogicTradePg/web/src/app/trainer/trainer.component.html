@@ -175,7 +175,7 @@
           <input class="narrow-num" type="number" step="1" min="0" [(ngModel)]="executionDelaySec" [disabled]="battleMode" />
         </label>
         <label class="setup-field compact">
-          <span>Доля деп.</span>
+          <span>Доля деп., %</span>
           <input class="narrow-num" type="number" step="0.1" min="0.01" list="depositFractionList" [(ngModel)]="depositFraction" />
           <datalist id="depositFractionList">
             @for (opt of depositFractionOptions; track opt) { <option [value]="opt"></option> }

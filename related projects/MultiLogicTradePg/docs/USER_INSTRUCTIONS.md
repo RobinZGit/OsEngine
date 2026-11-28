@@ -1245,5 +1245,17 @@
 200. Тренажёр/экспорт: добавлена «Доля деп.» в setup-панели после комиссии/задержки. По умолчанию `0.1`, редактируемое поле, допускает `>1` (плечо), `datalist` варианты `0.1..1.0`. В тренажёрном режиме объём сделки считается от условного депозита `1_000_000 * доля`; в БОЙ — от баланса выбранного счёта. Доля влияет на расчёт % годовых/леверидж в отчёте; экспорт тренажёра включает выбранную долю. Для вмещения в ширину укорочены подписи комиссии/задержки и сужены кнопки БОЙ/Купить/Продать. Установщики пересобраны: **v1.0.634 / Build 634** (Windows Setup.exe/.ex_ + Linux tar.gz).
 Коммит: [0110c4ae](https://github.com/RobinZGit/OsEngine/commit/0110c4ae4b5593f9b66c42d222e40af289e66421)
 
-201. Бэктест: фикс зависания в prep из-за stale heartbeat. Во время `ensureSecurityData` (долгие blocking SQL CALL `sync_security_indicator_series_for_indicator`) heartbeat `updated_at` не обновлялся, и `sweepStaleBacktestRuns` помечал run как stale/failed при 0 баров/0 сделок. Добавлены `touchRunHeartbeat`/`startRunHeartbeat` (60с) в `api/logic-backtest.js`, heartbeat оборачивает prep по каждой бумаге. Проявлялось на логике 49843, M1, 2026-11-25..2026-11-27, 39 бумаг, 3 индикатора.
-Коммит: [0110c4ae](https://github.com/RobinZGit/OsEngine/commit/0110c4ae4b5593f9b66c42d222e40af289e66421)
+﻿201. ������: heartbeat `updated_at` ����� 60� ����� `ensureSecurityData` � prep (`api/logic-backtest.js`), 䨪� stale-fail �� ������ sync �������஢ (49843 M1).
+������: [0110c4ae](https://github.com/RobinZGit/OsEngine/commit/0110c4ae4b5593f9b66c42d222e40af289e66421)
+
+202. ������ 48244, ��ࠪ-������� � ᯨ᪥ �����: % ����ਤ� �뤥 ᢥ��� ���᫨⠭ � ������ � ������/��� «����⢨� � ������» � «�������� �६��». Test: `testFinancialResult` (pnl-summary), ���� `test_initial_balance/initial_balance`, ���� �㬬����� �� ��⠬ backtest run/pnl. Combat: `combatFinancialResult`, `initial_balance`, �� �� ���ਵ�⭮� ��� ���ࠢ� � `pnl-summary date_from` �� ᥣ���� ��. ��ࠪ ��-�६��� ���㥲�� �� equity curve.
+������: [pending](https://github.com/RobinZGit/OsEngine/commit/pending)
+
+203. �७����: «���� ���.» �� ����ࠧ���뢠�� % �������/����ਤ� �� notional; ���� - �� ������ ��� ᮡ�⢥����� ��࠭���� १�� (��� 1 000 000 � �७���, � ������ �������� � ���). «���� ���.» ��६�������� � «���� ���., %». ��ᯮ�� �७���� � १���� ���뢠�� �� �� �� ������ ���.
+������: [pending](https://github.com/RobinZGit/OsEngine/commit/pending)
+
+204. �७���� � ��ᯮ�� �७����: � ���-����� �� ���䨪�� ᢥ祩 ��������� ���-����� ���/��� �� �६��� ᢥ祩 �� �� ��ਧ� ������ ���䨪�; �� �।������ ᢥ� �����뢠���� �६� ᢥ祩 � hint. ���-����� �६��� �몫��� � �⠥��� ⥬��� ��㯮����筮� ��諩 � ����� �⮪��, �⮡� �뫠 ��� �� ᢥ⫮� � �� ��୮� 䮭�.
+������: [pending](https://github.com/RobinZGit/OsEngine/commit/pending)
+
+205. ������ `security_resume`: �� resume ᨣ���� ��㧨� orphan shadow-����樨 �� ����㭪� ��ꧠ⥫쭮 �����뢠���� �१ `logic_backtest_close_security(..., is_shadow=TRUE, reason='shadow_resume:security_resume:<side>')` �� ���⪨ pause-䫠���; ����� �� ������� (shadow close). ������⢥��� � runtime DB �� `sql/logic_backtest_runner.sql`. �७�� 50569 (run 678: 3 paused sec 1/3/25, 3 orphan shadow-open sec 10/15/21) ��१���饭 ��� run 681.
+������: [pending](https://github.com/RobinZGit/OsEngine/commit/pending)

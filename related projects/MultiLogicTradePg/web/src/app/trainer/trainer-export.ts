@@ -259,12 +259,12 @@ function simElapsedStr(){
 }
 function pnlClass(v){ return v>0?'pos':v<0?'neg':'flat'; }
 function dtMs(dt){ const t=Date.parse(String(dt).replace(' ','T')); return Number.isFinite(t)?t:NaN; }
-function basePrice(){ if(state.trades.length>0) return state.trades.reduce((s,t)=>s+t.openPrice,0)/state.trades.length; if(state.entryPrice!=null) return state.entryPrice; const c=candles(); return c.length?+c[0][4]:null; }
+function depositBase(){ const b=Number(state.nominalDeposit); return Number.isFinite(b)&&b>0?b:1000000; }
 function commission(price,qty){ return price*qty*(Math.max(0,state.commissionPct)/100); }
 function unrealizedMoney(){ if(state.position==='flat'||state.entryPrice==null) return 0; const p=curPrice(); if(p==null) return 0; const dir=state.position==='long'?1:-1; const gross=(p-state.entryPrice)*dir*state.qty; return gross - (state.entryCommission||0) - commission(p,state.qty); }
-function unrealizedPct(){ if(state.position==='flat'||state.entryPrice==null) return 0; const base=state.entryPrice*state.qty; if(!base) return 0; return (unrealizedMoney()/base)*100; }
+function unrealizedPct(){ const pnl=unrealizedMoney(); const base=depositBase(); if(!base) return 0; return (pnl/base)*100; }
 function totalPnlMoney(){ return state.trades.reduce((s,t)=>s+t.pnlMoney,0) + (state.position!=='flat'?unrealizedMoney():0); }
-function totalPnlPct(){ const base=basePrice(); if(base==null||!Number.isFinite(base)||base<=0) return null; return (totalPnlMoney()/base)*100; }
+function totalPnlPct(){ const base=depositBase(); if(!Number.isFinite(base)||base<=0) return null; return (totalPnlMoney()/base)*100; }
 function holdMsBetween(openDt,closeDt){ const a=dtMs(openDt), b=dtMs(closeDt); if(!Number.isFinite(a)||!Number.isFinite(b)) return null; return Math.max(0,b-a); }
 function holdBarsBetween(openIdx,closeIdx){ if(!Number.isFinite(openIdx)||!Number.isFinite(closeIdx)) return null; return Math.max(0, Math.round(closeIdx-openIdx)); }
 function currentHoldMs(){ if(state.position==='flat'||state.entryDt==null) return null; return holdMsBetween(state.entryDt, curDt()); }
@@ -506,8 +506,8 @@ function executeOrder(side,action,dt,price){
     const dir=state.position==='long'?1:-1;
     const gross=(price-state.entryPrice)*dir*state.qty;
     const net=gross - (state.entryCommission||0) - commission(price,state.qty);
-    const base=state.entryPrice*state.qty;
-    const pnlPct = base!==0 ? (net/base)*100 : 0;
+    const base=depositBase();
+    const pnlPct = base>0 ? (net/base)*100 : 0;
     const holdMs = holdMsBetween(state.entryDt||dt, dt) ?? 0;
     const holdBars = holdBarsBetween(state.entryIdx, Math.max(0,state.visibleCount-1)) ?? 0;
     state.trades.push({pnlMoney:net,pnlPct,holdMs,holdBars,openPrice:state.entryPrice,openDt:state.entryDt||dt,closeDt:dt,closePrice:price,side:state.position});

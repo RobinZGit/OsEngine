@@ -3,9 +3,9 @@
 }
 
 <div class="chart-shell" [class.chart-shell--fullscreen]="fullscreen" [class.chart-shell--compact]="compact && !fullscreen">
-    <div class="chart-toolbar" role="toolbar" aria-label="?????????? ????????" [ngStyle]="showToolbarCandleTime ? toolbarCandleTimeStyle : null">
-    @if (showToolbarCandleTime && toolbarCandleTimeLabel) {
-      <span class="chart-toolbar-time">{{ toolbarCandleTimeLabel }}</span>
+    <div class="chart-toolbar" role="toolbar" aria-label="?????????? ????????" [ngStyle]="showToolbarCandleTime ? toolbarCandleTimeStyle : null" (mousemove)="onToolbarMouseMove($event)" (mouseleave)="onToolbarMouseLeave()" [attr.title]="toolbarHoverLabel || null">
+    @if (showToolbarCandleTime && (toolbarHoverLabel || toolbarCandleTimeLabel)) {
+      <span class="chart-toolbar-time">{{ toolbarHoverLabel || toolbarCandleTimeLabel }}</span>
     }
     @if (fullscreen && title) {
       <span class="chart-title">{{ title }}</span>

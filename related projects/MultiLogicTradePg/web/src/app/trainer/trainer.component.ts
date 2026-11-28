@@ -900,6 +900,15 @@ export class TrainerComponent implements OnInit, OnDestroy {
     return raw;
   }
 
+  /** База депозита для расчёта % доходности (не номинал позиции). */
+  private depositBase(): number {
+    if (this.battleMode) {
+      const bal = Number(this.battleAccountBalance);
+      if (Number.isFinite(bal) && bal > 0) return bal;
+    }
+    return this.nominalDeposit;
+  }
+
   orderQty(b: TrainerBlock): number {
     const price = this.currentPrice(b);
     if (price == null || price <= 0) return 0;
@@ -1056,13 +1065,10 @@ export class TrainerComponent implements OnInit, OnDestroy {
     return gross - commission;
   }
   unrealizedPnlPct(b: TrainerBlock): number | null {
-    const price = this.currentPrice(b);
-    if (b.position === 'flat' || b.entryPrice == null || price == null) return null;
-    const qty = Math.max(1, Number(b.positionQty) || 1);
-    const base = b.entryPrice * qty;
-    if (!Number.isFinite(base) || base <= 0) return null;
     const pnl = this.unrealizedPnl(b);
-    return pnl == null ? null : (pnl / base) * 100;
+    const base = this.depositBase();
+    if (pnl == null || !Number.isFinite(base) || base <= 0) return null;
+    return (pnl / base) * 100;
   }
   currentHoldingMs(b: TrainerBlock): number | null {
     if (b.position === 'flat' || b.entryDt == null) return null;
@@ -1103,11 +1109,9 @@ export class TrainerComponent implements OnInit, OnDestroy {
   }
   totalPnlWithUnrealized(b: TrainerBlock): number { return b.totalPnl + (this.unrealizedPnl(b) ?? 0); }
   totalPnlPct(b: TrainerBlock): number | null {
-    const basePrice = b.trades.length > 0
-      ? b.trades.reduce((s, t) => s + t.openPrice, 0) / b.trades.length
-      : (b.entryPrice ?? (b.visibleCandles.length > 0 ? Number(b.visibleCandles[0].close_price) : null));
-    if (basePrice == null || !Number.isFinite(basePrice) || basePrice <= 0) return null;
-    return (this.totalPnlWithUnrealized(b) / basePrice) * 100;
+    const base = this.depositBase();
+    if (!Number.isFinite(base) || base <= 0) return null;
+    return (this.totalPnlWithUnrealized(b) / base) * 100;
   }
   totalAnnualPct(b: TrainerBlock): number | null {
     const pnlPct = this.totalPnlPct(b);
@@ -1128,24 +1132,15 @@ export class TrainerComponent implements OnInit, OnDestroy {
     return this.blocks.reduce((s, b) => s + this.totalPnlWithUnrealized(b), 0);
   }
   get globalAnnualPct(): number | null {
-    let weightedSum = 0;
-    let weightTotal = 0;
+    let sum = 0;
+    let count = 0;
     for (const b of this.blocks) {
       const ap = this.totalAnnualPct(b);
-      const base = this.blockBasePrice(b);
-      if (ap == null || base == null || !Number.isFinite(base) || base <= 0) continue;
-      // weight by base price (per 1 unit) so different securities contribute proportionally to their % base
-      weightedSum += ap * base;
-      weightTotal += base;
+      if (ap == null) continue;
+      sum += ap;
+      count += 1;
     }
-    if (weightTotal <= 0) return null;
-    return weightedSum / weightTotal;
-  }
-  private blockBasePrice(b: TrainerBlock): number | null {
-    const basePrice = b.trades.length > 0
-      ? b.trades.reduce((s, t) => s + t.openPrice, 0) / b.trades.length
-      : (b.entryPrice ?? (b.visibleCandles.length > 0 ? Number(b.visibleCandles[0].close_price) : null));
-    return basePrice != null && Number.isFinite(basePrice) && basePrice > 0 ? basePrice : null;
+    return count > 0 ? sum / count : null;
   }
 
   // ---- trading ----
@@ -1336,7 +1331,8 @@ export class TrainerComponent implements OnInit, OnDestroy {
       ? (Math.max(0, Number(b.entryCommission) || 0) + Math.max(0, Number(closeCommission) || 0))
       : (b.entryPrice + price) * qty * (Math.max(0, Number(this.commissionPct) || 0) / 100);
     const pnl = grossPnl - commission;
-    const pnlPct = ((price - b.entryPrice) * dir / b.entryPrice) * 100;
+    const base = this.depositBase();
+    const pnlPct = Number.isFinite(base) && base > 0 ? (pnl / base) * 100 : 0;
     const holdMs = (this.battleMode && b.entryWallMs != null) ? Math.max(0, Date.now() - b.entryWallMs) : dtToMs(dt) - dtToMs(b.entryDt);
     const holdDays = holdMs > 0 ? holdMs / 86400000 : null;
     const annualPct = holdDays != null ? (pnlPct / holdDays) * 365 : null;

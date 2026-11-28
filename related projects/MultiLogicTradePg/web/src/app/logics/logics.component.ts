@@ -5658,72 +5658,115 @@ deleteLogicSecurity(row: LogicSecurityRow, event: Event): void {
     }
   }
 
-  /** Мини-график эквити для строки логики: грубая полилиния + % и % годовых. */
+  /** Мини-график equity для строки логики: кривая доходности + % и % годовых. */
   equitySparkline(row: LogicRow): { points: string; color: string; positive: boolean; pct: number; annualPct: number } | null {
     const testing = this.isBacktestRunning(row.id);
     let source: { total?: Array<{ dt: string; value: number }>; initial_balance?: number } | null | undefined;
+    let mode: 'test' | 'combat' = 'test';
     if (testing) {
       source = this.testEquityByLogic.get(row.id);
+      mode = 'test';
     } else if (row.is_enabled) {
       source = this.combatEquityByLogic.get(row.id);
+      mode = 'combat';
     } else {
       source = this.testEquityByLogic.get(row.id);
+      mode = 'test';
       if (!source?.total || source.total.length < 2) {
-        source = this.combatEquityByLogic.get(row.id);
+        const combat = this.combatEquityByLogic.get(row.id);
+        if (combat?.total && combat.total.length >= 2) {
+          source = combat;
+          mode = 'combat';
+        }
       }
     }
     const total = source?.total;
     if (!total || total.length < 2) return null;
-    // Грубое приближение: не более 48 точек, чтобы SVG был лёгким.
     const maxPts = 48;
     const step = total.length <= maxPts ? 1 : (total.length - 1) / (maxPts - 1);
     const sampled: number[] = [];
     for (let i = 0; i < maxPts && Math.round(i * step) < total.length; i++) {
-      const idxPt = Math.min(total.length - 1, Math.round(i * step));
-      sampled.push(Number(total[idxPt].value) || 0);
+      const idxPt = Math.round(i * step);
+      sampled.push(total[idxPt].value);
     }
-    if (sampled.length < 2) return null;
-    let min = sampled[0];
-    let max = sampled[0];
+    const lastIdx = total.length - 1;
+    if (sampled[sampled.length - 1] !== total[lastIdx].value) {
+      sampled.push(total[lastIdx].value);
+    }
+    let minV = sampled[0];
+    let maxV = sampled[0];
     for (const v of sampled) {
-      if (v < min) min = v;
-      if (v > max) max = v;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
     }
-    const span = max - min || 1;
+    const span = maxV - minV || 1;
     const w = 100;
     const h = 24;
-    const padY = 2;
-    const innerH = h - padY * 2;
-    const points = sampled
-      .map((v, i) => {
-        const x = (i / (sampled.length - 1)) * w;
-        const y = padY + (1 - (v - min) / span) * innerH;
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
-    const last = sampled[sampled.length - 1];
-    const rawInitial = this.isBacktestRunning(row.id)
-      ? (Number(row.test_initial_balance) > 0 ? Number(row.test_initial_balance) : Number(row.initial_balance))
-      : Number(row.initial_balance);
-    const initialBalance = Number.isFinite(rawInitial) && rawInitial > 0 ? rawInitial : 1_000_000;
-    const firstDateOnly = String(total[0].dt).slice(0, 10);
-    const lastDateOnly = String(total[total.length - 1].dt).slice(0, 10);
-    const fromMs = Date.parse(`${firstDateOnly}T00:00:00Z`);
-    const toMs = Date.parse(`${lastDateOnly}T00:00:00Z`);
-    const days = (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs >= fromMs)
-      ? Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1)
-      : 0;
-    const pct = (last - initialBalance) / Math.abs(initialBalance) * 100;
-    const annualPct = days > 0 ? (pct * 365) / days : pct;
-    const positive = pct >= 0;
+    const pad = 2;
+    const coords = sampled.map((v, i) => {
+      const x = (i / (sampled.length - 1)) * w;
+      const y = pad + (1 - (v - minV) / span) * (h - pad * 2);
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    });
+    const lastV = sampled[sampled.length - 1];
+    // % и % годовых - как в блоке Тестирование/Бой (единая формула с заголовком).
+    const baseInitial = mode === 'test'
+      ? (Number((row as any).test_initial_balance) > 0 ? Number((row as any).test_initial_balance)
+        : (Number((row as any).initial_balance) > 0 ? Number((row as any).initial_balance) : 1_000_000))
+      : (Number((row as any).initial_balance) > 0 ? Number((row as any).initial_balance) : 1_000_000);
+    const pnlValue = mode === 'test'
+      ? (this.testFinancialResult(row.id) ?? lastV)
+      : (this.combatFinancialResult(row.id) ?? lastV);
+    const pct = baseInitial > 0 ? (pnlValue / baseInitial) * 100 : 0;
+
+    let periodDays = 0;
+    if (mode === 'test') {
+      const run = this.backtestRuns.get(row.id);
+      const pnlRow = this.testPnlByLogic.get(row.id);
+      const fromRaw = run?.date_from ?? (pnlRow as any)?.date_from ?? total[0]?.dt ?? null;
+      const toRaw = run?.date_to ?? (pnlRow as any)?.date_to ?? total[total.length - 1]?.dt ?? null;
+      const from = typeof fromRaw === 'string' ? fromRaw.slice(0, 10) : null;
+      const to = typeof toRaw === 'string' ? toRaw.slice(0, 10) : null;
+      if (from && to) {
+        const fromMs = Date.parse(`${from}T00:00:00Z`);
+        const toMs = Date.parse(`${to}T00:00:00Z`);
+        if (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs >= fromMs) {
+          periodDays = Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1);
+        }
+      }
+    } else {
+      const pnlRow = this.combatPnlByLogic.get(row.id);
+      const fromRaw = (pnlRow as any)?.date_from ?? total[0]?.dt ?? null;
+      const from = typeof fromRaw === 'string' ? fromRaw.slice(0, 10) : null;
+      if (from) {
+        const fromMs = Date.parse(`${from}T00:00:00Z`);
+        const now = new Date();
+        const to = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+        const toMs = Date.parse(`${to}T00:00:00Z`);
+        if (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs >= fromMs) {
+          periodDays = Math.max(1, Math.round((toMs - fromMs) / 86400000) + 1);
+        }
+      }
+    }
+    if (periodDays <= 0) {
+      const firstDt = total[0]?.dt;
+      const lastDt = total[total.length - 1]?.dt;
+      const firstMs = firstDt ? Date.parse(firstDt) : NaN;
+      const lastMs = lastDt ? Date.parse(lastDt) : NaN;
+      periodDays = Number.isFinite(firstMs) && Number.isFinite(lastMs) && lastMs > firstMs
+        ? (lastMs - firstMs) / 86_400_000
+        : 0;
+    }
+    const annualPct = periodDays > 0 ? (pct * 365) / periodDays : pct;
     return {
-      points,
-      color: positive ? '#22c55e' : '#ef4444',
-      positive,
+      points: coords.join(' '),
+      color: lastV >= 0 ? '#1f8f5f' : '#c44536',
+      positive: lastV >= 0,
       pct,
       annualPct,
     };
   }
+
   private refreshPnlSummaries(): void {
     // Test PnL column: реже во время активных прогонов (колонка не критична mid-run).
     if (this.backtestPollIds.size === 0 || this.pollTick % 3 === 0) {

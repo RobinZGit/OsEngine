@@ -1701,6 +1701,15 @@ BEGIN
                             );
                             IF COALESCE(v_resume_baseline, 0) + COALESCE(v_track_after, 0)
                                >= COALESCE(v_resume_equity, 0) THEN
+                                -- Close orphan shadow positions before unpausing (shadow_resume).
+                                SELECT *
+                                INTO v_closed, p_balance
+                                FROM logic_backtest_close_security(
+                                    p_run_id, p_logic_id, p_account_id, v_sec.security_id,
+                                    p_tf_id, p_bar_dt, TRUE,
+                                    format('shadow_resume:security_resume:%s', v_side_name),
+                                    p_balance, v_side_name
+                                );
                                 IF v_side_name = 'long' THEN
                                     UPDATE logic_backtest_security_state
                                     SET real_trading_paused_long = FALSE,

@@ -76,6 +76,7 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
    */
   /** ???????? ??????? ????? ????? ? ???????. */
   @Input() showToolbarCandleTime = false;
+  toolbarHoverLabel = '';
   @Input() followLast = false;
 
   /** Режим отображения цены: свечи или линия по Close (#835). */
@@ -114,11 +115,18 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     const d = new Date(dt);
     if (Number.isNaN(d.getTime())) return {};
     const h = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
-    return this.candleTimeOfDayStyle(h);
+    const base = this.candleTimeOfDayColor(h);
+    const text = base.lum > 0.62 ? '#1e293b' : '#f8fafc';
+    const border = base.lum > 0.62 ? 'rgba(15,23,42,.18)' : 'rgba(255,255,255,.22)';
+    const gradient = this.toolbarTimeGradient();
+    return {
+      background: gradient || `rgb(${base.r},${base.g},${base.b})`,
+      color: text,
+      borderBottomColor: border,
+    };
   }
 
-  private candleTimeOfDayStyle(hour: number): { [k: string]: string } {
-    // 0..24, smooth keyframes: night dark blue -> dawn -> bright noon -> dusk -> night
+  private candleTimeOfDayColor(hour: number): { r: number; g: number; b: number; lum: number } {
     const keys: Array<[number, number, number, number]> = [
       [0, 15, 35, 71],      // 00:00 deep night
       [4, 22, 51, 95],      // 04:00 late night
@@ -142,13 +150,71 @@ export class PriceChartComponent implements AfterViewInit, OnChanges, OnDestroy 
     const g = Math.round(a[2] + (b[2] - a[2]) * s);
     const bl = Math.round(a[3] + (b[3] - a[3]) * s);
     const lum = (0.2126 * r + 0.7152 * g + 0.0722 * bl) / 255;
-    const text = lum > 0.62 ? '#1e293b' : '#f8fafc';
-    const border = lum > 0.62 ? 'rgba(15,23,42,.18)' : 'rgba(255,255,255,.22)';
-    return {
-      backgroundColor: `rgb(${r},${g},${bl})`,
-      color: text,
-      borderBottomColor: border,
-    };
+    return { r, g, b: bl, lum };
+  }
+
+  private toolbarTimeGradient(): string | null {
+    const visible = this.visibleCandles();
+    if (visible.length < 2) return null;
+    const canvas = this.canvasRef?.nativeElement;
+    const w = canvas?.clientWidth ?? 0;
+    const pad = this.chartPadding();
+    const plotLeftPct = w > 0 ? (pad.left / w) * 100 : 8;
+    const plotRightPct = w > 0 ? ((w - pad.right) / w) * 100 : 92;
+    const maxStops = 80;
+    const step = visible.length <= maxStops ? 1 : (visible.length - 1) / (maxStops - 1);
+    const stops: string[] = [];
+    const n = visible.length <= maxStops ? visible.length : maxStops;
+    for (let i = 0; i < n; i++) {
+      const idx = visible.length <= maxStops ? i : Math.round(i * step);
+      const c = visible[Math.min(idx, visible.length - 1)];
+      const d = new Date(c?.dt);
+      if (Number.isNaN(d.getTime())) continue;
+      const h = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+      const col = this.candleTimeOfDayColor(h);
+      const pct = plotLeftPct + (i / Math.max(1, n - 1)) * (plotRightPct - plotLeftPct);
+      stops.push(`rgb(${col.r},${col.g},${col.b}) ${pct.toFixed(2)}%`);
+    }
+    if (stops.length < 2) return null;
+    const first = stops[0].replace(/ [\d.]+%$/, ' 0%');
+    const last = stops[stops.length - 1].replace(/ [\d.]+%$/, ' 100%');
+    return `linear-gradient(90deg, ${first}, ${stops.join(', ')}, ${last})`;
+  }
+
+  private visibleCandles(): any[] {
+    const count = this.viewCount();
+    if (!count || !this.candles?.length) return [];
+    return this.candles.slice(this.viewStart, this.viewStart + count);
+  }
+
+  onToolbarMouseMove(ev: MouseEvent): void {
+    if (!this.showToolbarCandleTime) return;
+    const target = ev.currentTarget as HTMLElement | null;
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const canvas = this.canvasRef?.nativeElement;
+    const w = canvas?.clientWidth ?? rect.width;
+    const pad = this.chartPadding();
+    const plotLeft = pad.left;
+    const plotRight = Math.max(plotLeft + 1, w - pad.right);
+    const rel = Math.max(0, Math.min(1, (x - plotLeft) / (plotRight - plotLeft)));
+    const visible = this.visibleCandles();
+    if (visible.length === 0) { this.toolbarHoverLabel = ''; return; }
+    const idx = Math.max(0, Math.min(visible.length - 1, Math.round(rel * (visible.length - 1))));
+    const dt = visible[idx]?.dt;
+    if (!dt) { this.toolbarHoverLabel = ''; return; }
+    const d = new Date(dt);
+    if (Number.isNaN(d.getTime())) { this.toolbarHoverLabel = String(dt); return; }
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    this.toolbarHoverLabel = `${dd}.${mo} ${hh}:${mm}`;
+  }
+
+  onToolbarMouseLeave(): void {
+    this.toolbarHoverLabel = '';
   }
 
   private xIndex(i: number, count: number): number {
